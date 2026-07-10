@@ -97,7 +97,8 @@ def test_relationship_uniqueness_constraint(db: sqlite3.Connection) -> None:
     db.commit()
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(
-            "INSERT INTO relationships(id, agent_id, target_agent_id, relationship_type, updated_at)"
+            "INSERT INTO relationships"
+            "(id, agent_id, target_agent_id, relationship_type, updated_at)"
             " VALUES (?,?,?,?,?)",
             ("r2", "a1", "a2", "rival", 1000),
         )
