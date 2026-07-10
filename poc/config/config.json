@@ -1,0 +1,55 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "debug": true,
+  "database": "ai_sims_memory.sqlite3",
+  "active_agent_limit": 5,
+  "agent_wake_timeout_seconds": 60,
+  "provider": "lmstudio",
+  "providers": {
+    "lmstudio": {
+      "endpoint": "http://127.0.0.1:1234/api/v1",
+      "model": "local-model"
+    },
+    "ollama": {
+      "endpoint": "http://127.0.0.1:11434/v1",
+      "model": "llama3"
+    },
+    "openai": {
+      "endpoint": "https://api.openai.com/v1",
+      "model": "gpt-4.1-mini"
+    },
+    "llamacpp": {
+      "endpoint": "http://127.0.0.1:8080/v1",
+      "model": "local-model"
+    },
+    "koboldcpp": {
+      "endpoint": "http://127.0.0.1:5001/v1",
+      "model": "local-model"
+    },
+    "textgenwebui": {
+      "endpoint": "http://127.0.0.1:5000/v1",
+      "model": "local-model"
+    }
+  },
+  "models": {
+    "small": {
+      "temperature": 0.3,
+      "max_tokens": 120
+    },
+    "large": {
+      "temperature": 0.6,
+      "max_tokens": 300
+    }
+  },
+  "memory": {
+    "recent_limit": 6,
+    "summary_every": 10,
+    "summary_limit": 30
+  },
+  "tts": {
+    "enabled": false,
+    "provider": "piper",
+    "endpoint": ""
+  }
+}
