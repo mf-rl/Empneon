@@ -12,13 +12,13 @@ Check items off as completed. This is the source of truth for session continuity
 - [x] Novel innovations documented (`docs/innovations.md`)
 - [x] Business model documented (`docs/business-model.md`)
 - [x] Claude working context created (`CLAUDE.md`)
-- [ ] Define folder/module structure for Empneon Core
-- [ ] Set up Python project (`pyproject.toml`, packaging, virtual env)
-- [ ] Set up GitHub Actions CI (lint, test, type check)
-- [ ] Set up testing framework (pytest)
-- [ ] Contributing guide + PR/issue templates
-- [ ] Code of conduct
-- [ ] Choose and add license (Apache 2.0 recommended)
+- [x] Define folder/module structure for Empneon Core
+- [x] Set up Python project (`pyproject.toml`, packaging, virtual env)
+- [x] Set up GitHub Actions CI (lint, test, type check)
+- [x] Set up testing framework (pytest)
+- [x] Contributing guide + PR/issue templates
+- [x] Code of conduct
+- [x] Choose and add license (Apache 2.0 recommended)
 
 ---
 
@@ -252,6 +252,6 @@ Check items off as completed. This is the source of truth for session continuity
 
 ## Current Focus
 
-**Start here:** Phase 0 remaining items, then Phase 1.
+**Phase 0 complete.** Working on Phase 1 — Core: Identity System.
 
-Next immediate task: define folder/module structure for Empneon Core.
+Next immediate task: Define Identity DB schema (SQLite).

@@ -95,6 +95,7 @@ Early development. Core framework under construction.
 
 - [x] Vision and architecture documented
 - [x] Novel innovations specified
+- [x] Project scaffolded (src layout, pyproject.toml, CI, license)
 - [ ] Core framework implementation
 - [ ] Sims 4 adapter
 - [ ] First public release
@@ -116,6 +117,5 @@ See [`docs/roadmap.md`](docs/roadmap.md) for full task breakdown.
 
 ## License
 
-TBD — Apache 2.0 planned for core framework.
+Apache 2.0 — free for modders and non-commercial use.
 Commercial use by studios shipping games will require a commercial license.
-Modding and non-commercial use will always be free.
