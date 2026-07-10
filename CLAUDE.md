@@ -16,7 +16,7 @@ Guiding principle:
 - Identity persists
 - Thought is scheduled
 
-## Original Vision (from Project Vision PDF)
+## Original Vision (from [Project Vision](https://github.com/PandaBakers/Empneon/blob/main/docs/vision.md))
 
 Key architectural concepts already defined by the author:
 
