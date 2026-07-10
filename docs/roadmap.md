@@ -28,7 +28,7 @@ Check items off as completed. This is the source of truth for session continuity
 - [x] Define Identity DB schema (SQLite)
 - [x] Implement Identity CRUD operations
 - [x] Personality vector storage (5-dimensional OCEAN or custom)
-- [ ] Relationship graph schema (agent-to-agent edges with weight + type)
+- [x] Relationship graph schema (agent-to-agent edges with weight + type)
 - [ ] Emotional state storage (value + velocity + acceleration per emotion)
 - [ ] Long-term goals schema
 - [ ] Voice profile schema
@@ -254,4 +254,4 @@ Check items off as completed. This is the source of truth for session continuity
 
 **Phase 0 complete.** Working on Phase 1 — Core: Identity System.
 
-Next immediate task: Relationship graph schema (agent-to-agent edges with weight + type).
+Next immediate task: Emotional state storage (value + velocity + acceleration per emotion).
