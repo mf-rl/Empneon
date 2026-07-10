@@ -29,7 +29,7 @@ Check items off as completed. This is the source of truth for session continuity
 - [x] Implement Identity CRUD operations
 - [x] Personality vector storage (5-dimensional OCEAN or custom)
 - [x] Relationship graph schema (agent-to-agent edges with weight + type)
-- [ ] Emotional state storage (value + velocity + acceleration per emotion)
+- [x] Emotional state storage (value + velocity + acceleration per emotion)
 - [ ] Long-term goals schema
 - [ ] Voice profile schema
 - [ ] Identity serialization / deserialization
@@ -254,4 +254,4 @@ Check items off as completed. This is the source of truth for session continuity
 
 **Phase 0 complete.** Working on Phase 1 — Core: Identity System.
 
-Next immediate task: Emotional state storage (value + velocity + acceleration per emotion).
+Next immediate task: Long-term goals schema.
