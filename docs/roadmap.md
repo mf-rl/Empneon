@@ -26,7 +26,7 @@ Check items off as completed. This is the source of truth for session continuity
 *Persistent character data independent of any AI model.*
 
 - [x] Define Identity DB schema (SQLite)
-- [ ] Implement Identity CRUD operations
+- [x] Implement Identity CRUD operations
 - [ ] Personality vector storage (5-dimensional OCEAN or custom)
 - [ ] Relationship graph schema (agent-to-agent edges with weight + type)
 - [ ] Emotional state storage (value + velocity + acceleration per emotion)
@@ -254,4 +254,4 @@ Check items off as completed. This is the source of truth for session continuity
 
 **Phase 0 complete.** Working on Phase 1 — Core: Identity System.
 
-Next immediate task: Implement Identity CRUD operations.
+Next immediate task: Personality vector storage (5-dimensional OCEAN).
