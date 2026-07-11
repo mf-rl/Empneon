@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -157,3 +157,106 @@ ALL_DDL: list[str] = [
     _CREATE_IDX_EVENT_PARTICIPANTS_AGENT,
     _CREATE_IDX_EVENTS_HAPPENED_AT,
 ]
+
+_VALIDATE_AGENTS_INSERT = """
+CREATE TRIGGER validate_agents_insert
+BEFORE INSERT ON agents
+WHEN NEW.age IS NOT NULL AND NEW.age < 0
+BEGIN
+    SELECT RAISE(ABORT, 'agent age must not be negative');
+END
+"""
+
+_VALIDATE_AGENTS_UPDATE = _VALIDATE_AGENTS_INSERT.replace(
+    "validate_agents_insert\nBEFORE INSERT", "validate_agents_update\nBEFORE UPDATE"
+)
+
+_VALIDATE_PERSONALITY_INSERT = """
+CREATE TRIGGER validate_personality_insert
+BEFORE INSERT ON personality
+WHEN NEW.openness NOT BETWEEN 0.0 AND 1.0
+  OR NEW.conscientiousness NOT BETWEEN 0.0 AND 1.0
+  OR NEW.extraversion NOT BETWEEN 0.0 AND 1.0
+  OR NEW.agreeableness NOT BETWEEN 0.0 AND 1.0
+  OR NEW.neuroticism NOT BETWEEN 0.0 AND 1.0
+BEGIN
+    SELECT RAISE(ABORT, 'personality values must be between 0 and 1');
+END
+"""
+
+_VALIDATE_PERSONALITY_UPDATE = _VALIDATE_PERSONALITY_INSERT.replace(
+    "validate_personality_insert\nBEFORE INSERT",
+    "validate_personality_update\nBEFORE UPDATE",
+)
+
+_VALIDATE_RELATIONSHIPS_INSERT = """
+CREATE TRIGGER validate_relationships_insert
+BEFORE INSERT ON relationships
+WHEN NEW.strength NOT BETWEEN -1.0 AND 1.0
+  OR NEW.trust NOT BETWEEN 0.0 AND 1.0
+BEGIN
+    SELECT RAISE(ABORT, 'relationship strength or trust is out of range');
+END
+"""
+
+_VALIDATE_RELATIONSHIPS_UPDATE = _VALIDATE_RELATIONSHIPS_INSERT.replace(
+    "validate_relationships_insert\nBEFORE INSERT",
+    "validate_relationships_update\nBEFORE UPDATE",
+)
+
+_VALIDATE_EMOTIONS_INSERT = """
+CREATE TRIGGER validate_emotions_insert
+BEFORE INSERT ON emotional_states
+WHEN NEW.value NOT BETWEEN 0.0 AND 1.0
+BEGIN
+    SELECT RAISE(ABORT, 'emotion value must be between 0 and 1');
+END
+"""
+
+_VALIDATE_EMOTIONS_UPDATE = _VALIDATE_EMOTIONS_INSERT.replace(
+    "validate_emotions_insert\nBEFORE INSERT", "validate_emotions_update\nBEFORE UPDATE"
+)
+
+_VALIDATE_GOALS_INSERT = """
+CREATE TRIGGER validate_goals_insert
+BEFORE INSERT ON goals
+WHEN NEW.priority NOT BETWEEN 0.0 AND 1.0
+  OR NEW.status NOT IN ('active', 'completed', 'abandoned')
+BEGIN
+    SELECT RAISE(ABORT, 'goal priority or status is invalid');
+END
+"""
+
+_VALIDATE_GOALS_UPDATE = _VALIDATE_GOALS_INSERT.replace(
+    "validate_goals_insert\nBEFORE INSERT", "validate_goals_update\nBEFORE UPDATE"
+)
+
+_VALIDATE_VOICE_INSERT = """
+CREATE TRIGGER validate_voice_insert
+BEFORE INSERT ON voice_profiles
+WHEN NEW.speed <= 0.0 OR NEW.pitch <= 0.0
+BEGIN
+    SELECT RAISE(ABORT, 'voice speed and pitch must be positive');
+END
+"""
+
+_VALIDATE_VOICE_UPDATE = _VALIDATE_VOICE_INSERT.replace(
+    "validate_voice_insert\nBEFORE INSERT", "validate_voice_update\nBEFORE UPDATE"
+)
+
+MIGRATIONS: dict[int, tuple[str, ...]] = {
+    2: (
+        _VALIDATE_AGENTS_INSERT,
+        _VALIDATE_AGENTS_UPDATE,
+        _VALIDATE_PERSONALITY_INSERT,
+        _VALIDATE_PERSONALITY_UPDATE,
+        _VALIDATE_RELATIONSHIPS_INSERT,
+        _VALIDATE_RELATIONSHIPS_UPDATE,
+        _VALIDATE_EMOTIONS_INSERT,
+        _VALIDATE_EMOTIONS_UPDATE,
+        _VALIDATE_GOALS_INSERT,
+        _VALIDATE_GOALS_UPDATE,
+        _VALIDATE_VOICE_INSERT,
+        _VALIDATE_VOICE_UPDATE,
+    ),
+}

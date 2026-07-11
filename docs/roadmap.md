@@ -15,7 +15,7 @@ code exists.
 - [x] Define generic world-event, cognition-request, decision, and state-delta types
 - [x] Define the LLM provider capability protocol
 - [x] Implement initial RAM, VRAM, and concurrency admission control
-- [ ] Add real schema migrations and database range constraints
+- [x] Add real schema migrations and database range constraints
 - [ ] Make multi-store identity import atomic and version-validated
 
 ## Stage 1: Minimal Runtime Vertical Slice

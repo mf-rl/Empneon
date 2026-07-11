@@ -64,6 +64,7 @@ performance numbers until measured in-game.
 
 - Identity, personality, relationships, emotional state, goals, and voice persistence
 - Episodic events and SQLite vector search
+- Transactional schema migrations and database-enforced identity ranges
 - Generic cognition contracts
 - LLM provider capability protocol
 - Initial RAM/VRAM/concurrency resource governor
@@ -75,7 +76,7 @@ autonomous game action.
 
 ## Current Work Order
 
-1. Finish persistence correctness and migrations.
+1. Make multi-store identity import atomic and version-validated.
 2. Implement the minimal generic adapter and action-result contract.
 3. Implement one OpenAI-compatible local provider.
 4. Build a budgeted event-to-decision vertical slice.
