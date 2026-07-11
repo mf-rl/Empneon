@@ -96,7 +96,7 @@ Early development. Core framework under construction.
 - [x] Vision and architecture documented
 - [x] Novel innovations specified
 - [x] Project scaffolded (src layout, pyproject.toml, CI, license)
-- [ ] Core framework implementation
+- [ ] Core framework implementation *(Phase 1 Identity System: 6/9 complete)*
 - [ ] Sims 4 adapter
 - [ ] First public release
 
