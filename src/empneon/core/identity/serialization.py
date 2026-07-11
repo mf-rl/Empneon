@@ -2,6 +2,7 @@
 
 import dataclasses
 from dataclasses import dataclass
+from typing import Any
 
 from empneon.core.identity.emotions import EmotionalState, EmotionalStateStore
 from empneon.core.identity.goals import Goal, GoalStore
@@ -24,7 +25,7 @@ class IdentityStores:
     voice: VoiceProfileStore
 
 
-def export_agent(agent_id: str, stores: IdentityStores) -> dict:
+def export_agent(agent_id: str, stores: IdentityStores) -> dict[str, Any]:
     """Return a JSON-serializable snapshot of every identity layer for one agent."""
     agent = stores.agents.get(agent_id)
     if agent is None:
@@ -44,7 +45,7 @@ def export_agent(agent_id: str, stores: IdentityStores) -> dict:
     }
 
 
-def import_agent(data: dict, stores: IdentityStores) -> Agent:
+def import_agent(data: dict[str, Any], stores: IdentityStores) -> Agent:
     """Write a previously exported snapshot into stores. Idempotent — safe to reimport."""
     agent = Agent(**data["agent"])
     if stores.agents.get(agent.id) is None:

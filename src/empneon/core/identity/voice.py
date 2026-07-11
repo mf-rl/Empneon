@@ -12,7 +12,7 @@ class VoiceProfile:
     voice_id: str | None = None     # provider-specific voice identifier
     speed: float = 1.0              # playback speed multiplier
     pitch: float = 1.0              # pitch multiplier
-    settings: dict = field(default_factory=dict)  # provider-specific extras
+    settings: dict[str, object] = field(default_factory=dict)  # provider-specific extras
 
 
 class VoiceProfileStore:
