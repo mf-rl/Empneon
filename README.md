@@ -1,121 +1,130 @@
 # Empneon
 
-**Open-source Cognitive Operating System for simulation games.**
+**A game-agnostic cognitive runtime for persistent simulated societies.**
 
-Empneon is not an NPC dialogue system or chatbot mod. It is a reusable AI cognition framework that gives simulation game characters persistent identity, memory, relationships, and scheduled consciousness — running on consumer hardware.
+Empneon gives simulation-game characters persistent identity, memory, beliefs,
+relationships, and temporary AI reasoning while respecting explicit hardware or
+monetary budgets.
 
 > The game simulates the world. Empneon simulates the mind.
 
----
+## Project Contract
 
-## The Problem
+Empneon Core is independent of:
 
-Existing AI NPC systems ask: *"How do we make one NPC intelligent?"*
+- **Games.** Games integrate through adapters. The Sims 4 is the first reference
+  adapter and demo, not the product boundary.
+- **AI providers.** Local models in LM Studio, Ollama, or llama.cpp and hosted
+  providers are interchangeable through a capability-based provider interface.
+- **Hardware scale.** Cognition degrades predictably when CPU, RAM, VRAM, latency,
+  token, frame-time, or cost budgets are exhausted.
 
-Empneon asks: *"How do we make an entire simulated society computationally feasible while maintaining believable intelligence?"*
+The core owns cognition. An adapter only translates game events into generic
+Empneon events and validated Empneon decisions back into game actions.
 
-Running a full LLM for every NPC continuously is impossible on consumer hardware. Empneon solves this with **Cognitive Level of Detail (CLOD)** — the same principle graphics engines use for LOD, applied to cognition.
+## Core Model
 
----
+### Persistent identity, temporary consciousness
 
-## Core Concepts
-
-### Identity / Consciousness Separation
-
-Every character permanently exists as structured data (identity, personality, relationships, memories, goals). The LLM temporarily provides consciousness when reasoning is needed. When reasoning finishes, consciousness disappears. Identity remains.
+Characters remain structured data when no model is running. An LLM is a temporary
+reasoning resource, never the source of character identity.
 
 ### Cognitive Level of Detail (CLOD)
 
-| Level | Description | AI Cost |
+| Level | Resolution | Typical mechanism |
 |---|---|---|
-| CLOD 0 | Database only. Pure state. | None |
-| CLOD 1 | Rule-based deterministic simulation | None |
-| CLOD 2 | Lightweight local model reasoning | Low |
-| CLOD 3 | Full LLM: conversation, planning, memory | Medium |
-| CLOD 4 | Deep cognition: major story events, emotional conflicts | High |
+| CLOD 0 | Persistent state | Database and event records |
+| CLOD 1 | Deterministic simulation | Rules and bounded state updates |
+| CLOD 2 | Lightweight cognition | Small model or heuristic |
+| CLOD 3 | Interactive cognition | Conversation, planning, retrieval |
+| CLOD 4 | Exceptional cognition | Expensive reasoning for consequential events |
 
-Thousands of agents exist at CLOD 0–1. Only a handful ever reach CLOD 3–4 simultaneously.
+Every level consumes some resources. The scheduler selects the cheapest level that
+preserves a player-visible outcome within the configured budget.
 
-### Consciousness Scheduler
+### Enforced resource budgets
 
-Manages when agents think — like a CPU scheduler, but for cognition. Handles wake/sleep cycles, CLOD transitions, token budgeting, VRAM budgeting, and request batching.
+Empneon budgets only the resources left after the game and a safety reserve. When a
+request cannot be admitted, the scheduler must shorten, downgrade, defer, resolve by
+rules, or reject optional cognition instead of destabilizing the game.
 
----
+## Research Direction
 
-## Novel Innovations
+Empneon does not claim novelty from isolated techniques such as graph propagation,
+level of detail, emotional state vectors, or prefix caching. Its research program is:
 
-Six systems that distinguish Empneon from prior work:
+1. **Adaptive value-of-thought scheduling** under hard runtime budgets.
+2. **Epistemic social memory** with belief provenance, confidence, contradiction,
+   transmission, and distortion.
+3. **Typed, validated, replayable cognition** instead of direct LLM mutation.
+4. **SocietyBench**, a reproducible cost, consistency, and believability benchmark.
 
-1. **Gossip Protocol for Knowledge Propagation** — rumors and information spread through the social graph via epidemic algorithms. Truth distorts on weak edges, travels faithfully on strong ones. Zero LLM calls.
-
-2. **Emotion as Differential State** — emotional velocity, not labels. `sadness = (0.7, -0.02/tick)`. CLOD 0 runs the ODEs continuously. LLM wakes only at threshold crossings or sharp reversals.
-
-3. **Multi-Agent Speculative Batching** — when N agents witness the same event, one LLM call handles all of them via shared KV cache prefix. Solves the serialization bottleneck on consumer GPUs.
-
-4. **Personality as Sampling Parameter Modulation** — personality maps directly to inference hyperparameters (temperature, top-p, top-k). Zero prompt tokens consumed for personality.
-
-5. **Predictive Consciousness Pre-Warming** — learns behavioral patterns per agent, pre-loads context before triggers fire. Like CPU branch prediction for LLM latency.
-
-6. **Archetype Pool / Shared Consciousness Slots** — N similar background agents share one conscious episode. Per-member variation applied from stored difference vectors. Like GPU instanced rendering, for cognition.
-
----
+See [docs/innovations.md](docs/innovations.md) for hypotheses and validation gates.
 
 ## Architecture
 
-```
+```text
+Games
+├── Sims 4 reference adapter
+├── second portability adapter
+└── community adapters (Roblox, Unity, Unreal, custom engines, ...)
+            │
+            ▼
 Empneon Core
-├── Identity System       (SQLite — persistent character data)
-├── Memory Architecture   (SQLite + vector search + knowledge graph)
-├── CLOD Engine           (tiered cognition levels 0–4)
-├── Consciousness Scheduler
-├── LLM Provider Layer    (OpenAI-compatible — LM Studio, Ollama, llama.cpp, ...)
-├── Voice Provider Layer  (XTTS, Kokoro, Piper, ...)
-└── AI Directors          (World, Relationship, Drama, Narrative, Economy)
-
-Game Adapters
-└── Sims 4 Adapter        (first adapter — .ts4script)
-    └── [future adapters: InZOI, Skyrim, Unity, Unreal, ...]
+├── generic events, decisions, and state deltas
+├── identity, episodic memory, and social beliefs
+├── adaptive CLOD scheduler and resource governor
+├── provider capability routing
+└── observability and deterministic replay
+            │
+            ▼
+Providers
+├── LM Studio / Ollama / llama.cpp
+├── OpenAI-compatible endpoints
+├── hosted AI providers
+└── user-defined providers
 ```
 
----
+Backend-specific optimizations such as KV-cache reuse are optional capabilities,
+never requirements for running Empneon.
 
-## Hardware Target
+## Hardware Baseline
 
-Empneon is designed to run on consumer gaming hardware.
+Initial validation target:
 
-**Baseline:** Ryzen 7 4800H · RTX 2060 Laptop (6 GB VRAM) · 16 GB RAM
+- Ryzen 7 4800H
+- RTX 2060 Laptop with 6 GB VRAM
+- 16 GB RAM
+- The Sims 4 running concurrently with Empneon
 
-Every subsystem defines explicit CPU, RAM, VRAM, token, and latency budgets.
-
----
+No performance claim is accepted without an in-game benchmark. See
+[docs/roadmap.md](docs/roadmap.md).
 
 ## Status
 
-Early development. Core framework under construction.
+Version **0.2.0** is an early framework release.
 
-- [x] Vision and architecture documented
-- [x] Novel innovations specified
-- [x] Project scaffolded (src layout, pyproject.toml, CI, license)
-- [ ] Core framework implementation *(Phase 2 Memory Architecture: 2/8 complete)*
-- [ ] Sims 4 adapter
-- [ ] First public release
+- [x] Persistent identity and relationship storage
+- [x] Episodic memory and SQLite vector search
+- [x] Generic cognition contracts
+- [x] Provider capability contract
+- [x] Initial RAM/VRAM/concurrency resource governor
+- [x] Sims 4 connectivity proof of concept
+- [ ] Adaptive CLOD scheduler
+- [ ] Epistemic social memory
+- [ ] Sims 4 reference adapter using Empneon Core
+- [ ] Second adapter proving portability
+- [ ] In-game performance and believability benchmarks
 
-See [`docs/roadmap.md`](docs/roadmap.md) for full task breakdown.
+## Documentation
 
----
-
-## Docs
-
-| Document | Description |
-|---|---|
-| [`docs/vision.md`](docs/vision.md) | Full project vision and foundational architecture |
-| [`docs/innovations.md`](docs/innovations.md) | The six novel technical innovations |
-| [`docs/business-model.md`](docs/business-model.md) | Business model and monetization strategy |
-| [`docs/roadmap.md`](docs/roadmap.md) | Full development roadmap from current state to launch |
-
----
+- [Vision and architecture](docs/vision.md)
+- [Research and innovation program](docs/innovations.md)
+- [Business model](docs/business-model.md)
+- [Validated roadmap](docs/roadmap.md)
 
 ## License
 
-Apache 2.0 — free for modders and non-commercial use.
-Commercial use by studios shipping games will require a commercial license.
+Empneon Core is licensed under Apache 2.0, including commercial use. Revenue may
+come from hosting, production tooling, managed observability, integration, and
+support; use of the Apache-licensed core does not require a commercial license.

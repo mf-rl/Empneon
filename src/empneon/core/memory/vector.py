@@ -57,13 +57,13 @@ class VectorMemoryStore:
         if not rows:
             return []
         rowids = [r[0] for r in rows]
-        distances = {r[0]: r[1] for r in rows}
         placeholders = ",".join("?" * len(rowids))
         idx_rows = self._conn.execute(
             f"SELECT rowid, event_id FROM vec_memory_index WHERE rowid IN ({placeholders})",
             rowids,
         ).fetchall()
-        return [(r["event_id"], distances[r["rowid"]]) for r in idx_rows]
+        event_ids = {r["rowid"]: r["event_id"] for r in idx_rows}
+        return [(event_ids[r[0]], r[1]) for r in rows]
 
     def delete(self, event_id: str) -> None:
         row = self._conn.execute(
@@ -71,10 +71,10 @@ class VectorMemoryStore:
         ).fetchone()
         if row is not None:
             self._conn.execute("DELETE FROM vec_memories WHERE rowid=?", (row[0],))
-            self._conn.execute(
-                "DELETE FROM vec_memory_index WHERE event_id=?", (event_id,)
-            )
+            self._conn.execute("DELETE FROM vec_memory_index WHERE event_id=?", (event_id,))
             self._conn.commit()
 
     def _pack(self, embedding: list[float]) -> bytes:
+        if len(embedding) != self._dim:
+            raise ValueError(f"expected {self._dim} dimensions, got {len(embedding)}")
         return struct.pack(f"{self._dim}f", *embedding)

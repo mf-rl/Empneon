@@ -47,6 +47,8 @@ def export_agent(agent_id: str, stores: IdentityStores) -> dict[str, Any]:
 
 def import_agent(data: dict[str, Any], stores: IdentityStores) -> Agent:
     """Write a previously exported snapshot into stores. Idempotent — safe to reimport."""
+    if data.get("version") != SERIALIZATION_VERSION:
+        raise ValueError(f"unsupported identity version: {data.get('version')!r}")
     agent = Agent(**data["agent"])
     if stores.agents.get(agent.id) is None:
         stores.agents.create(agent)

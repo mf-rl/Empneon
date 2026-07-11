@@ -36,8 +36,11 @@ def _populate(stores: IdentityStores) -> Agent:
     stores.relationships.set(Relationship(a.id, b.id, "friend", strength=0.8, trust=0.9))
     stores.emotions.set(EmotionalState(a.id, "joy", value=0.7, velocity=0.01))
     stores.goals.create(Goal(agent_id=a.id, description="Open a restaurant", priority=0.9))
-    stores.voice.set(VoiceProfile(a.id, provider="xtts", voice_id="alice_01", speed=1.1,
-                                  settings={"language": "en"}))
+    stores.voice.set(
+        VoiceProfile(
+            a.id, provider="xtts", voice_id="alice_01", speed=1.1, settings={"language": "en"}
+        )
+    )
     return a
 
 
@@ -127,3 +130,8 @@ def test_reimport_is_idempotent(stores: IdentityStores) -> None:
     import_agent(snapshot, stores)  # second import into same DB — must not raise
     assert stores.agents.get(a.id) is not None
     assert len(stores.goals.get_all(a.id)) == 1  # no duplicates
+
+
+def test_import_rejects_unknown_version(stores: IdentityStores) -> None:
+    with pytest.raises(ValueError, match="unsupported identity version"):
+        import_agent({"version": 999}, stores)

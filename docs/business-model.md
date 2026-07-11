@@ -1,74 +1,121 @@
-# Empneon — Business Model
+# Empneon Business Model
 
-## Market Position
+**Version:** 0.2
 
-**Target users:**
-- Modders (Sims 4, Skyrim, etc.) — distribution channel, not revenue
-- Indie/AA game studios — primary paying customer
-- Researchers — awareness, not revenue
+## Product Position
 
-**Competitive landscape:**
-- Inworld AI — ~$50M raised, cloud-dependent, $0.001–0.01/NPC interaction
-- Convai — similar cloud model
-- No open-source, local-first, game-agnostic alternative exists
+Empneon is infrastructure for developers building simulation, sandbox, management,
+role-playing, and social games with persistent consequential agents.
 
-**Empneon's defensible position:** Local-first + open-source + game-agnostic + no per-call cloud bill.
+The initial customer profile is an indie or AA team operating roughly 20-200 important
+NPCs under strict latency, hardware, or inference-cost constraints.
 
-## Model: Open Core + Cloud
+The Sims 4 community is the first demonstration and distribution wedge. It is not the
+only supported game and is not the primary source of revenue. A second adapter must
+prove portability before Empneon is marketed as a general platform.
 
-### Empneon Core — Open Source (Forever)
-- Full framework, all innovations, Sims 4 adapter
-- MIT or Apache 2.0 license
-- Purpose: community, trust, moat against funded competitors
+## Customer Problem
 
-### Empneon Cloud — Hosted Consciousness (Revenue)
-- Developers who can't/won't run local LLMs pay for hosted scheduling
-- Pricing: per agent-hour or per 1000 conscious episodes
-- Can undercut Inworld because CLOD means most agents never reach billable inference
-- Target: indie studios, prototype builders, cloud-native game backends
+Studios need more than natural dialogue. They need:
 
-### Commercial License — Studio Shipping (Revenue)
-- Free for modders and non-commercial use
-- Paid license for studios shipping commercial products with Empneon embedded
-- Similar to: Unity runtime license, Unreal royalty model
+- predictable inference cost and game performance
+- authorial control and game-rule validation
+- persistent identity and social consequences
+- model and deployment flexibility
+- debugging, attribution, replay, and evaluation
+- graceful behavior during model failure or resource pressure
 
-### Support Contracts (Revenue)
-- Red Hat model: open source is free, support is paid
-- Target: studios integrating Empneon who need SLA, custom adapters, training
+Empneon should sell reliability and control for simulated societies, not a claim that
+NPCs are generally intelligent.
 
-## Sequencing
+## Defensible Position
 
-**Phase 1 — Prove it (months 1–12)**
-- Build framework open-source
-- Ship Sims 4 adapter
-- Modding community adopts it, creates content, creates noise
-- Zero monetization
+Local-first and provider-agnostic deployment are requirements, not sufficient moats.
+The intended differentiation is measurable:
 
-**Phase 2 — Expand it (months 12–24)**
-- Indie devs discover it via modding community visibility
-- Second game adapter (InZOI, or a Unity/Unreal template)
-- Document clearly, developer experience becomes a priority
-- Start commercial license conversations
+> More coherent persistent agents per unit of latency, memory, and inference cost,
+> with developer-visible causality and control.
 
-**Phase 3 — Monetize it (months 18–36)**
-- Launch Empneon Cloud
-- Formalize commercial license
-- Support contracts for serious studio integrations
+Potential defensibility comes from the adaptive scheduler, epistemic simulation,
+benchmark corpus, integration experience, and production observability data.
 
-## What to Avoid
+## Revenue Model
 
-- **Charging modders** — they fork it, community dies
-- **Closing the license** (HashiCorp/Redis style) — destroys trust, community leaves
-- **Targeting AAA first** — they build in-house, ignore you
-- **Cloud-only** — defeats the local-first differentiator
-- **Monetizing before community exists** — no leverage, no users
+### Apache-Licensed Core
 
-## Revenue Projections (rough order of magnitude)
+Empneon Core remains Apache 2.0 and permits commercial use. Studios do not owe a fee
+merely for embedding the core.
 
-Not financial advice. Illustrative only.
+### Hosted Runtime
 
-- 10 indie studios on commercial license at $500/year = $5K ARR (year 2)
-- 50 studios + cloud users at ~$50/month average = $30K ARR (year 3)
-- 1 mid-size studio support contract = $20–50K/year
+Optional managed provider routing, scheduling, persistence, and observability. Build
+this only after design partners demonstrate demand. Pricing should emphasize
+predictability, with inference cost passed through or clearly metered.
 
-This is a slow build. The modding community is the wedge. Revenue follows adoption, not the other way around.
+### Developer and Operations Tooling
+
+Potential paid tooling includes:
+
+- agent and belief timelines
+- decision explanations and replay
+- CLOD, latency, token, and memory heatmaps
+- scenario evaluation and regression runs
+- production alerts and managed observability
+
+### Integration and Support
+
+Paid adapter work, architecture reviews, performance tuning, training, enterprise
+self-hosting support, and service-level agreements can generate the earliest revenue.
+
+## Validation Gates
+
+Do not build billing or a broad cloud platform before:
+
+1. A Sims 4 vertical slice produces persistent autonomous social consequences.
+2. At least 100 testers use the demonstration repeatedly.
+3. At least 15 target developers have been interviewed.
+4. A second adapter works without game-specific changes to the core model.
+5. Three studios participate as design partners.
+6. At least one studio pays for integration, tooling, or support.
+
+## Go-To-Market Sequence
+
+### Prove
+
+- Ship the Sims 4 reference experience.
+- Publish SocietyBench results and raw hardware measurements.
+- Demonstrate provider replacement between local and hosted models.
+
+### Prove Portability
+
+- Build one small but materially different adapter, such as a minimal Unity or Roblox
+  experience.
+- Publish an adapter guide and contract tests.
+
+### Sell Services and Tooling
+
+- Recruit indie and AA design partners.
+- Charge for integration, debugging tools, and production support.
+
+### Host Repeated Demand
+
+- Add hosted scheduling and observability only after customers request managed
+  operation and unit economics are known.
+
+## What To Avoid
+
+- Charging modders for the Apache-licensed core
+- Claiming commercial license revenue from Apache-licensed code
+- Building adapters for many games before proving the second one
+- Building cloud billing before customer validation
+- Competing on generic NPC dialogue
+- Publishing unmeasured scalability or hardware claims
+
+## Business Success Measures
+
+- active integrations and retained developers
+- time required to build an adapter
+- percentage of cognition resolved without expensive inference
+- predictable cost per simulated agent-hour
+- benchmarked improvement over a simple baseline
+- paid design partners and support renewals

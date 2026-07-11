@@ -61,3 +61,8 @@ def test_search_result_ordered_by_distance(store: VectorMemoryStore) -> None:
     results = store.search(_vec(1.0), limit=2)
     assert results[0][0] == "near"
     assert results[0][1] < results[1][1]
+
+
+def test_rejects_wrong_embedding_dimensions(store: VectorMemoryStore) -> None:
+    with pytest.raises(ValueError, match="expected 4 dimensions, got 2"):
+        store.upsert("bad", [1.0, 2.0])

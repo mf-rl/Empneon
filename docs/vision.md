@@ -1,420 +1,170 @@
-# Empneon — Project Vision & Foundational Architecture
+# Empneon Project Vision
 
-**Version:** 0.1 (Foundational Vision)
+**Version:** 0.2
+**Status:** Foundational specification
 
----
+## Purpose
 
-## Executive Summary
+Empneon is a game-agnostic cognitive runtime for simulated societies. It provides
+persistent identities and selectively allocates AI reasoning while keeping game
+performance and operating cost within explicit limits.
 
-Empneon is an open-source Cognitive Operating System (Cognitive OS) for simulation games.
+Empneon is not a chatbot framework, a Sims-only mod, or an LLM that continuously
+pretends to be an NPC.
 
-Its purpose is not to create better chatbots or NPC dialogue systems. Instead, Empneon provides a complete cognitive framework that enables persistent digital identities capable of thinking, remembering, learning, evolving, and interacting naturally within simulated worlds.
+## Non-Negotiable Principles
 
-The first implementation target is **The Sims 4**, but the architecture is intentionally designed to be game-agnostic. The Sims 4 is merely the first adapter built on top of the framework.
+### 1. The core is game-agnostic
 
-Future adapters may include games such as InZOI, Skyrim, Fallout, Unity-based games, Unreal Engine games, Roblox experiences, Stardew Valley mods, and entirely new simulation games.
+Empneon Core contains no Sims, Roblox, Unity, Unreal, animation, or game-specific
+interaction concepts. It exchanges generic contracts with adapters:
 
-Empneon is therefore not a Sims mod.
-
-It is a reusable AI cognition framework.
-
----
-
-## The Core Philosophy
-
-Existing AI NPC systems usually ask:
-
-> "How can we make an NPC intelligent?"
-
-Empneon asks a different question:
-
-> "How can we make an entire simulated society computationally feasible while maintaining believable intelligence?"
-
-This distinction defines the entire architecture.
-
----
-
-## The Main Innovation
-
-The most important innovation is the separation between **Identity** and **Consciousness**.
-
-Traditional AI NPC systems usually treat an NPC as the current LLM prompt.
-
-Empneon does not.
-
-Instead, every character permanently exists as structured data.
-
-A character owns:
-
-- Identity
-- Personality
-- Relationships
-- Memories
-- Goals
-- Knowledge
-- Emotional State
-- Voice Profile
-- Preferences
-- Behavioral Rules
-
-These are stored persistently in databases and structured data.
-
-The Large Language Model is **not** the character.
-
-The LLM temporarily provides consciousness.
-
-When reasoning finishes, consciousness disappears.
-
-Identity remains.
-
-This allows rich AI characters without requiring continuous LLM execution.
-
----
-
-## Consciousness is a Scheduled Resource
-
-This is one of the defining concepts of Empneon.
-
-Characters are not continuously thinking.
-
-Instead:
-
-```
-Persistent Identity
-↓
-Dormant
-↓
-Reasoning Required
-↓
-Temporary Consciousness
-↓
-Decision
-↓
-Persist Changes
-↓
-Dormant
+```text
+game observation -> WorldEvent -> Empneon Core
+Empneon Core -> Decision + StateDelta -> game adapter
+game adapter -> ActionResult -> Empneon Core
 ```
 
-Thinking becomes an expensive resource managed by the engine.
+The Sims 4 is adapter number one and the first public demonstration. A deliberately
+different second adapter must prove that the core contracts are portable. Roblox,
+Unity, Unreal, and other integrations are adapter candidates, not core dependencies.
 
-This is similar to how operating systems schedule CPU time.
+### 2. The core is provider-agnostic
 
----
+Identity and memory never contain model references. Reasoning is requested through a
+small provider protocol. A provider declares capabilities such as structured output,
+streaming, batching, prefix caching, embeddings, locality, and context size.
 
-## Cognitive Level of Detail (CLOD)
+Supported deployments may include:
 
-Graphics engines introduced Level of Detail (LOD).
+- LM Studio, Ollama, llama.cpp, and other local runtimes
+- OpenAI-compatible HTTP endpoints
+- hosted AI providers
+- user-written provider plugins
+- mixed routing, with different providers per CLOD level
 
-Physics engines introduced sleeping rigid bodies.
+Basic generation must work everywhere. Backend-specific optimizations are enabled
+only when declared and measured.
 
-Empneon introduces **Cognitive Level of Detail (CLOD)**.
+### 3. Resource constraints are runtime invariants
 
-Each agent operates at one of several cognition levels.
+The game has priority over optional cognition. Empneon operates inside the resources
+remaining after current game use and a configurable safety reserve.
 
-| Level | Description |
-|---|---|
-| CLOD 0 | Database only. No reasoning. No CPU usage. No AI. |
-| CLOD 1 | Rule-based simulation. Simple deterministic updates. No LLM. |
-| CLOD 2 | Lightweight reasoning. Small local models. Quick decisions. |
-| CLOD 3 | Interactive cognition. Conversation. Planning. Memory retrieval. Relationship updates. |
-| CLOD 4 | Deep cognition. Major story events. Emotional conflicts. Life-changing decisions. Expensive reasoning. |
+Budgets cover:
 
-Only a tiny number of agents should ever exist at CLOD 4 simultaneously.
+- CPU utilization and simulation tick time
+- RAM and VRAM
+- concurrent requests
+- prompt and completion tokens
+- p50 and p95 latency
+- game frame time or minimum FPS
+- monetary cost for hosted providers
 
-CLOD allows thousands of agents to exist while only a handful actively consume AI resources.
+If a request exceeds budget, Empneon follows a deterministic degradation path:
 
-This concept is considered one of Empneon's primary architectural innovations.
-
----
-
-## Performance-First Architecture
-
-Performance is not an optimization step.
-
-Performance is a design principle.
-
-Empneon must run on consumer hardware.
-
-**Baseline development machine:**
-- Ryzen 7 4800H
-- RTX 2060 Laptop (6 GB VRAM)
-- 16 GB RAM
-
-If Empneon runs well on this machine, it should run well for a large percentage of gamers.
-
-Every subsystem must define:
-- CPU cost
-- RAM usage
-- VRAM usage
-- Token budget
-- Latency budget
-
-No subsystem may assume unlimited resources.
-
----
-
-## Consciousness Scheduler
-
-Empneon contains a scheduler responsible for cognition.
-
-Responsibilities include:
-- Waking agents
-- Sleeping agents
-- Managing CLOD
-- Token budgeting
-- GPU budgeting
-- Request batching
-- Queue prioritization
-- Predictive loading
-- Model selection
-- Performance monitoring
-
-This component is conceptually similar to a CPU scheduler in an operating system.
-
----
-
-## Persistent Identity
-
-Every character owns persistent data independent of any AI model.
-
-Identity includes:
-- Name
-- Age
-- Family
-- Occupation
-- Personality
-- Traits
-- Preferences
-- Relationships
-- Memories
-- Emotional history
-- Voice profile
-- Knowledge graph
-- Long-term goals
-
-Identity survives:
-- Game restarts
-- Computer restarts
-- AI model changes
-
-The character exists independently of whichever LLM is currently being used.
-
----
-
-## Memory Architecture
-
-Memories are not stored inside prompts.
-
-Instead they exist inside structured storage:
-- SQLite
-- Knowledge Graph
-- Vector Search
-- Summaries
-
-Memory retrieval only supplies relevant memories to the reasoning process.
-
-Empneon never attempts to load every memory into an LLM.
-
----
-
-## Knowledge Graph
-
-Empneon should gradually evolve from plain text memories into a semantic knowledge graph.
-
-Instead of storing: `"Bob met Alice."`
-
-The engine stores relationships between entities:
-
-```
-Bob
-└─[Friend Of]─► Alice
-               └─[Works At]─► Hospital
-                              └─[Located In]─► Willow Creek
+```text
+preferred cognition
+-> shorter context or response
+-> smaller model
+-> lower CLOD
+-> deterministic rule
+-> defer or reject optional work
 ```
 
-Reasoning becomes more consistent and scalable.
+An out-of-memory condition or unavailable provider must not crash the game.
 
----
+### 4. Claims require evidence
 
-## Society-Centric Design
+Prior art exists for simulation level of detail, cognitive architectures, affective
+agents, social gossip, batching, and KV caching. Empneon will distinguish hypotheses,
+implemented features, benchmarked results, and validated product claims.
 
-Empneon does not think in terms of isolated NPCs.
+## Identity and Consciousness
 
-It models societies.
+Every agent permanently exists as structured state:
 
-Important systems include:
-- Relationship Network
-- Community Dynamics
-- Social Groups
-- Families
-- Organizations
-- Economies
-- Neighborhoods
+- identity and adapter mapping
+- personality and preferences
+- relationships and goals
+- emotional state
+- episodic memory
+- beliefs, sources, and confidence
+- voice profile
 
-Emergent stories should arise naturally from interactions between many persistent identities.
+An LLM temporarily provides reasoning. The resulting decision is validated and
+persisted as data; the model session may then disappear without erasing the agent.
 
----
+## Cognitive Level of Detail
 
-## AI Directors
+CLOD is Empneon's vocabulary for selecting cognitive resolution. It is an application
+of established level-of-detail principles, not a novelty claim by itself.
 
-Instead of a single director, Empneon will eventually support multiple specialized directors:
+| Level | Function | Budget behavior |
+|---|---|---|
+| 0 | Stored state and event history | No model inference; bounded storage work |
+| 1 | Rules and deterministic updates | Bounded CPU per simulation tick |
+| 2 | Cheap approximate reasoning | Small model or heuristic under a short deadline |
+| 3 | Interactive reasoning | Retrieved context and normal conversation/planning |
+| 4 | Consequential reasoning | Rare, expensive, and explicitly budgeted |
 
-- World Director
-- Relationship Director
-- Drama Director
-- Narrative Director
-- Economy Director
+The long-term scheduler should estimate the expected player-visible value of deeper
+reasoning and choose the cheapest sufficient resolution.
 
-Each monitors different aspects of the simulation and proposes opportunities for meaningful interactions.
+## Typed Cognition
 
-The Directors do not control characters.
+Model output does not directly mutate a game or database. Providers return content;
+Empneon parses it into typed decisions and state deltas. The core validates those
+changes against adapter capabilities and simulation rules before committing them.
 
-They create opportunities.
+Every committed decision should be attributable and replayable:
 
-Characters remain autonomous.
+- triggering event
+- memories and beliefs considered
+- provider and model metadata, outside identity
+- selected CLOD and resource estimate
+- proposed and accepted state changes
+- action result from the game
 
----
+## Epistemic Social Memory
 
-## Game Adapters
+Empneon separates canonical events from agent beliefs. An agent may observe an event,
+misinterpret it, hear a distorted account, encounter a contradiction, or revise a
+belief. Each belief records provenance and confidence.
 
-Empneon is independent from any game. Games provide adapters.
+This supports secrets, lies, rumors, investigations, misunderstandings, reputation,
+and reconciliation while remaining inspectable by developers.
 
-```
-Empneon Core
-↓
-Game Adapter
-↓
-Game API
-↓
-Simulation
-```
+## Directors
 
-The Sims 4 becomes Adapter #1. Future adapters may target entirely different engines.
+Directors are optional policy modules that propose opportunities. They do not bypass
+the scheduler, force character decisions, or mutate game state. World, relationship,
+drama, narrative, and economy directors should exist only when a validated use case
+requires them.
 
----
+## Hardware Profiles
 
-## AI Model Independence
+Initial profiles are conservative and configurable:
 
-Empneon should never depend on a specific model.
+- **Minimum:** CPU or small-model inference, one conscious agent, CLOD 0-2 default
+- **Baseline:** RTX 2060 6 GB and 16 GB RAM while The Sims 4 is running
+- **Recommended:** larger VRAM/RAM budget enabling more concurrency and caching
 
-Supported providers may include:
-- LM Studio
-- Ollama
-- llama.cpp
-- KoboldCPP
-- OpenAI-compatible APIs
-- Cloud providers
-- Future reasoning systems
+The baseline is a validation target, not proof of feasibility. Measurements must be
+taken with the game running, including frame time, model memory, KV-cache memory,
+queue latency, tokens per second, and recovery behavior.
 
-The AI provider is replaceable. The framework remains unchanged.
+## Success Criteria
 
----
+Empneon succeeds when it demonstrates that developers can:
 
-## Voice Independence
-
-Voice synthesis is modular.
-
-Potential providers include:
-- XTTS
-- Kokoro
-- Piper
-- StyleTTS2
-- ElevenLabs
-- OpenAI TTS
-- Future engines
-
-Characters own voice profiles independent of the synthesis engine.
-
----
-
-## Sims 4 Implementation
-
-The first implementation target is The Sims 4.
-
-The existing proof-of-concept already supports:
-- Local LLM
-- LM Studio integration
-- Python `.ts4script`
-- Cheat console conversations
-
-Future work includes:
-- Social interactions
-- Dynamic interaction menus
-- Phone application
-- Messaging
-- Notifications
-- Conversation sessions
-- Relationship visualization
-- Autonomous NPC conversations
-- Emotion-aware animations
-- Voice playback
-- Story generation
-
-The Sims implementation should become an adapter built on top of the general framework rather than containing game-specific business logic.
-
----
-
-## Development Philosophy
-
-Empneon should be developed like a professional software platform.
-
-- Documentation first
-- Architecture first
-- Specifications before implementation
-
-Every feature should have:
-1. Requirements
-2. Acceptance Criteria
-3. Performance Budget
-4. Tests
-5. Documentation
-6. Implementation
-
-Codex or Claude should be treated as implementation engineers rather than software architects.
-
-Architectural decisions remain human-driven.
-
----
-
-## Long-Term Vision
-
-Empneon aims to become the standard cognitive framework for simulation games.
-
-It should eventually provide:
-- Persistent digital identities
-- Temporary consciousness
-- Emergent storytelling
-- Scalable cognition
-- Plugin-based AI providers
-- Plugin-based voice systems
-- Plugin-based game adapters
-- Open architecture
-- Excellent documentation
-- Strong developer experience
-- Community contributions
-
----
-
-## Elevator Pitch
-
-Empneon is an open-source Cognitive Operating System for simulation games.
-
-Rather than making every NPC continuously intelligent, Empneon treats consciousness as a scheduled computational resource.
-
-Characters maintain persistent identities, memories, relationships, goals, and emotional histories while only becoming consciously active when meaningful reasoning is required.
-
-Its Cognitive Level of Detail (CLOD) architecture enables rich, emergent societies to run efficiently on consumer hardware, making advanced AI simulation practical for real games rather than only research environments or cloud-scale infrastructure.
-
----
+1. Integrate two materially different games without changing core domain concepts.
+2. Replace local or hosted model providers without changing identity or game code.
+3. Run persistent multi-agent behavior inside a strict resource budget.
+4. Inspect and replay why an agent made a decision.
+5. Achieve better cost-to-believability than a one-LLM-call-per-agent baseline.
 
 ## Guiding Principle
 
-> Memory is permanent.  
-> Consciousness is temporary.  
-> Identity persists.  
-> Thought is scheduled.  
->
-> The game simulates the world.  
-> Empneon simulates the mind.
-
-This principle should guide every architectural decision made throughout the lifetime of the project.
+> Memory persists. Consciousness is temporary. Identity is provider-independent.
+> Thought is scheduled. The game simulates the world; Empneon simulates the mind.
