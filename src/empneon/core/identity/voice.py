@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 @dataclass
 class VoiceProfile:
     agent_id: str
-    provider: str | None = None     # e.g. "xtts", "kokoro", "piper", "elevenlabs"
-    voice_id: str | None = None     # provider-specific voice identifier
-    speed: float = 1.0              # playback speed multiplier
-    pitch: float = 1.0              # pitch multiplier
+    provider: str | None = None  # e.g. "xtts", "kokoro", "piper", "elevenlabs"
+    voice_id: str | None = None  # provider-specific voice identifier
+    speed: float = 1.0  # playback speed multiplier
+    pitch: float = 1.0  # pitch multiplier
     settings: dict[str, object] = field(default_factory=dict)  # provider-specific extras
 
 
@@ -19,7 +19,7 @@ class VoiceProfileStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def set(self, profile: VoiceProfile) -> VoiceProfile:
+    def set(self, profile: VoiceProfile, *, commit: bool = True) -> VoiceProfile:
         self._conn.execute(
             "INSERT INTO voice_profiles"
             "(agent_id, provider, voice_id, speed, pitch, settings)"
@@ -39,7 +39,8 @@ class VoiceProfileStore:
                 json.dumps(profile.settings),
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return profile
 
     def get(self, agent_id: str) -> "VoiceProfile | None":

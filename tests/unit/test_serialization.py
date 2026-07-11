@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 import pytest
 
@@ -15,6 +16,10 @@ from empneon.db.connection import open_db
 
 @pytest.fixture()
 def stores() -> IdentityStores:
+    return _stores()
+
+
+def _stores() -> IdentityStores:
     conn = open_db(":memory:")
     return IdentityStores(
         agents=AgentStore(conn),
@@ -135,3 +140,49 @@ def test_reimport_is_idempotent(stores: IdentityStores) -> None:
 def test_import_rejects_unknown_version(stores: IdentityStores) -> None:
     with pytest.raises(ValueError, match="unsupported identity version"):
         import_agent({"version": 999}, stores)
+
+
+def test_import_rolls_back_every_layer_on_late_failure(stores: IdentityStores) -> None:
+    alice = _populate(stores)
+    snapshot = export_agent(alice.id, stores)
+    assert snapshot["voice_profile"] is not None
+    snapshot["voice_profile"]["speed"] = 0.0
+
+    target = _stores()
+    bob = next(agent for agent in stores.agents.list_all() if agent.id != alice.id)
+    target.agents.create(bob)
+
+    with pytest.raises(sqlite3.IntegrityError, match="voice speed"):
+        import_agent(snapshot, target)
+
+    assert target.agents.get(alice.id) is None
+    assert target.personality.get(alice.id) is None
+    assert target.relationships.get_all(alice.id) == []
+    assert target.emotions.get_all(alice.id) == []
+    assert target.goals.get_all(alice.id) == []
+    assert target.voice.get(alice.id) is None
+
+
+def test_failed_reimport_restores_existing_identity(stores: IdentityStores) -> None:
+    alice = _populate(stores)
+    snapshot = export_agent(alice.id, stores)
+    snapshot["agent"]["name"] = "Changed"
+    assert snapshot["voice_profile"] is not None
+    snapshot["voice_profile"]["speed"] = 0.0
+
+    with pytest.raises(sqlite3.IntegrityError):
+        import_agent(snapshot, stores)
+
+    persisted = stores.agents.get(alice.id)
+    assert persisted is not None
+    assert persisted.name == "Alice"
+
+
+def test_import_rejects_stores_using_different_connections(stores: IdentityStores) -> None:
+    alice = _populate(stores)
+    snapshot = export_agent(alice.id, stores)
+    target = _stores()
+    target.voice = VoiceProfileStore(open_db(":memory:"))
+
+    with pytest.raises(ValueError, match="share one database connection"):
+        import_agent(snapshot, target)

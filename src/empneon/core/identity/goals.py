@@ -14,8 +14,8 @@ GOAL_ABANDONED = "abandoned"
 class Goal:
     agent_id: str
     description: str
-    priority: float = 0.5       # 0.0 (low) to 1.0 (critical)
-    status: str = GOAL_ACTIVE   # active | completed | abandoned
+    priority: float = 0.5  # 0.0 (low) to 1.0 (critical)
+    status: str = GOAL_ACTIVE  # active | completed | abandoned
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: int = field(default_factory=lambda: int(time.time()))
     updated_at: int = field(default_factory=lambda: int(time.time()))
@@ -46,7 +46,7 @@ class GoalStore:
         self._conn.commit()
         return goal
 
-    def set(self, goal: Goal) -> Goal:
+    def set(self, goal: Goal, *, commit: bool = True) -> Goal:
         """Upsert by id — used during identity import."""
         self._conn.execute(
             "INSERT INTO goals"
@@ -67,7 +67,8 @@ class GoalStore:
                 goal.updated_at,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return goal
 
     def get(self, goal_id: str) -> "Goal | None":
@@ -86,8 +87,7 @@ class GoalStore:
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT * FROM goals WHERE agent_id=?"
-                " ORDER BY priority DESC, created_at ASC",
+                "SELECT * FROM goals WHERE agent_id=? ORDER BY priority DESC, created_at ASC",
                 (agent_id,),
             ).fetchall()
         return [_to_goal(r) for r in rows]

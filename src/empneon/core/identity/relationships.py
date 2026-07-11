@@ -11,8 +11,8 @@ class Relationship:
     agent_id: str
     target_agent_id: str
     relationship_type: str
-    strength: float = 0.0   # -1.0 (antagonistic) to 1.0 (close)
-    trust: float = 0.5      # 0.0 to 1.0 — governs gossip fidelity
+    strength: float = 0.0  # -1.0 (antagonistic) to 1.0 (close)
+    trust: float = 0.5  # 0.0 to 1.0 — governs gossip fidelity
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     updated_at: int = field(default_factory=lambda: int(time.time()))
 
@@ -21,7 +21,7 @@ class RelationshipStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def set(self, rel: Relationship) -> Relationship:
+    def set(self, rel: Relationship, *, commit: bool = True) -> Relationship:
         rel.updated_at = int(time.time())
         self._conn.execute(
             "INSERT INTO relationships"
@@ -42,7 +42,8 @@ class RelationshipStore:
                 rel.updated_at,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return rel
 
     def get(self, agent_id: str, target_agent_id: str) -> Relationship | None:

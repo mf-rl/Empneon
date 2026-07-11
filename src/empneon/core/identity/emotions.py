@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 class EmotionalState:
     agent_id: str
     emotion: str
-    value: float = 0.0         # current intensity, 0.0–1.0
-    velocity: float = 0.0      # rate of change per tick
+    value: float = 0.0  # current intensity, 0.0–1.0
+    velocity: float = 0.0  # rate of change per tick
     acceleration: float = 0.0  # rate of velocity change per tick
     updated_at: int = field(default_factory=lambda: int(time.time()))
 
@@ -19,7 +19,7 @@ class EmotionalStateStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def set(self, state: EmotionalState) -> EmotionalState:
+    def set(self, state: EmotionalState, *, commit: bool = True) -> EmotionalState:
         state.updated_at = int(time.time())
         self._conn.execute(
             "INSERT INTO emotional_states"
@@ -39,7 +39,8 @@ class EmotionalStateStore:
                 state.updated_at,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return state
 
     def get(self, agent_id: str, emotion: str) -> EmotionalState | None:

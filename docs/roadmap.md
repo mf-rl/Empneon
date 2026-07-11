@@ -16,7 +16,7 @@ code exists.
 - [x] Define the LLM provider capability protocol
 - [x] Implement initial RAM, VRAM, and concurrency admission control
 - [x] Add real schema migrations and database range constraints
-- [ ] Make multi-store identity import atomic and version-validated
+- [x] Make multi-store identity import atomic and version-validated
 
 ## Stage 1: Minimal Runtime Vertical Slice
 
@@ -125,5 +125,5 @@ Begin only after repeated customer demand:
 
 ## Current Focus
 
-Complete Stage 0, then build the smallest Stage 1 path from a generic event to a
+Stage 0 is complete. Build the smallest Stage 1 path from a generic event to a
 validated, budget-admitted decision using one local OpenAI-compatible provider.

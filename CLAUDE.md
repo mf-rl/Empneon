@@ -65,6 +65,7 @@ performance numbers until measured in-game.
 - Identity, personality, relationships, emotional state, goals, and voice persistence
 - Episodic events and SQLite vector search
 - Transactional schema migrations and database-enforced identity ranges
+- Atomic, version-validated identity snapshot import
 - Generic cognition contracts
 - LLM provider capability protocol
 - Initial RAM/VRAM/concurrency resource governor
@@ -76,11 +77,10 @@ autonomous game action.
 
 ## Current Work Order
 
-1. Make multi-store identity import atomic and version-validated.
-2. Implement the minimal generic adapter and action-result contract.
-3. Implement one OpenAI-compatible local provider.
-4. Build a budgeted event-to-decision vertical slice.
-5. Move the Sims POC onto that path.
-6. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
+1. Implement the minimal generic adapter and action-result contract.
+2. Implement one OpenAI-compatible local provider.
+3. Build a budgeted event-to-decision vertical slice.
+4. Move the Sims POC onto that path.
+5. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

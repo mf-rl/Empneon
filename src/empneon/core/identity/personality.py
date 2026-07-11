@@ -18,7 +18,7 @@ class PersonalityStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def set(self, personality: Personality) -> Personality:
+    def set(self, personality: Personality, *, commit: bool = True) -> Personality:
         self._conn.execute(
             "INSERT INTO personality"
             "(agent_id, openness, conscientiousness, extraversion, agreeableness, neuroticism)"
@@ -38,7 +38,8 @@ class PersonalityStore:
                 personality.neuroticism,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return personality
 
     def get(self, agent_id: str) -> Personality | None:
