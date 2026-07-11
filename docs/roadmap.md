@@ -31,7 +31,7 @@ Check items off as completed. This is the source of truth for session continuity
 - [x] Relationship graph schema (agent-to-agent edges with weight + type)
 - [x] Emotional state storage (value + velocity + acceleration per emotion)
 - [x] Long-term goals schema
-- [ ] Voice profile schema
+- [x] Voice profile schema
 - [ ] Identity serialization / deserialization
 - [ ] Identity survives: game restart, computer restart, model change (integration test)
 
@@ -254,4 +254,4 @@ Check items off as completed. This is the source of truth for session continuity
 
 **Phase 0 complete.** Working on Phase 1 — Core: Identity System.
 
-Next immediate task: Voice profile schema.
+Next immediate task: Identity serialization / deserialization.
