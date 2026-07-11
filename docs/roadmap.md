@@ -41,7 +41,7 @@ Check items off as completed. This is the source of truth for session continuity
 *Structured memory storage — never load all memories into LLM.*
 
 - [x] SQLite episodic memory store (events, timestamps, participants)
-- [ ] Vector search integration (`sqlite-vec` or `chromadb`)
+- [x] Vector search integration (`sqlite-vec`)
 - [ ] Memory embedding pipeline (local embedding model)
 - [ ] Relevance scoring for memory retrieval
 - [ ] Knowledge graph (`NetworkX` — nodes: entities, edges: relationships)
@@ -256,4 +256,4 @@ Check items off as completed. This is the source of truth for session continuity
 
 **Phase 1 complete.** Working on Phase 2 — Core: Memory Architecture.
 
-Next immediate task: Vector search integration (sqlite-vec or chromadb).
+Next immediate task: Memory embedding pipeline (local embedding model).
