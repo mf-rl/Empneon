@@ -46,6 +46,30 @@ class GoalStore:
         self._conn.commit()
         return goal
 
+    def set(self, goal: Goal) -> Goal:
+        """Upsert by id — used during identity import."""
+        self._conn.execute(
+            "INSERT INTO goals"
+            "(id, agent_id, description, priority, status, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?)"
+            " ON CONFLICT(id) DO UPDATE SET"
+            " description=excluded.description,"
+            " priority=excluded.priority,"
+            " status=excluded.status,"
+            " updated_at=excluded.updated_at",
+            (
+                goal.id,
+                goal.agent_id,
+                goal.description,
+                goal.priority,
+                goal.status,
+                goal.created_at,
+                goal.updated_at,
+            ),
+        )
+        self._conn.commit()
+        return goal
+
     def get(self, goal_id: str) -> "Goal | None":
         row = self._conn.execute(
             "SELECT * FROM goals WHERE id=?",
