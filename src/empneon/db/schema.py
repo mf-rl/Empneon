@@ -82,6 +82,24 @@ CREATE TABLE IF NOT EXISTS voice_profiles (
 )
 """
 
+_CREATE_EVENTS = """
+CREATE TABLE IF NOT EXISTS events (
+    id          TEXT    PRIMARY KEY,
+    description TEXT    NOT NULL,
+    location    TEXT,
+    happened_at INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL
+)
+"""
+
+_CREATE_EVENT_PARTICIPANTS = """
+CREATE TABLE IF NOT EXISTS event_participants (
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    PRIMARY KEY (event_id, agent_id)
+)
+"""
+
 _CREATE_AGENT_METADATA = """
 CREATE TABLE IF NOT EXISTS agent_metadata (
     agent_id TEXT    NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -111,6 +129,16 @@ CREATE INDEX IF NOT EXISTS idx_emotional_states_agent
     ON emotional_states(agent_id)
 """
 
+_CREATE_IDX_EVENT_PARTICIPANTS_AGENT = """
+CREATE INDEX IF NOT EXISTS idx_event_participants_agent
+    ON event_participants(agent_id)
+"""
+
+_CREATE_IDX_EVENTS_HAPPENED_AT = """
+CREATE INDEX IF NOT EXISTS idx_events_happened_at
+    ON events(happened_at)
+"""
+
 ALL_DDL: list[str] = [
     _CREATE_SCHEMA_VERSION,
     _CREATE_AGENTS,
@@ -124,4 +152,8 @@ ALL_DDL: list[str] = [
     _CREATE_IDX_RELATIONSHIPS_TARGET,
     _CREATE_IDX_GOALS_AGENT_STATUS,
     _CREATE_IDX_EMOTIONAL_STATES_AGENT,
+    _CREATE_EVENTS,
+    _CREATE_EVENT_PARTICIPANTS,
+    _CREATE_IDX_EVENT_PARTICIPANTS_AGENT,
+    _CREATE_IDX_EVENTS_HAPPENED_AT,
 ]
