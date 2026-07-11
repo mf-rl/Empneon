@@ -75,6 +75,25 @@ The POC `AgentManager` is a semaphore, not the target cognitive scheduler. Its
 `autonomous_action` currently creates a story suggestion rather than executing a full
 autonomous game action.
 
+## Session Checkpoint: 2026-07-10
+
+Stage 0 is complete. The final foundation changes were:
+
+- `d70c8ae`: schema v2 adds transactional `v1 -> v2` migration, rejects newer
+  databases, and installs SQLite validation triggers for persisted identity ranges.
+- `d6bb573`: identity snapshot import validates its format version, requires every
+  identity store to share one connection, and uses a SQLite savepoint so late failures
+  roll back both new imports and updates.
+
+Last verification: 96 unit tests passed with one filesystem temporary-path test
+deselected; Ruff and strict mypy passed. Two existing persistence integration tests
+could not run locally because the managed environment denied pytest temporary-directory
+access. No product benchmark or in-game hardware validation has been performed yet.
+
+Resume with the first pending Stage 1 task: define the minimal generic game-adapter
+protocol and `ActionResult` contract. Read `core/contracts.py` and the Sims POC event and
+action paths before choosing the interface. Keep all Sims-specific types in the adapter.
+
 ## Current Work Order
 
 1. Implement the minimal generic adapter and action-result contract.

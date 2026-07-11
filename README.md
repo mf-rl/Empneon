@@ -106,6 +106,8 @@ Version **0.2.0** is an early framework release.
 
 - [x] Persistent identity and relationship storage
 - [x] Episodic memory and SQLite vector search
+- [x] Transactional schema migrations and database-enforced ranges
+- [x] Atomic, version-validated identity snapshot import
 - [x] Generic cognition contracts
 - [x] Provider capability contract
 - [x] Initial RAM/VRAM/concurrency resource governor
@@ -115,6 +117,9 @@ Version **0.2.0** is an early framework release.
 - [ ] Sims 4 reference adapter using Empneon Core
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
+
+Foundation Stage 0 is complete. The next task is the generic game-adapter protocol and
+action-result contract; see the roadmap for its evidence gate.
 
 ## Documentation
 
