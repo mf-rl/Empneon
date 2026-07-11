@@ -1,4 +1,5 @@
 import json
+
 import pytest
 
 from empneon.core.identity.emotions import EmotionalState, EmotionalStateStore
@@ -81,8 +82,6 @@ def test_roundtrip_full_identity(stores: IdentityStores) -> None:
 
     # Import into a fresh DB
     conn2 = open_db(":memory:")
-    # Bob must exist in target DB for FK on relationships
-    b_data = stores.agents.get_all() if hasattr(stores.agents, "get_all") else None
     stores2 = IdentityStores(
         agents=AgentStore(conn2),
         personality=PersonalityStore(conn2),
