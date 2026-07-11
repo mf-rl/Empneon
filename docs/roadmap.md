@@ -33,7 +33,7 @@ Check items off as completed. This is the source of truth for session continuity
 - [x] Long-term goals schema
 - [x] Voice profile schema
 - [x] Identity serialization / deserialization
-- [ ] Identity survives: game restart, computer restart, model change (integration test)
+- [x] Identity survives: game restart, computer restart, model change (integration test)
 
 ---
 
@@ -254,4 +254,6 @@ Check items off as completed. This is the source of truth for session continuity
 
 **Phase 0 complete.** Working on Phase 1 — Core: Identity System.
 
-Next immediate task: Identity survives game restart, computer restart, model change (integration test).
+**Phase 1 complete.** Working on Phase 2 — Core: Memory Architecture.
+
+Next immediate task: SQLite episodic memory store (events, timestamps, participants).
