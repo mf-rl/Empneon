@@ -109,6 +109,7 @@ Version **0.2.0** is an early framework release.
 - [x] Transactional schema migrations and database-enforced ranges
 - [x] Atomic, version-validated identity snapshot import
 - [x] Generic cognition contracts
+- [x] Generic game-adapter and action-result contracts
 - [x] Provider capability contract
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
@@ -118,8 +119,8 @@ Version **0.2.0** is an early framework release.
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
-Foundation Stage 0 is complete. The next task is the generic game-adapter protocol and
-action-result contract; see the roadmap for its evidence gate.
+Foundation Stage 0 and the first Stage 1 task are complete. The next task is one
+OpenAI-compatible provider usable by LM Studio and compatible APIs.
 
 ## Documentation
 

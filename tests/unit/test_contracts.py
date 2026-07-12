@@ -1,6 +1,13 @@
 import pytest
 
-from empneon.core.contracts import CognitiveRequest, Decision, StateDelta, WorldEvent
+from empneon.adapters import GameAdapter
+from empneon.core.contracts import (
+    ActionResult,
+    CognitiveRequest,
+    Decision,
+    StateDelta,
+    WorldEvent,
+)
 
 
 def test_generic_event_to_decision_contract() -> None:
@@ -32,3 +39,28 @@ def test_request_rejects_invalid_clod(clod: int) -> None:
 def test_decision_rejects_invalid_confidence() -> None:
     with pytest.raises(ValueError, match="confidence"):
         Decision("alice", "wait", confidence=1.1)
+
+
+def test_game_adapter_reports_applied_decision() -> None:
+    event = WorldEvent("social_interaction", actor_ids=("alice", "bob"))
+    change = StateDelta("relationships.bob.trust", "increment", 0.1)
+    decision = Decision("alice", "befriend", target_id="bob", state_changes=(change,))
+
+    class FakeAdapter:
+        def observe(self) -> tuple[WorldEvent, ...]:
+            return (event,)
+
+        def execute(self, decision: Decision, /) -> ActionResult:
+            return ActionResult(decision.id, "succeeded", decision.state_changes)
+
+    adapter: GameAdapter = FakeAdapter()
+    result = adapter.execute(decision)
+
+    assert adapter.observe() == (event,)
+    assert result.decision_id == decision.id
+    assert result.applied_changes == (change,)
+
+
+def test_unsuccessful_action_requires_reason() -> None:
+    with pytest.raises(ValueError, match="requires a reason"):
+        ActionResult("decision", "failed")

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 DeltaOperation = Literal["set", "increment", "append", "remove"]
+ActionStatus = Literal["succeeded", "rejected", "failed"]
 
 
 @dataclass(frozen=True)
@@ -47,12 +48,32 @@ class Decision:
     evidence_ids: tuple[str, ...] = ()
     state_changes: tuple[StateDelta, ...] = ()
     confidence: float = 1.0
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def __post_init__(self) -> None:
-        if not self.actor_id.strip() or not self.intent.strip():
-            raise ValueError("decision actor_id and intent must not be empty")
+        if not self.id.strip() or not self.actor_id.strip() or not self.intent.strip():
+            raise ValueError("decision id, actor_id, and intent must not be empty")
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError("decision confidence must be between 0 and 1")
+
+
+@dataclass(frozen=True)
+class ActionResult:
+    """The game-confirmed outcome of executing one decision."""
+
+    decision_id: str
+    status: ActionStatus
+    applied_changes: tuple[StateDelta, ...] = ()
+    reason: str | None = None
+    completed_at: int = field(default_factory=lambda: int(time.time()))
+
+    def __post_init__(self) -> None:
+        if not self.decision_id.strip():
+            raise ValueError("action result decision_id must not be empty")
+        if self.status != "succeeded" and not (self.reason or "").strip():
+            raise ValueError("unsuccessful action result requires a reason")
+        if self.status == "rejected" and self.applied_changes:
+            raise ValueError("rejected action result cannot include applied changes")
 
 
 @dataclass(frozen=True)
