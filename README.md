@@ -120,6 +120,7 @@ Version **0.2.0** is an early framework release.
 - [x] Deterministic CLOD 1 degradation and provider-failure fallback
 - [x] Sims POC autonomous event-to-action vertical slice through Empneon Core
 - [x] Core-backed Sims cheat-console conversation
+- [x] Sims identity, relationship, location, mood, and social-event observations
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
@@ -130,7 +131,8 @@ Version **0.2.0** is an early framework release.
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
 paths now resolve through Core, execute through the adapter, and persist action results.
-Next, observe game identities, relationships, locations, moods, and social events.
+The adapter now observes game identities, relationships, locations, moods, and social
+events. Next, map generic decisions to valid available Sims actions.
 
 ## Documentation
 

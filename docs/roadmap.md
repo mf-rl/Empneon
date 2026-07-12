@@ -37,7 +37,7 @@ state.
 ## Stage 2: Sims 4 Reference Adapter
 
 - [x] Convert cheat-console conversation into a core-backed interaction
-- [ ] Observe game identities, relationships, locations, moods, and social events
+- [x] Observe game identities, relationships, locations, moods, and social events
 - [ ] Map generic decisions to valid available Sims actions
 - [ ] Persist consequences and action results
 - [ ] Run bounded autonomous NPC interactions without a player command
@@ -133,5 +133,6 @@ context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records req
 estimates and actual provider usage. Resource-admission and provider failures degrade
 deterministically to the provider-free CLOD 1 path. The Sims POC autonomous endpoint now
 runs generic autonomous and conversation events through Core and persists their adapter
-results. Stage 1 and the first Stage 2 task are complete; next, observe game identities,
-relationships, locations, moods, and social events.
+results. Stage 1 and the first two Stage 2 tasks are complete. Sims identity, aggregate
+relationship score, location, mood, and conversation-event observations now enter generic
+world-event facts; next, map generic decisions to valid available Sims actions.

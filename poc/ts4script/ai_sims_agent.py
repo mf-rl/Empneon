@@ -120,6 +120,45 @@ def sim_payload(sim):
     return sim_info_payload(sim.sim_info)
 
 
+def current_location():
+    try:
+        zone = services.current_zone()
+        lot = getattr(zone, "lot", None)
+        lot_name = text_value(getattr(lot, "name", None), "")
+        if lot_name:
+            return lot_name
+        zone_id = getattr(zone, "id", None) or getattr(zone, "zone_id", None)
+        if zone_id:
+            return "zone:{}".format(zone_id)
+    except Exception:
+        pass
+    return "unknown"
+
+
+def relationship_payload(source_info, target_info):
+    # ponytail: aggregate score only; add tuned tracks when action mapping needs them.
+    result = {"friendship": 0, "romance": 0, "trust": 50, "resentment": 0}
+    if target_info is None:
+        return result
+    tracker = getattr(source_info, "relationship_tracker", None)
+    target_id = getattr(target_info, "sim_id", None)
+    for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
+        method = getattr(tracker, method_name, None)
+        if not callable(method):
+            continue
+        for target in (target_info, target_id):
+            if target is None:
+                continue
+            try:
+                raw_score = float(method(target))
+                result["friendship"] = int(max(0, min(100, round((raw_score + 100) / 2))))
+                result["raw_score"] = raw_score
+                return result
+            except Exception:
+                pass
+    return result
+
+
 def iter_sim_infos():
     try:
         manager = services.sim_info_manager()
@@ -293,11 +332,14 @@ def ai_ping(_connection=None):
 
 def chat_payload(active, target_name, message):
     player = sim_payload(active)
-    npc = npc_payload(target_name)
+    target_info = find_sim_info_by_name(target_name)
+    npc = sim_info_payload(target_info) if target_info is not None else npc_payload(target_name)
     return {
         "speaker": npc,
         "listener": player,
-        "relationship": {"friendship": 0, "romance": 0, "trust": 50, "resentment": 0},
+        "relationship": relationship_payload(active.sim_info, target_info),
+        "location": current_location(),
+        "event": {"type": "player_conversation", "source": "cheat_console"},
         "message": message,
     }
 

@@ -90,15 +90,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next Stage 2 task: observe game identities, relationships, locations,
-moods, and social events. Cheat-console conversation now becomes a generic event, typed
-decision, validated Sims adapter result, and schema-v4 action record through Core.
+Resume with the next Stage 2 task: map generic decisions to valid available Sims actions.
+The script mod now captures participant identity and mood, a best-effort live relationship
+score, current lot or zone, and explicit social-event metadata as generic event facts.
 
 ## Current Work Order
 
-1. Observe Sims state and social events through the adapter.
-2. Map generic decisions to valid Sims actions.
-3. Persist consequences and action results in Core stores.
+1. Map generic decisions to valid Sims actions.
+2. Persist consequences and action results in Core stores.
+3. Run bounded autonomous NPC interactions without a player command.
 4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

@@ -19,13 +19,30 @@ class Sims4PocAdapter:
         listener_data = listener if isinstance(listener, Mapping) else {}
         listener_id = str(listener_data.get("id") or listener_data.get("name") or "")
         message = str(self._payload.get("message") or "")
+        relationship = self._payload.get("relationship")
+        relationship_data = relationship if isinstance(relationship, Mapping) else {}
+        social_event = self._payload.get("event")
+        social_event_data = social_event if isinstance(social_event, Mapping) else {}
+        event_type = str(
+            social_event_data.get("type") or ("conversation" if message else "autonomous_tick")
+        )
         actor_ids = (actor_id, listener_id) if listener_id else (actor_id,)
         return (
             WorldEvent(
-                "conversation" if message else "autonomous_tick",
+                event_type,
                 actor_ids=actor_ids,
                 location=str(self._payload.get("location") or "unknown"),
-                facts={"source": "sims4_poc", "message": message},
+                facts={
+                    "source": str(social_event_data.get("source") or "sims4_poc"),
+                    "message": message,
+                    "participants": tuple(dict(item) for item in (sim_data, listener_data) if item),
+                    "moods": {
+                        str(item.get("id") or item.get("name")): item.get("current_mood")
+                        for item in (sim_data, listener_data)
+                        if item
+                    },
+                    "relationship": dict(relationship_data),
+                },
             ),
         )
 
