@@ -114,6 +114,7 @@ Version **0.2.0** is an early framework release.
 - [x] OpenAI-compatible provider for LM Studio and compatible APIs
 - [x] Ollama support through its OpenAI-compatible endpoint
 - [x] Deterministic provider-free CLOD 1 rule path
+- [x] Bounded priority scheduler with deadlines and backpressure
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
@@ -122,9 +123,9 @@ Version **0.2.0** is an early framework release.
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
-Foundation Stage 0 and the first four Stage 1 tasks are complete. Ollama needs no
+Foundation Stage 0 and the first five Stage 1 tasks are complete. Ollama needs no
 distinct adapter because its required endpoints are OpenAI-compatible. The next task is
-the basic priority scheduler with deadlines and backpressure.
+enforcing context, token, latency, concurrency, RAM, and VRAM budgets.
 
 ## Documentation
 

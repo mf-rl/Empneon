@@ -90,13 +90,13 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next pending Stage 1 task: implement the basic priority scheduler with
-deadlines and backpressure. The deterministic CLOD 1 rule path is provider-free and
-replay-stable.
+Resume with the next pending Stage 1 task: enforce context, token, latency, concurrency,
+RAM, and VRAM budgets. The priority scheduler is a bounded thread-safe queue ordered by
+urgency, deadline, and submission order.
 
 ## Current Work Order
 
-1. Implement a basic priority scheduler with deadlines and backpressure.
+1. Enforce context, token, latency, concurrency, RAM, and VRAM budgets.
 2. Build the budgeted event-to-decision vertical slice.
 3. Move the Sims POC onto that path.
 4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.

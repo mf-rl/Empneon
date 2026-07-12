@@ -24,7 +24,7 @@ code exists.
 - [x] Implement one OpenAI-compatible provider usable by LM Studio and compatible APIs
 - [x] Implement Ollama only where its API needs a distinct adapter (none required)
 - [x] Implement a deterministic CLOD 1 rule path
-- [ ] Implement a basic priority scheduler with deadlines and backpressure
+- [x] Implement a basic priority scheduler with deadlines and backpressure
 - [ ] Enforce context, token, latency, concurrency, RAM, and VRAM budgets
 - [ ] Record request estimates and actual provider usage
 - [ ] Add deterministic degradation and provider-failure fallback
@@ -127,5 +127,6 @@ Begin only after repeated customer demand:
 
 Stage 0, the game-adapter contract, and the OpenAI-compatible provider are complete.
 Ollama's `/v1/chat/completions` and `/v1/models` endpoints require no distinct adapter,
-and a provider-free deterministic CLOD 1 path is implemented. Next, implement the basic
-priority scheduler with deadlines and backpressure.
+and a provider-free deterministic CLOD 1 path is implemented. A bounded priority queue
+now enforces deadlines and backpressure. Next, enforce context, token, latency,
+concurrency, RAM, and VRAM budgets.
