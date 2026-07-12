@@ -11,6 +11,7 @@ from empneon.providers.llm.base import (
     GenerationRequest,
     GenerationResult,
     ModelCapabilities,
+    ProviderError,
 )
 
 
@@ -26,7 +27,10 @@ class OpenAICompatibleProvider:
         return ModelCapabilities(structured_output=True, local=True)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        return await asyncio.to_thread(self._generate, request)
+        try:
+            return await asyncio.to_thread(self._generate, request)
+        except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+            raise ProviderError("OpenAI-compatible generation failed") from exc
 
     async def health_check(self) -> bool:
         try:

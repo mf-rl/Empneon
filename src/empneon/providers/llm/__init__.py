@@ -4,6 +4,7 @@ from empneon.providers.llm.base import (
     LLMProvider,
     Message,
     ModelCapabilities,
+    ProviderError,
 )
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 
@@ -14,4 +15,5 @@ __all__ = [
     "Message",
     "ModelCapabilities",
     "OpenAICompatibleProvider",
+    "ProviderError",
 ]

@@ -27,7 +27,7 @@ code exists.
 - [x] Implement a basic priority scheduler with deadlines and backpressure
 - [x] Enforce context, token, latency, concurrency, RAM, and VRAM budgets
 - [x] Record request estimates and actual provider usage
-- [ ] Add deterministic degradation and provider-failure fallback
+- [x] Add deterministic degradation and provider-failure fallback
 - [ ] Move Sims POC persistence and cognition behind Empneon Core
 
 **Exit gate:** One Sims event becomes a generic event, produces a validated decision,
@@ -130,5 +130,6 @@ Ollama's `/v1/chat/completions` and `/v1/models` endpoints require no distinct a
 and a provider-free deterministic CLOD 1 path is implemented. A bounded priority queue
 now enforces deadlines and backpressure. The resource governor admits work against
 context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records request
-estimates and actual provider usage. Next, add deterministic degradation and
-provider-failure fallback.
+estimates and actual provider usage. Resource-admission and provider failures degrade
+deterministically to the provider-free CLOD 1 path. Next, move Sims POC persistence and
+cognition behind Empneon Core.

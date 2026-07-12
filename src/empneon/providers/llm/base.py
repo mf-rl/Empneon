@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class ProviderError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ModelCapabilities:
     structured_output: bool = False

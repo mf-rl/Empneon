@@ -2,10 +2,13 @@ import asyncio
 import json
 from unittest.mock import patch
 
+import pytest
+
 from empneon.providers.llm import (
     GenerationRequest,
     Message,
     OpenAICompatibleProvider,
+    ProviderError,
 )
 
 
@@ -49,3 +52,13 @@ def test_health_check_returns_false_when_endpoint_is_unavailable() -> None:
 
     with patch("urllib.request.urlopen", side_effect=OSError):
         assert asyncio.run(provider.health_check()) is False
+
+
+def test_generation_normalizes_provider_failures() -> None:
+    provider = OpenAICompatibleProvider("http://localhost:1234/v1", "local-model")
+
+    with patch("urllib.request.urlopen", side_effect=OSError):
+        with pytest.raises(ProviderError):
+            asyncio.run(
+                provider.generate(GenerationRequest((Message("user", "Hi"),), max_tokens=20))
+            )
