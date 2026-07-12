@@ -4,10 +4,12 @@ Local AI dialogue/story prototype for The Sims 4.
 
 ## Run
 
-Requires Python 3.11 or newer.
+Requires Python 3.11 or newer for the backend and Python 3.7 to build the Sims script mod.
+Install Core first with `py -3.12 -m pip install -e .` from the repository root.
 
 1. Start LM Studio's local server at `http://127.0.0.1:1234`.
-2. Load a model in LM Studio. The backend reads loaded models from `/api/v1/models` and sends chat through `/v1/chat/completions`.
+2. Load a model in LM Studio. The backend reads `/api/v1/models` and sends chat through
+   `/v1/chat/completions`.
 3. Run the backend:
 
 ```powershell
@@ -36,12 +38,8 @@ previous one is still running.
 
 ## Configuration
 
-Optional environment variables:
-
-- `AI_SIM_MODEL`: LM Studio model id. Default: auto-detect the loaded model, falling back to `local-model`
-- `AI_SIM_LLM_BASE_URL`: LM Studio API URL. Default: `http://127.0.0.1:1234/api/v1`
-- `AI_SIM_PORT`: backend port. Default: `8765`
-- `AI_SIM_DB`: memory database path. Default: workspace DB, with temp-folder fallback if SQLite cannot write there
+See the complete [installation, configuration, privacy, and hardware guide](../docs/sims4-setup.md).
+The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files
 

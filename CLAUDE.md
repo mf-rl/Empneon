@@ -92,15 +92,16 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next Stage 2 task: document installation, configuration, privacy, and
-hardware profiles. The adapter maps generic intent to a whitelisted action intersected
+The Stage 2 implementation checklist is complete. Before Stage 3, validate its exit gate
+in The Sims 4 with at least 20 persistent agents and observable social consequences across
+save/reload cycles. The adapter maps generic intent to a whitelisted action intersected
 with actions reported available by the game payload; provider-proposed animation no longer
 enters Core decisions. Core persists action results and their ordered consequences.
 
 ## Current Work Order
 
-1. Document installation, configuration, privacy, and hardware profiles.
-2. Build the deterministic 20-agent SocietyBench scenarios.
+1. Validate the Stage 2 in-game exit gate on baseline hardware.
+2. Build the deterministic 20-agent SocietyBench scenarios after the gate passes.
 3. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.
