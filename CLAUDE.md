@@ -69,6 +69,7 @@ performance numbers until measured in-game.
 - Generic cognition contracts
 - LLM provider capability protocol
 - Initial RAM/VRAM/concurrency resource governor
+- Persistent Core action results and ordered consequences
 - Separate Sims 4 connectivity POC that must be migrated behind the core
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. Its
@@ -90,15 +91,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next Stage 2 task: persist consequences and action results in Core stores.
-The adapter maps generic intent to a whitelisted action intersected with actions reported
-available by the game payload; provider-proposed animation no longer enters Core decisions.
+Resume with the next Stage 2 task: run bounded autonomous NPC interactions without a
+player command. The adapter maps generic intent to a whitelisted action intersected with
+actions reported available by the game payload; provider-proposed animation no longer
+enters Core decisions. Core persists action results and their ordered consequences.
 
 ## Current Work Order
 
-1. Persist consequences and action results in Core stores.
-2. Run bounded autonomous NPC interactions without a player command.
-3. Recover safely from provider timeout and out-of-memory errors.
-4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
+1. Run bounded autonomous NPC interactions without a player command.
+2. Recover safely from provider timeout and out-of-memory errors.
+3. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.
