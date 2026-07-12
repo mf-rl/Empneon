@@ -44,3 +44,27 @@ def test_releases_after_request_failure() -> None:
             raise RuntimeError("provider failed")
 
     assert governor.snapshot == ResourceSnapshot(0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    "estimate",
+    [
+        ResourceEstimate(context_tokens=2_001),
+        ResourceEstimate(completion_tokens=301),
+        ResourceEstimate(latency_ms=3_001),
+    ],
+)
+def test_rejects_request_over_token_or_latency_budget(estimate: ResourceEstimate) -> None:
+    governor = ResourceGovernor(
+        ResourceBudget(
+            1_000,
+            500,
+            max_context_tokens=2_000,
+            max_completion_tokens=300,
+            max_latency_ms=3_000,
+        )
+    )
+
+    with pytest.raises(ResourceLimitExceeded):
+        with governor.reserve(estimate):
+            pass

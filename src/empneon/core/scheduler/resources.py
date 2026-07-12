@@ -17,9 +17,19 @@ class ResourceBudget:
     max_ram_mb: int
     max_vram_mb: int
     max_concurrent_requests: int = 1
+    max_context_tokens: int | None = None
+    max_completion_tokens: int | None = None
+    max_latency_ms: int | None = None
 
     def __post_init__(self) -> None:
         if min(self.max_ram_mb, self.max_vram_mb, self.max_concurrent_requests) < 0:
+            raise ValueError("resource budget values must not be negative")
+        optional_limits = (
+            self.max_context_tokens,
+            self.max_completion_tokens,
+            self.max_latency_ms,
+        )
+        if any(limit is not None and limit < 0 for limit in optional_limits):
             raise ValueError("resource budget values must not be negative")
 
 
@@ -27,9 +37,18 @@ class ResourceBudget:
 class ResourceEstimate:
     ram_mb: int = 0
     vram_mb: int = 0
+    context_tokens: int = 0
+    completion_tokens: int = 0
+    latency_ms: int = 0
 
     def __post_init__(self) -> None:
-        if self.ram_mb < 0 or self.vram_mb < 0:
+        if min(
+            self.ram_mb,
+            self.vram_mb,
+            self.context_tokens,
+            self.completion_tokens,
+            self.latency_ms,
+        ) < 0:
             raise ValueError("resource estimates must not be negative")
 
 
@@ -62,6 +81,9 @@ class ResourceGovernor:
                 self._active >= self._budget.max_concurrent_requests
                 or self._ram_mb + estimate.ram_mb > self._budget.max_ram_mb
                 or self._vram_mb + estimate.vram_mb > self._budget.max_vram_mb
+                or _exceeds(estimate.context_tokens, self._budget.max_context_tokens)
+                or _exceeds(estimate.completion_tokens, self._budget.max_completion_tokens)
+                or _exceeds(estimate.latency_ms, self._budget.max_latency_ms)
             ):
                 raise ResourceLimitExceeded("cognitive request exceeds the resource budget")
             self._ram_mb += estimate.ram_mb
@@ -74,3 +96,7 @@ class ResourceGovernor:
                 self._ram_mb -= estimate.ram_mb
                 self._vram_mb -= estimate.vram_mb
                 self._active -= 1
+
+
+def _exceeds(value: int, limit: int | None) -> bool:
+    return limit is not None and value > limit
