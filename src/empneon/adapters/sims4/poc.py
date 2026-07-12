@@ -4,6 +4,35 @@ from collections.abc import Mapping
 
 from empneon.core.contracts import ActionResult, Decision, StateDelta, WorldEvent
 
+SIMS_ACTIONS = frozenset(
+    {
+        "idle",
+        "friendly_chat",
+        "funny_chat",
+        "romantic_chat",
+        "awkward_chat",
+        "angry_chat",
+        "sad_chat",
+        "apologize",
+        "argue",
+        "flirt",
+        "laugh",
+    }
+)
+
+INTENT_ACTIONS = {
+    "acknowledge": "idle",
+    "accept_apology": "apologize",
+    "argue": "argue",
+    "deflect": "awkward_chat",
+    "flirt": "flirt",
+    "greet": "friendly_chat",
+    "joke": "funny_chat",
+    "reassure": "friendly_chat",
+    "respond": "friendly_chat",
+    "set_boundary": "awkward_chat",
+}
+
 
 class Sims4PocAdapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
@@ -47,7 +76,7 @@ class Sims4PocAdapter:
         )
 
     def execute(self, decision: Decision, /) -> ActionResult:
-        supported = {"dialogue", "emotion", "memory", "animation"}
+        supported = {"dialogue", "emotion", "memory"}
         unsupported = [
             change.path
             for change in decision.state_changes
@@ -59,7 +88,13 @@ class Sims4PocAdapter:
                 "rejected",
                 reason=f"unsupported Sims state path: {unsupported[0]}",
             )
-        return ActionResult(decision.id, "succeeded", decision.state_changes)
+        action = self._action_for(decision.intent)
+        if action is None:
+            return ActionResult(
+                decision.id, "rejected", reason="no supported Sims action available"
+            )
+        applied = decision.state_changes + (StateDelta("animation", "set", action),)
+        return ActionResult(decision.id, "succeeded", applied)
 
     def decision_from_response(self, response: Mapping[str, object], event_id: str) -> Decision:
         relationship = response.get("relationship")
@@ -69,7 +104,6 @@ class Sims4PocAdapter:
             StateDelta("dialogue", "set", str(response.get("dialogue") or "...")),
             StateDelta("emotion", "set", str(response.get("emotion") or "neutral")),
             StateDelta("memory", "append", memory if isinstance(memory, Mapping) else {}),
-            StateDelta("animation", "set", str(response.get("animation") or "friendly_chat")),
         ]
         changes.extend(
             StateDelta(f"relationship.{key.removesuffix('_delta')}", "increment", value)
@@ -85,7 +119,9 @@ class Sims4PocAdapter:
             state_changes=tuple(changes),
         )
 
-    def response_for(self, decision: Decision) -> dict[str, object]:
+    def response_for(
+        self, decision: Decision, result: ActionResult | None = None
+    ) -> dict[str, object]:
         response: dict[str, object] = {
             "dialogue": "I hear you.",
             "emotion": "neutral",
@@ -100,9 +136,23 @@ class Sims4PocAdapter:
         }
         relationship = response["relationship"]
         assert isinstance(relationship, dict)
-        for change in decision.state_changes:
+        changes = result.applied_changes if result is not None else decision.state_changes
+        for change in changes:
             if change.path.startswith("relationship."):
                 relationship[f"{change.path.split('.', 1)[1]}_delta"] = change.value
             elif change.path in response:
                 response[change.path] = change.value
         return response
+
+    def _action_for(self, intent: str) -> str | None:
+        configured = self._payload.get("available_actions")
+        if isinstance(configured, (list, tuple)):
+            available = [str(action) for action in configured if str(action) in SIMS_ACTIONS]
+        else:
+            available = sorted(SIMS_ACTIONS)
+        preferred = INTENT_ACTIONS.get(intent, "friendly_chat")
+        if preferred in available:
+            return preferred
+        if "friendly_chat" in available:
+            return "friendly_chat"
+        return available[0] if available else None

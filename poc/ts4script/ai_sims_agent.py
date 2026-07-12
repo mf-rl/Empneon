@@ -9,6 +9,18 @@ import sims4.commands
 
 
 BACKEND_URL = "http://127.0.0.1:8765"
+AVAILABLE_ACTIONS = [
+    "friendly_chat",
+    "funny_chat",
+    "romantic_chat",
+    "awkward_chat",
+    "angry_chat",
+    "sad_chat",
+    "apologize",
+    "argue",
+    "flirt",
+    "laugh",
+]
 
 
 def write_marker(text):
@@ -340,6 +352,7 @@ def chat_payload(active, target_name, message):
         "relationship": relationship_payload(active.sim_info, target_info),
         "location": current_location(),
         "event": {"type": "player_conversation", "source": "cheat_console"},
+        "available_actions": AVAILABLE_ACTIONS,
         "message": message,
     }
 

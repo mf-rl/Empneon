@@ -90,15 +90,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next Stage 2 task: map generic decisions to valid available Sims actions.
-The script mod now captures participant identity and mood, a best-effort live relationship
-score, current lot or zone, and explicit social-event metadata as generic event facts.
+Resume with the next Stage 2 task: persist consequences and action results in Core stores.
+The adapter maps generic intent to a whitelisted action intersected with actions reported
+available by the game payload; provider-proposed animation no longer enters Core decisions.
 
 ## Current Work Order
 
-1. Map generic decisions to valid Sims actions.
-2. Persist consequences and action results in Core stores.
-3. Run bounded autonomous NPC interactions without a player command.
+1. Persist consequences and action results in Core stores.
+2. Run bounded autonomous NPC interactions without a player command.
+3. Recover safely from provider timeout and out-of-memory errors.
 4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

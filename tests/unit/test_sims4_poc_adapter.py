@@ -1,4 +1,5 @@
 from empneon.adapters.sims4 import Sims4PocAdapter
+from empneon.core.contracts import StateDelta
 
 
 def test_conversation_response_becomes_validated_sims_action() -> None:
@@ -10,6 +11,7 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
             "location": "Goth Manor",
             "relationship": {"friendship": 72, "trust": 60},
             "event": {"type": "player_conversation", "source": "cheat_console"},
+            "available_actions": ["friendly_chat"],
         }
     )
     event = adapter.observe()[0]
@@ -33,5 +35,5 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
     assert event.type == "player_conversation"
     assert event.location == "Goth Manor"
     assert event.facts["relationship"] == {"friendship": 72, "trust": 60}
-    assert result.applied_changes == decision.state_changes
-    assert adapter.response_for(decision) == response
+    assert result.applied_changes[-1] == StateDelta("animation", "set", "friendly_chat")
+    assert adapter.response_for(decision, result) == response

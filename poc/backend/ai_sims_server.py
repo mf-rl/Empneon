@@ -1433,7 +1433,7 @@ def chat(payload):
         with open_db(CORE_DB_PATH) as conn:
             runtime = CognitiveRuntime(CORE_GOVERNOR, ActionRecordStore(conn))
             record = asyncio.run(runtime.process(request, adapter, resolve_dialogue, estimate))
-        result = adapter.response_for(record.decision)
+        result = adapter.response_for(record.decision, record.result)
     memory = result["memory"]
     if memory["summary"] and memory["importance"] >= 0.2:
         add_memory(
