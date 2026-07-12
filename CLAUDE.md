@@ -90,15 +90,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the first Stage 2 task: convert cheat-console conversation into a core-backed
-interaction. The POC autonomous endpoint is the Stage 1 vertical slice: generic event,
-Core CLOD 1 decision, adapter execution, and schema-v4 action-result persistence.
+Resume with the next Stage 2 task: observe game identities, relationships, locations,
+moods, and social events. Cheat-console conversation now becomes a generic event, typed
+decision, validated Sims adapter result, and schema-v4 action record through Core.
 
 ## Current Work Order
 
-1. Convert cheat-console conversation into a core-backed interaction.
-2. Observe Sims state and social events through the adapter.
-3. Map generic decisions to valid Sims actions.
+1. Observe Sims state and social events through the adapter.
+2. Map generic decisions to valid Sims actions.
+3. Persist consequences and action results in Core stores.
 4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

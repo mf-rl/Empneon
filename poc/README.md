@@ -41,7 +41,7 @@ Optional environment variables:
 
 ## Files
 
-- `backend/ai_sims_server.py`: local AI backend; `/autonomous` runs through Empneon Core
+- `backend/ai_sims_server.py`: local AI backend; `/chat` and `/autonomous` run through Core
 - `ts4script/ai_sims_agent.py`: Sims 4 cheat commands
 - `build_mod.py`: builds `dist/AI_Sims_Agent.ts4script`
 - `test.py`: smoke test for `/chat`

@@ -24,8 +24,9 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 from empneon.adapters.sims4 import Sims4PocAdapter
 from empneon.core.contracts import CognitiveRequest, Decision
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
-from empneon.core.scheduler.resources import ResourceBudget, ResourceGovernor
+from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.db.connection import open_db
+from empneon.providers.llm import ProviderError
 
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
 
@@ -1407,7 +1408,32 @@ def chat(payload):
         )
         summary = memory_summary(speaker_id, listener_id)
         context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
-        result = HERMES.dialogue(payload, context)
+        adapter = Sims4PocAdapter(payload)
+        event = adapter.observe()[0]
+        request = CognitiveRequest(
+            speaker_id,
+            3,
+            event,
+            max_tokens=int(task_model_config("large").get("max_tokens") or 350),
+        )
+
+        async def resolve_dialogue(_request):
+            try:
+                response = HERMES.dialogue(payload, context)
+            except RuntimeError as exc:
+                raise ProviderError("Sims dialogue provider failed") from exc
+            return adapter.decision_from_response(response, event.id)
+
+        prompt = build_chat_prompt(payload, context)
+        estimate = ResourceEstimate(
+            context_tokens=max(1, len(prompt) // 4),
+            completion_tokens=request.max_tokens,
+            latency_ms=request.deadline_ms,
+        )
+        with open_db(CORE_DB_PATH) as conn:
+            runtime = CognitiveRuntime(CORE_GOVERNOR, ActionRecordStore(conn))
+            record = asyncio.run(runtime.process(request, adapter, resolve_dialogue, estimate))
+        result = adapter.response_for(record.decision)
     memory = result["memory"]
     if memory["summary"] and memory["importance"] >= 0.2:
         add_memory(
@@ -1427,6 +1453,8 @@ def chat(payload):
     result["emotion_state"] = emotion_state
     result["memory_summary"] = summary
     result["agent"] = {"id": speaker_id, "state": "dormant"}
+    result["decision_id"] = record.decision.id
+    result["action_status"] = record.result.status
     return result
 
 
