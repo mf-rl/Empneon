@@ -379,12 +379,32 @@ def find_action_affordance(action):
     affordance = manager.get(key)
     if affordance is not None:
         return affordance
+    candidates = []
+    for affordance in loaded_interaction_tunings(manager):
+        name = str(getattr(affordance, "__name__", ""))
+        normalized = "".join(character for character in name.lower() if character.isalnum())
+        if "social" in normalized and "superinteraction" in normalized:
+            candidates.append((len(name), name, affordance))
+    # ponytail: shortest generic social tuning wins; replace with a tuned resource ID if
+    # game-version diagnostics show this heuristic selecting an expansion-specific action.
+    return min(candidates, default=(0, "", None))[2]
+
+
+def loaded_interaction_tunings(manager=None):
+    if manager is None:
+        import sims4.resources
+
+        manager = services.get_instance_manager(sims4.resources.Types.INTERACTION)
     tunings = getattr(manager, "types", None) or getattr(manager, "_tuned_classes", {})
-    for affordance in tunings.values():
-        name = str(getattr(affordance, "__name__", "")).lower()
-        if name in ("socials_superinteraction", "social_superinteraction"):
-            return affordance
-    return None
+    return tuple(tunings.values())
+
+
+def social_tuning_names():
+    names = {
+        str(getattr(affordance, "__name__", ""))
+        for affordance in loaded_interaction_tunings()
+    }
+    return sorted(name for name in names if "social" in name.lower() or "chat" in name.lower())
 
 
 def start_autonomy(zone_instance):
@@ -538,6 +558,17 @@ def ai_help(_connection=None):
     out(_connection, "ai.sleep")
     out(_connection, "ai.director")
     out(_connection, "aidirector")
+    out(_connection, "ai.socialtunings")
+
+
+@command("ai.socialtunings")
+@command("aisims.socialtunings")
+def ai_social_tunings(_connection=None):
+    names = social_tuning_names()
+    out(_connection, "Loaded social/chat tunings: {}".format(len(names)))
+    for name in names[:100]:
+        out(_connection, name)
+        write_marker("social tuning: " + name)
 
 
 @command("ai.loaded")

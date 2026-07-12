@@ -30,6 +30,10 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     commands.CheatOutput = lambda _connection: lambda _text: None
     sims4 = ModuleType("sims4")
     sims4.commands = commands
+    resources = ModuleType("sims4.resources")
+    resources.Types = SimpleNamespace(INTERACTION="interaction")
+    resources.get_resource_key = lambda name, resource_type: (name, resource_type)
+    sims4.resources = resources
     zone = ModuleType("zone")
     zone.Zone = type("Zone", (), {"on_loading_screen_animation_finished": lambda self: None})
     for name, module in {
@@ -41,6 +45,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "services": services,
         "sims4": sims4,
         "sims4.commands": commands,
+        "sims4.resources": resources,
         "zone": zone,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
@@ -99,6 +104,18 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "mortimer": SimpleNamespace(get_sim_instance=lambda: object()),
     }
     monkeypatch.setattr(agent, "find_sim_info_by_id", infos.get)
+    generic_social = type("socials_Base_SuperInteraction", (), {})
+    expansion_social = type("socials_Expansion_Specific_SuperInteraction", (), {})
+    manager = SimpleNamespace(
+        get=lambda _key: None,
+        types={1: expansion_social, 2: generic_social},
+    )
+    monkeypatch.setattr(
+        agent.services, "get_instance_manager", lambda _type: manager, raising=False
+    )
+
+    assert agent.find_action_affordance("friendly_chat") is generic_social
+
     monkeypatch.setattr(agent, "find_action_affordance", lambda _action: object())
 
     agent.process_autonomy_responses(None)

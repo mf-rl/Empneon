@@ -256,3 +256,5 @@ failing path before beginning Stage 3.
   game.
 - Provider calls fall back to generic dialogue: check the configured endpoint, loaded
   model, and `poc/logs/ai_provider.log`.
+- `no loaded tuning for friendly_chat`: run `ai.socialtunings` on an active lot and inspect
+  `ai_sims_agent_loaded.txt` for the social/chat tuning names exposed by that game version.

@@ -145,7 +145,8 @@ release reserved resources. Installation, configuration, privacy, conservative h
 profiles, and the in-game exit-gate procedure are documented. The current automatic path
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
-still requires in-game validation before the two remaining Stage 2 items can be checked.
+uses a version-tolerant generic-social tuning lookup with `ai.socialtunings` diagnostics,
+and still requires in-game validation before the two remaining Stage 2 items can be checked.
 
 ## Documentation
 
