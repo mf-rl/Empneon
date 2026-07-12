@@ -1,2 +1,2 @@
 $ErrorActionPreference = "Stop"
-python "$PSScriptRoot\backend\ai_sims_server.py"
+py -3 "$PSScriptRoot\backend\ai_sims_server.py"

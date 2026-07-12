@@ -28,7 +28,7 @@ code exists.
 - [x] Enforce context, token, latency, concurrency, RAM, and VRAM budgets
 - [x] Record request estimates and actual provider usage
 - [x] Add deterministic degradation and provider-failure fallback
-- [ ] Move Sims POC persistence and cognition behind Empneon Core
+- [x] Move Sims POC persistence and cognition behind Empneon Core
 
 **Exit gate:** One Sims event becomes a generic event, produces a validated decision,
 executes through the adapter, and persists its result without the POC duplicating core
@@ -131,5 +131,6 @@ and a provider-free deterministic CLOD 1 path is implemented. A bounded priority
 now enforces deadlines and backpressure. The resource governor admits work against
 context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records request
 estimates and actual provider usage. Resource-admission and provider failures degrade
-deterministically to the provider-free CLOD 1 path. Next, move Sims POC persistence and
-cognition behind Empneon Core.
+deterministically to the provider-free CLOD 1 path. The Sims POC autonomous endpoint now
+runs a generic event through Core and persists its adapter result. Stage 1 is complete;
+next, convert cheat-console conversation into a core-backed interaction.

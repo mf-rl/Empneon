@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import contextlib
 import json
 import logging
@@ -17,6 +18,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(ROOT)
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
+
+from empneon.adapters.sims4 import Sims4PocAdapter
+from empneon.core.contracts import CognitiveRequest, Decision
+from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
+from empneon.core.scheduler.resources import ResourceBudget, ResourceGovernor
+from empneon.db.connection import open_db
+
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
 
 DEFAULT_CONFIG = {
@@ -24,6 +34,7 @@ DEFAULT_CONFIG = {
     "port": 8765,
     "debug": True,
     "database": "ai_sims_memory.sqlite3",
+    "core_database": "empneon_core.sqlite3",
     "active_agent_limit": 5,
     "agent_wake_timeout_seconds": 60,
     "provider": "lmstudio",
@@ -94,6 +105,7 @@ CONFIG = load_config()
 HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
 DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
+CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
 ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 5)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
@@ -101,6 +113,7 @@ PRIMARY_PROVIDER_CONFIG = CONFIG.get("providers", {}).get(PRIMARY_PROVIDER, {})
 LLM_BASE_URL = str(PRIMARY_PROVIDER_CONFIG.get("endpoint") or "http://127.0.0.1:1234/api/v1").rstrip("/")
 LLM_MODEL = str(PRIMARY_PROVIDER_CONFIG.get("model") or "local-model")
 ACTIVE_DB_PATH = None
+CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 
 
 def setup_logging():
@@ -1447,10 +1460,25 @@ Return only JSON with: hook, target, suggested_action, tone.
 
 
 def autonomous_action(payload):
-    data = director(payload)
-    data["activation"] = "ai_director_request"
-    data["agent_state"] = "dormant"
-    return data
+    adapter = Sims4PocAdapter(payload)
+    event = adapter.observe()[0]
+    request = CognitiveRequest(event.actor_ids[0], 1, event)
+
+    async def unused_resolver(_request: CognitiveRequest) -> Decision:
+        raise AssertionError("CLOD 1 must not call a provider")
+
+    with open_db(CORE_DB_PATH) as conn:
+        runtime = CognitiveRuntime(CORE_GOVERNOR, ActionRecordStore(conn))
+        record = asyncio.run(runtime.process(request, adapter, unused_resolver))
+    return {
+        "hook": "Core handled autonomous event",
+        "target": record.decision.target_id or "",
+        "suggested_action": record.decision.intent,
+        "decision_id": record.decision.id,
+        "status": record.result.status,
+        "activation": "empneon_core",
+        "agent_state": "dormant",
+    }
 
 
 def voice_profile(sim_id_value):

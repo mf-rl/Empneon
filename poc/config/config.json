@@ -3,6 +3,7 @@
   "port": 8765,
   "debug": true,
   "database": "ai_sims_memory.sqlite3",
+  "core_database": "empneon_core.sqlite3",
   "active_agent_limit": 5,
   "agent_wake_timeout_seconds": 60,
   "provider": "lmstudio",

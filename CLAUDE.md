@@ -90,15 +90,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next pending Stage 1 task: move Sims POC persistence and cognition
-behind Empneon Core. Resource-admission and normalized provider failures now degrade
-deterministically to the provider-free CLOD 1 path.
+Resume with the first Stage 2 task: convert cheat-console conversation into a core-backed
+interaction. The POC autonomous endpoint is the Stage 1 vertical slice: generic event,
+Core CLOD 1 decision, adapter execution, and schema-v4 action-result persistence.
 
 ## Current Work Order
 
-1. Move Sims POC persistence and cognition behind Empneon Core.
-2. Build the budgeted event-to-decision vertical slice.
-3. Move the Sims POC onto that path.
+1. Convert cheat-console conversation into a core-backed interaction.
+2. Observe Sims state and social events through the adapter.
+3. Map generic decisions to valid Sims actions.
 4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

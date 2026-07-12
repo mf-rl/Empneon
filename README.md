@@ -118,6 +118,7 @@ Version **0.2.0** is an early framework release.
 - [x] Context, token, latency, concurrency, RAM, and VRAM admission budgets
 - [x] Persistent request-estimate and provider-usage records
 - [x] Deterministic CLOD 1 degradation and provider-failure fallback
+- [x] Sims POC autonomous event-to-action vertical slice through Empneon Core
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
@@ -126,9 +127,9 @@ Version **0.2.0** is an early framework release.
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
-Foundation Stage 0 and the first eight Stage 1 tasks are complete. Ollama needs no
-distinct adapter because its required endpoints are OpenAI-compatible. The next task is
-moving Sims POC persistence and cognition behind Empneon Core.
+Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous path now translates
+a generic event, resolves it through Core, executes it through the adapter, and persists
+the action result. Next, convert cheat-console conversation into a core-backed interaction.
 
 ## Documentation
 

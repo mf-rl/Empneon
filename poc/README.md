@@ -4,6 +4,8 @@ Local AI dialogue/story prototype for The Sims 4.
 
 ## Run
 
+Requires Python 3.11 or newer.
+
 1. Start LM Studio's local server at `http://127.0.0.1:1234`.
 2. Load a model in LM Studio. The backend reads loaded models from `/api/v1/models` and sends chat through `/v1/chat/completions`.
 3. Run the backend:
@@ -39,7 +41,7 @@ Optional environment variables:
 
 ## Files
 
-- `backend/ai_sims_server.py`: local AI backend, memory store, `/chat`, `/director`, `/health`
+- `backend/ai_sims_server.py`: local AI backend; `/autonomous` runs through Empneon Core
 - `ts4script/ai_sims_agent.py`: Sims 4 cheat commands
 - `build_mod.py`: builds `dist/AI_Sims_Agent.ts4script`
 - `test.py`: smoke test for `/chat`
