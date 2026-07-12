@@ -5,6 +5,7 @@ from empneon.providers.llm.base import (
     Message,
     ModelCapabilities,
 )
+from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 
 __all__ = [
     "GenerationRequest",
@@ -12,4 +13,5 @@ __all__ = [
     "LLMProvider",
     "Message",
     "ModelCapabilities",
+    "OpenAICompatibleProvider",
 ]

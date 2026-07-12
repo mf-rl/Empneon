@@ -21,7 +21,7 @@ code exists.
 ## Stage 1: Minimal Runtime Vertical Slice
 
 - [x] Define the game-adapter protocol and action-result contract
-- [ ] Implement one OpenAI-compatible provider usable by LM Studio and compatible APIs
+- [x] Implement one OpenAI-compatible provider usable by LM Studio and compatible APIs
 - [ ] Implement Ollama only where its API needs a distinct adapter
 - [ ] Implement a deterministic CLOD 1 rule path
 - [ ] Implement a basic priority scheduler with deadlines and backpressure
@@ -125,6 +125,6 @@ Begin only after repeated customer demand:
 
 ## Current Focus
 
-Stage 0 and the game-adapter contract are complete. Next, implement one local
-OpenAI-compatible provider, then build the smallest path from a generic event to a
-validated, budget-admitted decision.
+Stage 0, the game-adapter contract, and the OpenAI-compatible provider are complete.
+Next, determine whether Ollama needs a distinct adapter; otherwise proceed to the
+deterministic CLOD 1 rule path.

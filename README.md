@@ -111,6 +111,7 @@ Version **0.2.0** is an early framework release.
 - [x] Generic cognition contracts
 - [x] Generic game-adapter and action-result contracts
 - [x] Provider capability contract
+- [x] OpenAI-compatible provider for LM Studio and compatible APIs
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
@@ -119,8 +120,8 @@ Version **0.2.0** is an early framework release.
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
-Foundation Stage 0 and the first Stage 1 task are complete. The next task is one
-OpenAI-compatible provider usable by LM Studio and compatible APIs.
+Foundation Stage 0 and the first two Stage 1 tasks are complete. The next task is an
+Ollama adapter only if its API requires behavior beyond the OpenAI-compatible provider.
 
 ## Documentation
 
