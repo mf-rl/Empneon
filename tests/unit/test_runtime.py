@@ -1,9 +1,16 @@
 import asyncio
 
+import pytest
+
 from empneon.adapters.sims4 import Sims4PocAdapter
 from empneon.core.contracts import CognitiveRequest, Decision
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
-from empneon.core.scheduler.resources import ResourceBudget, ResourceGovernor
+from empneon.core.scheduler.resources import (
+    ResourceBudget,
+    ResourceEstimate,
+    ResourceGovernor,
+    ResourceSnapshot,
+)
 from empneon.db.connection import open_db
 
 
@@ -53,3 +60,25 @@ def test_applied_consequences_persist_in_order() -> None:
     record = asyncio.run(runtime.process(request, adapter, resolve))
 
     assert actions.get_consequences(record.decision.id) == record.result.applied_changes
+
+
+@pytest.mark.parametrize("failure", [TimeoutError(), MemoryError()])
+def test_provider_failure_falls_back_persists_and_releases_resources(
+    failure: Exception,
+) -> None:
+    adapter = Sims4PocAdapter({"sim": {"id": "bella"}})
+    request = CognitiveRequest("bella", 3, adapter.observe()[0])
+    actions = ActionRecordStore(open_db(":memory:"))
+    governor = ResourceGovernor(ResourceBudget(256, 64))
+    runtime = CognitiveRuntime(governor, actions)
+
+    async def failed_provider(_: CognitiveRequest) -> Decision:
+        raise failure
+
+    record = asyncio.run(
+        runtime.process(request, adapter, failed_provider, ResourceEstimate(32, 16))
+    )
+
+    assert record.decision.intent == "acknowledge"
+    assert actions.get(record.decision.id) == record
+    assert governor.snapshot == ResourceSnapshot(0, 0, 0)

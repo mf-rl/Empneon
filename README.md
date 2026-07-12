@@ -117,7 +117,7 @@ Version **0.2.0** is an early framework release.
 - [x] Bounded priority scheduler with deadlines and backpressure
 - [x] Context, token, latency, concurrency, RAM, and VRAM admission budgets
 - [x] Persistent request-estimate and provider-usage records
-- [x] Deterministic CLOD 1 degradation and provider-failure fallback
+- [x] Deterministic CLOD 1 degradation for provider timeout and out-of-memory failures
 - [x] Sims POC autonomous event-to-action vertical slice through Empneon Core
 - [x] Core-backed Sims cheat-console conversation
 - [x] Sims identity, relationship, location, mood, and social-event observations
@@ -138,8 +138,10 @@ and their ordered game-confirmed consequences.
 The adapter now observes game identities, relationships, locations, moods, and social
 events, and maps generic intents to whitelisted actions reported available by the game.
 While a lot is active, one non-player pair is submitted every 30 simulated minutes, with
-overlap prevented in the mod and concurrency bounded again by Core. Next, recover safely
-from provider timeout and out-of-memory errors.
+overlap prevented in the mod and concurrency bounded again by Core. Provider transport
+timeouts and memory exhaustion degrade through CLOD 1, persist the fallback result, and
+release reserved resources. Next, document installation, configuration, privacy, and
+hardware profiles.
 
 ## Documentation
 

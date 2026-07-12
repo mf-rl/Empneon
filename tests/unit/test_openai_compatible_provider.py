@@ -54,10 +54,11 @@ def test_health_check_returns_false_when_endpoint_is_unavailable() -> None:
         assert asyncio.run(provider.health_check()) is False
 
 
-def test_generation_normalizes_provider_failures() -> None:
+@pytest.mark.parametrize("failure", [OSError(), TimeoutError(), MemoryError()])
+def test_generation_normalizes_provider_failures(failure: Exception) -> None:
     provider = OpenAICompatibleProvider("http://localhost:1234/v1", "local-model")
 
-    with patch("urllib.request.urlopen", side_effect=OSError):
+    with patch("urllib.request.urlopen", side_effect=failure):
         with pytest.raises(ProviderError):
             asyncio.run(
                 provider.generate(GenerationRequest((Message("user", "Hi"),), max_tokens=20))

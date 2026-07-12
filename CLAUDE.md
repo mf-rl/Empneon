@@ -70,6 +70,7 @@ performance numbers until measured in-game.
 - LLM provider capability protocol
 - Initial RAM/VRAM/concurrency resource governor
 - Persistent Core action results and ordered consequences
+- Deterministic timeout and out-of-memory fallback with resource release
 - Separate Sims 4 connectivity POC that must be migrated behind the core
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
@@ -91,15 +92,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next Stage 2 task: recover safely from provider timeout and out-of-memory
-errors. The adapter maps generic intent to a whitelisted action intersected with actions
-reported available by the game payload; provider-proposed animation no longer enters Core
-decisions. Core persists action results and their ordered consequences.
+Resume with the next Stage 2 task: document installation, configuration, privacy, and
+hardware profiles. The adapter maps generic intent to a whitelisted action intersected
+with actions reported available by the game payload; provider-proposed animation no longer
+enters Core decisions. Core persists action results and their ordered consequences.
 
 ## Current Work Order
 
-1. Recover safely from provider timeout and out-of-memory errors.
-2. Document installation, configuration, privacy, and hardware profiles.
+1. Document installation, configuration, privacy, and hardware profiles.
+2. Build the deterministic 20-agent SocietyBench scenarios.
 3. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

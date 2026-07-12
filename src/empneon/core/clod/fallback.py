@@ -18,5 +18,5 @@ async def resolve_with_fallback(request: CognitiveRequest, resolver: Resolver) -
         return resolve_clod1(request)
     try:
         return await resolver(request)
-    except (ProviderError, ResourceLimitExceeded):
+    except (MemoryError, TimeoutError, ProviderError, ResourceLimitExceeded):
         return resolve_clod1(request)

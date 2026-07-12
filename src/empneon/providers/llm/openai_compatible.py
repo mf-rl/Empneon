@@ -29,13 +29,13 @@ class OpenAICompatibleProvider:
     async def generate(self, request: GenerationRequest) -> GenerationResult:
         try:
             return await asyncio.to_thread(self._generate, request)
-        except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+        except (MemoryError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
             raise ProviderError("OpenAI-compatible generation failed") from exc
 
     async def health_check(self) -> bool:
         try:
             await asyncio.to_thread(self._request, "/models")
-        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        except (MemoryError, OSError, ValueError, KeyError, json.JSONDecodeError):
             return False
         return True
 
