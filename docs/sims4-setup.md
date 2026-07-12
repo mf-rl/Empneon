@@ -120,6 +120,132 @@ or frame time. Increase concurrency only after observing the game and provider t
 Do not treat the default limit of five as a validated safe value. Stage 3 must publish raw
 measurements before performance or scalability claims are made.
 
+## Stage 2 Exit-Gate Test
+
+This test must run with The Sims 4. Unit tests can verify contracts and persistence, but
+they cannot prove a playable session, real game consequences, or save/reload continuity.
+
+The current build is **not expected to pass yet**:
+
+- the zone alarm submits NPC pairs, but the mod only logs the returned action instead of
+  pushing a Sims interaction;
+- the backend records the adapter's proposed result before receiving game confirmation;
+- autonomous requests do not create persistent identities in Core's `agents` table.
+
+Use the following procedure after those gaps are implemented. It can also be run now to
+capture a failing baseline without marking the exit gate complete.
+
+### 1. Prepare an isolated test
+
+1. Back up the Sims save and use a dedicated test save.
+2. Stop any existing Empneon backend.
+3. From the repository root, copy the configuration for the test:
+
+   ```powershell
+   Copy-Item .\poc\config\config.json .\stage2-config.json
+   ```
+
+4. Open `stage2-config.json`, set `core_database` to `stage2-core.sqlite3`, and keep
+   `host`/`port` at `127.0.0.1:8765`. Then set the test paths:
+
+   ```powershell
+   $env:AI_SIM_DB = "$PWD\stage2-poc.sqlite3"
+   $env:AI_SIM_CONFIG = "$PWD\stage2-config.json"
+   ```
+
+   `core_database` has no environment-variable override. With the copied config and a
+   backend started from the repository root, Core writes to `$PWD\stage2-core.sqlite3`.
+5. Preserve any existing files with these names if they contain wanted data. Do not delete
+   an unverified database.
+6. Install Core and the mod, then start the backend as described in **Install and Run**.
+7. Confirm `aiping` succeeds.
+
+### 2. Assemble 20 test agents
+
+1. Load one lot or venue containing at least 20 instantiated, non-player Sims. Use normal
+   gameplay, a dedicated test save, or trusted test tooling to bring them onto the lot.
+2. Keep the player-controlled household separate from the 20 counted NPCs.
+3. Record the save name, lot, in-game time, game version, mod commit, provider/model, and
+   hardware profile.
+4. Take a screenshot or video showing the test population. The current mod has no command
+   that proves the candidate count, so visual evidence is required.
+
+### 3. Run autonomous interactions
+
+1. Let game time advance in 30-simulated-minute intervals. Do not invoke `ai.autonomous`;
+   the gate requires behavior without a player command.
+2. Continue until Core has observed at least 20 distinct NPC IDs and each intended agent
+   has participated in an autonomous event.
+3. Watch for visible Sims interactions and record before/after relationship or mood state.
+4. Check `Documents\Electronic Arts\The Sims 4\ai_sims_agent_loaded.txt` for autonomous
+   dispatches and `poc/logs` for backend failures.
+5. A logged suggestion alone is not an observable game consequence and does not pass.
+
+### 4. Capture the database evidence
+
+Run this from the same directory used to start the backend:
+
+```powershell
+@'
+import sqlite3
+
+def scalar(db, sql):
+    with sqlite3.connect(db) as connection:
+        return connection.execute(sql).fetchone()[0]
+
+core = "stage2-core.sqlite3"
+poc = "stage2-poc.sqlite3"
+participants = """
+    SELECT actor_id AS id FROM action_results
+    UNION
+    SELECT target_id AS id FROM action_results WHERE target_id IS NOT NULL
+"""
+with sqlite3.connect(core) as connection:
+    participant_ids = [row[0] for row in connection.execute(participants)]
+print("core agents:", scalar(core, "SELECT COUNT(*) FROM agents"))
+print("distinct action participants:", len(participant_ids))
+print("participant IDs:", sorted(participant_ids))
+print("action results:", scalar(core, "SELECT COUNT(*) FROM action_results"))
+print("ordered consequences:", scalar(core, "SELECT COUNT(*) FROM action_consequences"))
+print("POC profiles:", scalar(poc, "SELECT COUNT(*) FROM sim_profiles"))
+print("POC relationships:", scalar(poc, "SELECT COUNT(*) FROM relationships"))
+print("POC memories:", scalar(poc, "SELECT COUNT(*) FROM memories"))
+'@ | py -3 -
+```
+
+Save the output. For a passing run, `core agents` and distinct stable participants must
+both be at least 20. Action results must correspond to actions the game attempted, and
+consequences must reflect game-confirmed applied changes rather than proposed changes.
+
+### 5. Save, exit, and reload
+
+1. Save the game under a new name after visible consequences occur.
+2. Exit The Sims 4 completely and stop the backend cleanly. Do not remove either database.
+3. Restart the backend with the same configuration, launch the game, and reload that save.
+4. Bring the same agents onto the test lot and allow another automatic interval to run.
+5. Verify the same stable Sim IDs are reused, prior Core and POC records are still present,
+   and new records append rather than replace the earlier evidence.
+6. Verify at least one earlier relationship, mood, memory, or other visible social
+   consequence is still observable after reload.
+7. Run the database report again and save the second output.
+
+### 6. Pass criteria
+
+Mark the Stage 2 exit gate complete only when all are true:
+
+- at least 20 non-player agents have stable persisted identities;
+- autonomous interactions occur without a player command;
+- the game visibly attempts validated actions;
+- Core stores game-confirmed results and ordered consequences;
+- at least one social consequence remains observable after save/reload;
+- the same agent IDs and prior records survive backend and game restart;
+- no provider failure or resource pressure crashes the game;
+- the test record includes configuration, hardware, timings, logs, database counts, and
+  screenshots or video.
+
+If any condition fails, retain the evidence, leave the exit gate unvalidated, and fix the
+failing path before beginning Stage 3.
+
 ## Troubleshooting
 
 - `aiping` fails: verify the backend is listening on `127.0.0.1:8765`.

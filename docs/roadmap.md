@@ -39,8 +39,8 @@ state.
 - [x] Convert cheat-console conversation into a core-backed interaction
 - [x] Observe game identities, relationships, locations, moods, and social events
 - [x] Map generic decisions to valid available Sims actions
-- [x] Persist consequences and action results
-- [x] Run bounded autonomous NPC interactions without a player command
+- [ ] Persist game-confirmed consequences and action results
+- [ ] Run bounded autonomous NPC interactions without a player command
 - [x] Recover safely from provider timeout and out-of-memory errors
 - [x] Document installation, configuration, privacy, and hardware profiles
 
@@ -133,14 +133,11 @@ context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records req
 estimates and actual provider usage. Resource-admission and provider failures degrade
 deterministically to the provider-free CLOD 1 path. The Sims POC autonomous endpoint now
 runs generic autonomous and conversation events through Core and persists their adapter
-results. Stage 1 and all seven Stage 2 implementation tasks are complete. Sims
-observations enter generic world-event facts, and generic intents map to whitelisted
-actions reported available by the game. Game-confirmed applied changes are persisted in
-order with their action results in Core. A zone alarm submits at most one instantiated NPC
-pair every 30 simulated minutes, skips player-controlled Sims, prevents overlapping requests, and
-retains Core's configured concurrency admission limit. Provider transport timeouts and
-memory exhaustion degrade through deterministic CLOD 1, persist the fallback action
-result, and release the governor reservation. Installation, configuration, privacy, and
-hardware profiles are documented. The Stage 2 exit gate remains unvalidated until an
-in-game session demonstrates 20 persistent agents and observable social
-consequences across save/reload cycles; Stage 3 must not begin on the checklist alone.
+results. Stage 1 is complete. Sims observations enter generic world-event facts, and
+generic intents map to whitelisted actions reported available by the game. Core can store
+adapter-returned results and ordered consequences, and a bounded zone alarm submits NPC
+pairs without a player command. However, the mod does not yet execute the returned Sims
+action or acknowledge a game-confirmed result, and autonomous requests do not persist Core
+identities. Provider timeout/OOM recovery and the operating guide are complete. Follow the
+in-game protocol in `docs/sims4-setup.md`; Stage 3 must not begin until all Stage 2 tasks
+and its exit gate pass.

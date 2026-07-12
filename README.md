@@ -122,8 +122,8 @@ Version **0.2.0** is an early framework release.
 - [x] Core-backed Sims cheat-console conversation
 - [x] Sims identity, relationship, location, mood, and social-event observations
 - [x] Generic-intent mapping to validated available Sims actions
-- [x] Persistent Core action results and ordered consequences
-- [x] Bounded automatic NPC-to-NPC Core interactions
+- [ ] Game-confirmed Core action results and ordered consequences
+- [ ] Executed automatic NPC-to-NPC Sims interactions
 - [x] Sims 4 installation, configuration, privacy, and hardware-profile guide
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
@@ -141,9 +141,10 @@ events, and maps generic intents to whitelisted actions reported available by th
 While a lot is active, one non-player pair is submitted every 30 simulated minutes, with
 overlap prevented in the mod and concurrency bounded again by Core. Provider transport
 timeouts and memory exhaustion degrade through CLOD 1, persist the fallback result, and
-release reserved resources. Installation, configuration, privacy, and conservative
-hardware profiles are documented. The Stage 2 implementation checklist is complete, but
-its 20-agent in-game save/reload exit gate has not yet been validated.
+release reserved resources. Installation, configuration, privacy, conservative hardware
+profiles, and the in-game exit-gate procedure are documented. The current automatic path
+submits and records proposed actions but does not execute them in The Sims 4 or persist
+autonomous Core identities, so Stage 2 and its 20-agent save/reload gate remain incomplete.
 
 ## Documentation
 
