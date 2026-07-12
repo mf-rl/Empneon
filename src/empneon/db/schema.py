@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -157,6 +157,20 @@ CREATE TABLE IF NOT EXISTS action_consequences (
 )
 """
 
+_CREATE_ACTION_PROPOSALS = """
+CREATE TABLE IF NOT EXISTS action_proposals (
+    decision_id      TEXT PRIMARY KEY,
+    event_id         TEXT NOT NULL,
+    actor_id         TEXT NOT NULL,
+    intent           TEXT NOT NULL,
+    target_id        TEXT,
+    evidence_ids     TEXT NOT NULL,
+    decision_changes TEXT NOT NULL,
+    confidence       REAL NOT NULL,
+    adapter_action   TEXT NOT NULL
+)
+"""
+
 _CREATE_IDX_RELATIONSHIPS_AGENT = """
 CREATE INDEX IF NOT EXISTS idx_relationships_agent
     ON relationships(agent_id)
@@ -199,6 +213,7 @@ ALL_DDL: list[str] = [
     _CREATE_COGNITION_USAGE,
     _CREATE_ACTION_RESULTS,
     _CREATE_ACTION_CONSEQUENCES,
+    _CREATE_ACTION_PROPOSALS,
     _CREATE_IDX_RELATIONSHIPS_AGENT,
     _CREATE_IDX_RELATIONSHIPS_TARGET,
     _CREATE_IDX_GOALS_AGENT_STATUS,
@@ -313,4 +328,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     3: (_CREATE_COGNITION_USAGE,),
     4: (_CREATE_ACTION_RESULTS,),
     5: (_CREATE_ACTION_CONSEQUENCES,),
+    6: (_CREATE_ACTION_PROPOSALS,),
 }

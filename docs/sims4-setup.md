@@ -125,15 +125,11 @@ measurements before performance or scalability claims are made.
 This test must run with The Sims 4. Unit tests can verify contracts and persistence, but
 they cannot prove a playable session, real game consequences, or save/reload continuity.
 
-The current build is **not expected to pass yet**:
-
-- the zone alarm submits NPC pairs, but the mod only logs the returned action instead of
-  pushing a Sims interaction;
-- the backend records the adapter's proposed result before receiving game confirmation;
-- autonomous requests do not create persistent identities in Core's `agents` table.
-
-Use the following procedure after those gaps are implemented. It can also be run now to
-capture a failing baseline without marking the exit gate complete.
+The current build persists observed identities and pending proposals, attempts the
+base-game social super-interaction on the simulation thread, and sends the finishing
+result and observed relationship delta back to Core. This code path is not validated until
+the following in-game procedure passes. If the installed game exposes different tuning or
+callback APIs, the result must remain failed and the Stage 2 checklist must stay open.
 
 ### 1. Prepare an isolated test
 
@@ -179,7 +175,9 @@ capture a failing baseline without marking the exit gate complete.
 3. Watch for visible Sims interactions and record before/after relationship or mood state.
 4. Check `Documents\Electronic Arts\The Sims 4\ai_sims_agent_loaded.txt` for autonomous
    dispatches and `poc/logs` for backend failures.
-5. A logged suggestion alone is not an observable game consequence and does not pass.
+5. A `queued` entry proves the game accepted the interaction. A later `confirmed` entry
+   proves Core received its finishing result. A proposal or queue entry alone does not
+   pass.
 
 ### 4. Capture the database evidence
 
@@ -207,6 +205,7 @@ print("distinct action participants:", len(participant_ids))
 print("participant IDs:", sorted(participant_ids))
 print("action results:", scalar(core, "SELECT COUNT(*) FROM action_results"))
 print("ordered consequences:", scalar(core, "SELECT COUNT(*) FROM action_consequences"))
+print("pending proposals:", scalar(core, "SELECT COUNT(*) FROM action_proposals"))
 print("POC profiles:", scalar(poc, "SELECT COUNT(*) FROM sim_profiles"))
 print("POC relationships:", scalar(poc, "SELECT COUNT(*) FROM relationships"))
 print("POC memories:", scalar(poc, "SELECT COUNT(*) FROM memories"))
@@ -216,6 +215,8 @@ print("POC memories:", scalar(poc, "SELECT COUNT(*) FROM memories"))
 Save the output. For a passing run, `core agents` and distinct stable participants must
 both be at least 20. Action results must correspond to actions the game attempted, and
 consequences must reflect game-confirmed applied changes rather than proposed changes.
+After queued interactions finish, `pending proposals` should return to zero; retained rows
+identify actions that never received a game result.
 
 ### 5. Save, exit, and reload
 

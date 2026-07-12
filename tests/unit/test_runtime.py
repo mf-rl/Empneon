@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from empneon.adapters.sims4 import Sims4PocAdapter
-from empneon.core.contracts import CognitiveRequest, Decision
+from empneon.core.contracts import ActionResult, CognitiveRequest, Decision
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import (
     ResourceBudget,
@@ -82,3 +82,31 @@ def test_provider_failure_falls_back_persists_and_releases_resources(
     assert record.decision.intent == "acknowledge"
     assert actions.get(record.decision.id) == record
     assert governor.snapshot == ResourceSnapshot(0, 0, 0)
+
+
+def test_game_confirmation_atomically_replaces_proposal() -> None:
+    actions = ActionRecordStore(open_db(":memory:"))
+    decision = Decision("bella", "greet", target_id="mortimer", id="decision-1")
+    proposal = actions.propose("event-1", decision, "friendly_chat")
+
+    result = Sims4PocAdapter({"available_actions": ["friendly_chat"]}).execute(decision)
+    record = actions.confirm(result, "friendly_chat")
+
+    assert proposal.decision == decision
+    assert record.result == result
+    assert actions.get_proposal(decision.id) is None
+    assert actions.get(decision.id) == record
+
+
+def test_failed_game_confirmation_persists_no_consequence() -> None:
+    actions = ActionRecordStore(open_db(":memory:"))
+    decision = Decision("bella", "greet", id="decision-1")
+    actions.propose("event-1", decision, "friendly_chat")
+
+    record = actions.confirm(
+        ActionResult(decision.id, "failed", reason="game rejected interaction"),
+        "friendly_chat",
+    )
+
+    assert record.result.status == "failed"
+    assert actions.get_consequences(decision.id) == ()

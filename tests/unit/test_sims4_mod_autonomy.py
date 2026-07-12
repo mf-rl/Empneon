@@ -14,6 +14,16 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     clock = ModuleType("clock")
     clock.interval_in_sim_minutes = lambda minutes: minutes
     services = ModuleType("services")
+    context_module = ModuleType("interactions.context")
+    context_module.InteractionContext = type(
+        "InteractionContext",
+        (),
+        {"SOURCE_SCRIPT": "script", "__init__": lambda self, *_args, **_kwargs: None},
+    )
+    context_module.QueueInsertStrategy = SimpleNamespace(NEXT="next")
+    priority_module = ModuleType("interactions.priority")
+    priority_module.Priority = SimpleNamespace(High="high")
+    interactions = ModuleType("interactions")
     commands = ModuleType("sims4.commands")
     commands.CommandType = SimpleNamespace(Live="live")
     commands.Command = lambda *_args, **_kwargs: lambda function: function
@@ -25,6 +35,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     for name, module in {
         "alarms": alarms,
         "clock": clock,
+        "interactions": interactions,
+        "interactions.context": context_module,
+        "interactions.priority": priority_module,
         "services": services,
         "sims4": sims4,
         "sims4.commands": commands,
@@ -51,8 +64,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     monkeypatch.setattr(
         agent,
         "post_json",
-        lambda path, payload: payloads.append((path, payload))
-        or {"suggested_action": "friendly_chat"},
+        lambda path, payload, timeout=None: payloads.append((path, payload))
+        or {
+            "decision_id": "decision-1",
+            "suggested_action": "friendly_chat",
+        },
     )
     monkeypatch.setattr(
         agent.threading,
@@ -72,3 +88,29 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "type": "autonomous_social",
         "source": "sim_alarm",
     }
+
+    interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
+    interaction.register_on_finishing_callback = lambda callback: callback(interaction)
+    actor = SimpleNamespace(
+        push_super_affordance=lambda *_args: SimpleNamespace(interaction=interaction)
+    )
+    infos = {
+        "bella": SimpleNamespace(get_sim_instance=lambda: actor),
+        "mortimer": SimpleNamespace(get_sim_instance=lambda: object()),
+    }
+    monkeypatch.setattr(agent, "find_sim_info_by_id", infos.get)
+    monkeypatch.setattr(agent, "find_action_affordance", lambda _action: object())
+
+    agent.process_autonomy_responses(None)
+
+    assert payloads[1] == (
+        "/action-result",
+        {
+            "decision_id": "decision-1",
+            "action": "friendly_chat",
+            "status": "succeeded",
+            "reason": None,
+            "changes": [],
+        },
+    )
+    assert agent._AUTONOMY_IN_FLIGHT is False

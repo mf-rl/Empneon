@@ -92,16 +92,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Stage 2 remains incomplete. The zone alarm submits bounded NPC pairs, but the mod only
-logs the returned action; it does not execute the Sims interaction or return a
-game-confirmed result. Autonomous requests also do not persist Core identities. The
-adapter maps generic intent to a whitelisted available action, and Core can persist
-adapter-returned results and ordered consequences.
+Stage 2 remains pending in-game validation. The zone alarm submits bounded NPC pairs,
+persists observed Core identities and pending proposals, queues the base-game social
+interaction on the simulation thread, and reports its finishing result and observed
+relationship delta. The adapter maps generic intent to a whitelisted available action.
 
 ## Current Work Order
 
-1. Execute bounded autonomous Sims interactions and acknowledge game-confirmed results.
-2. Persist autonomous agent identities in Core, then run the documented Stage 2 gate.
+1. Run the documented in-game confirmation test and fix any Sims API/tuning mismatch.
+2. Check the remaining Stage 2 items only after game-confirmed evidence passes.
 3. Build SocietyBench only after the gate passes.
 
 See `docs/roadmap.md` for evidence gates.

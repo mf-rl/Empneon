@@ -143,8 +143,9 @@ overlap prevented in the mod and concurrency bounded again by Core. Provider tra
 timeouts and memory exhaustion degrade through CLOD 1, persist the fallback result, and
 release reserved resources. Installation, configuration, privacy, conservative hardware
 profiles, and the in-game exit-gate procedure are documented. The current automatic path
-submits and records proposed actions but does not execute them in The Sims 4 or persist
-autonomous Core identities, so Stage 2 and its 20-agent save/reload gate remain incomplete.
+persists observed identities, stores a pending proposal, attempts the validated Sims
+interaction, and finalizes the result only from the game's completion callback. This path
+still requires in-game validation before the two remaining Stage 2 items can be checked.
 
 ## Documentation
 

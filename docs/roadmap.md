@@ -136,8 +136,9 @@ runs generic autonomous and conversation events through Core and persists their 
 results. Stage 1 is complete. Sims observations enter generic world-event facts, and
 generic intents map to whitelisted actions reported available by the game. Core can store
 adapter-returned results and ordered consequences, and a bounded zone alarm submits NPC
-pairs without a player command. However, the mod does not yet execute the returned Sims
-action or acknowledge a game-confirmed result, and autonomous requests do not persist Core
-identities. Provider timeout/OOM recovery and the operating guide are complete. Follow the
-in-game protocol in `docs/sims4-setup.md`; Stage 3 must not begin until all Stage 2 tasks
-and its exit gate pass.
+pairs without a player command. The confirmation path now persists observed Core
+identities, stores pending proposals separately, attempts the base-game social interaction,
+and finalizes results and observed relationship deltas from the game's finishing callback.
+Provider timeout/OOM recovery and the operating guide are complete. Follow the in-game
+protocol in `docs/sims4-setup.md`; keep the two action items unchecked until the game path
+passes, and do not begin Stage 3 before the exit gate passes.

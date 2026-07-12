@@ -22,7 +22,9 @@ PROJECT_ROOT = os.path.dirname(ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
 from empneon.adapters.sims4 import Sims4PocAdapter
-from empneon.core.contracts import CognitiveRequest, Decision
+from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
+from empneon.core.identity.models import Agent
+from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.db.connection import open_db
@@ -1496,24 +1498,83 @@ def autonomous_action(payload):
         raise AssertionError("CLOD 1 must not call a provider")
 
     with open_db(CORE_DB_PATH) as conn:
-        runtime = CognitiveRuntime(CORE_GOVERNOR, ActionRecordStore(conn))
-        record = asyncio.run(runtime.process(request, adapter, unused_resolver))
-    action = next(
-        (
-            change.value
-            for change in record.result.applied_changes
-            if change.path == "animation"
-        ),
-        "idle",
-    )
+        actions = ActionRecordStore(conn)
+        runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
+        decision = asyncio.run(runtime.decide(request, unused_resolver))
+        action = adapter.action_for(decision)
+        if action is None:
+            raise ValueError("no supported Sims action available")
+        for key in ("speaker", "listener"):
+            persist_core_agent(conn, payload.get(key) or {})
+        actions.propose(event.id, decision, action)
     return {
-        "hook": "Core handled autonomous event",
-        "target": record.decision.target_id or "",
+        "hook": "Core proposed autonomous action",
+        "target": decision.target_id or "",
         "suggested_action": action,
-        "decision_id": record.decision.id,
-        "status": record.result.status,
+        "decision_id": decision.id,
+        "status": "proposed",
         "activation": "empneon_core",
         "agent_state": "dormant",
+    }
+
+
+def persist_core_agent(conn, sim):
+    agent_id = str(sim.get("id") or "").strip()
+    if not agent_id:
+        raise ValueError("observed Sim id is required")
+    store = AgentStore(conn)
+    agent = store.get(agent_id)
+    name = str(sim.get("name") or agent_id)
+    if agent is None:
+        store.create(
+            Agent(
+                id=agent_id,
+                name=name,
+                game_id=agent_id,
+                adapter="sims4",
+            ),
+            commit=False,
+        )
+    elif agent.name != name:
+        agent.name = name
+        store.update(agent, commit=False)
+
+
+def confirm_action(payload):
+    decision_id = str(payload.get("decision_id") or "").strip()
+    action = str(payload.get("action") or "").strip()
+    status = str(payload.get("status") or "failed")
+    reason = str(payload.get("reason") or "").strip() or None
+    if not decision_id or not action:
+        raise ValueError("decision_id and action are required")
+    if status not in ("succeeded", "failed", "rejected"):
+        raise ValueError("invalid action result status")
+    changes = []
+    if status == "succeeded":
+        changes.append(StateDelta("animation", "set", action))
+        for change in payload.get("changes") or []:
+            if not isinstance(change, dict):
+                raise ValueError("invalid confirmed consequence")
+            path = str(change.get("path") or "")
+            operation = str(change.get("operation") or "")
+            value = change.get("value")
+            if path not in ("relationship.friendship", "relationship.romance"):
+                raise ValueError("unsupported confirmed consequence")
+            if (
+                operation != "increment"
+                or isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not -100 <= value <= 100
+            ):
+                raise ValueError("invalid confirmed consequence")
+            changes.append(StateDelta(path, "increment", value))
+    result = ActionResult(decision_id, status, tuple(changes), reason)
+    with open_db(CORE_DB_PATH) as conn:
+        record = ActionRecordStore(conn).confirm(result, action)
+    return {
+        "decision_id": record.decision.id,
+        "status": record.result.status,
+        "consequences": len(record.result.applied_changes),
     }
 
 
@@ -1676,6 +1737,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/autonomous":
                 self.send_json(200, autonomous_action(payload))
+                return
+            if parsed.path == "/action-result":
+                try:
+                    self.send_json(200, confirm_action(payload))
+                except ValueError as exc:
+                    self.send_json(400, {"error": str(exc)})
                 return
             if parsed.path == "/agent/wake":
                 sim = payload.get("sim") or payload.get("speaker") or payload

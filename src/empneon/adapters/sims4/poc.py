@@ -88,13 +88,16 @@ class Sims4PocAdapter:
                 "rejected",
                 reason=f"unsupported Sims state path: {unsupported[0]}",
             )
-        action = self._action_for(decision.intent)
+        action = self.action_for(decision)
         if action is None:
             return ActionResult(
                 decision.id, "rejected", reason="no supported Sims action available"
             )
         applied = decision.state_changes + (StateDelta("animation", "set", action),)
         return ActionResult(decision.id, "succeeded", applied)
+
+    def action_for(self, decision: Decision) -> str | None:
+        return self._action_for(decision.intent)
 
     def decision_from_response(self, response: Mapping[str, object], event_id: str) -> Decision:
         relationship = response.get("relationship")

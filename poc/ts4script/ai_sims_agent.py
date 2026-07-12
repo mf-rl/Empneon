@@ -26,8 +26,11 @@ AVAILABLE_ACTIONS = [
     "laugh",
 ]
 _AUTONOMY_ALARM = None
+_AUTONOMY_RESPONSE_ALARM = None
 _AUTONOMY_CURSOR = 0
 _AUTONOMY_IN_FLIGHT = False
+_AUTONOMY_RESPONSES = []
+_AUTONOMY_RESPONSES_LOCK = threading.Lock()
 
 
 def write_marker(text):
@@ -241,16 +244,111 @@ def autonomous_tick(_alarm_handle):
     _AUTONOMY_IN_FLIGHT = True
 
     def worker():
-        global _AUTONOMY_IN_FLIGHT
         try:
             data = post_json("/autonomous", payload)
-            write_marker(
-                "autonomous {} -> {}: {}".format(
-                    payload["speaker"]["name"],
-                    payload["listener"]["name"],
-                    data.get("suggested_action", "idle"),
-                )
+            with _AUTONOMY_RESPONSES_LOCK:
+                _AUTONOMY_RESPONSES.append((payload, data))
+        except Exception:
+            global _AUTONOMY_IN_FLIGHT
+            _AUTONOMY_IN_FLIGHT = False
+            write_marker(traceback.format_exc())
+
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+
+
+def process_autonomy_responses(_alarm_handle):
+    with _AUTONOMY_RESPONSES_LOCK:
+        item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
+    if item is None:
+        return
+    payload, data = item
+    execute_sims_action(payload, data)
+
+
+def execute_sims_action(payload, data):
+    decision_id = str(data.get("decision_id") or "")
+    action = str(data.get("suggested_action") or "")
+    speaker_id = str(payload["speaker"]["id"])
+    listener_id = str(payload["listener"]["id"])
+    try:
+        actor_info = find_sim_info_by_id(speaker_id)
+        target_info = find_sim_info_by_id(listener_id)
+        actor = actor_info.get_sim_instance() if actor_info is not None else None
+        target = target_info.get_sim_instance() if target_info is not None else None
+        if actor is None or target is None:
+            raise RuntimeError("actor or target left the active zone")
+        affordance = find_action_affordance(action)
+        if affordance is None:
+            raise RuntimeError("no loaded tuning for {}".format(action))
+
+        from interactions.context import InteractionContext, QueueInsertStrategy
+        from interactions.priority import Priority
+
+        context = InteractionContext(
+            actor,
+            InteractionContext.SOURCE_SCRIPT,
+            Priority.High,
+            insert_strategy=QueueInsertStrategy.NEXT,
+        )
+        enqueue_result = actor.push_super_affordance(affordance, target, context)
+        interaction = getattr(enqueue_result, "interaction", None)
+        if not enqueue_result or interaction is None:
+            raise RuntimeError("game rejected interaction enqueue")
+        callback = getattr(interaction, "register_on_finishing_callback", None)
+        if not callable(callback):
+            raise RuntimeError("game interaction has no completion callback")
+
+        def finished(completed_interaction):
+            finishing_type = str(getattr(completed_interaction, "finishing_type", ""))
+            succeeded = finishing_type.lower().endswith("natural")
+            changes = []
+            if succeeded:
+                before = payload.get("relationship") or {}
+                after = relationship_payload(actor_info, target_info)
+                for key in ("friendship", "romance"):
+                    delta = int(after.get(key, 0)) - int(before.get(key, 0))
+                    if delta:
+                        changes.append(
+                            {
+                                "path": "relationship." + key,
+                                "operation": "increment",
+                                "value": delta,
+                            }
+                        )
+            report_action_result(
+                decision_id,
+                action,
+                "succeeded" if succeeded else "failed",
+                None if succeeded else finishing_type or "interaction canceled",
+                changes,
             )
+
+        callback(finished)
+        write_marker(
+            "queued {} -> {}: {}".format(
+                payload["speaker"]["name"], payload["listener"]["name"], action
+            )
+        )
+    except Exception as exc:
+        report_action_result(decision_id, action, "failed", str(exc), [])
+
+
+def report_action_result(decision_id, action, status, reason=None, changes=None):
+    body = {
+        "decision_id": decision_id,
+        "action": action,
+        "status": status,
+        "reason": reason,
+        "changes": changes or [],
+    }
+
+    def worker():
+        global _AUTONOMY_IN_FLIGHT
+        try:
+            post_json("/action-result", body, timeout=10)
+            write_marker("confirmed {}: {} ({})".format(decision_id, action, status))
         except Exception:
             write_marker(traceback.format_exc())
         finally:
@@ -261,14 +359,50 @@ def autonomous_tick(_alarm_handle):
     thread.start()
 
 
+def find_sim_info_by_id(sim_id):
+    target = str(sim_id)
+    for sim_info in iter_sim_infos() or []:
+        if str(getattr(sim_info, "sim_id", "")) == target:
+            return sim_info
+    return None
+
+
+def find_action_affordance(action):
+    if action != "friendly_chat":
+        return None
+    import sims4.resources
+
+    manager = services.get_instance_manager(sims4.resources.Types.INTERACTION)
+    key = sims4.resources.get_resource_key(
+        "socials_SuperInteraction", sims4.resources.Types.INTERACTION
+    )
+    affordance = manager.get(key)
+    if affordance is not None:
+        return affordance
+    tunings = getattr(manager, "types", None) or getattr(manager, "_tuned_classes", {})
+    for affordance in tunings.values():
+        name = str(getattr(affordance, "__name__", "")).lower()
+        if name in ("socials_superinteraction", "social_superinteraction"):
+            return affordance
+    return None
+
+
 def start_autonomy(zone_instance):
-    global _AUTONOMY_ALARM
+    global _AUTONOMY_ALARM, _AUTONOMY_RESPONSE_ALARM
     if _AUTONOMY_ALARM is not None:
         alarms.cancel_alarm(_AUTONOMY_ALARM)
+    if _AUTONOMY_RESPONSE_ALARM is not None:
+        alarms.cancel_alarm(_AUTONOMY_RESPONSE_ALARM)
     _AUTONOMY_ALARM = alarms.add_alarm(
         zone_instance,
         clock.interval_in_sim_minutes(AUTONOMY_INTERVAL_SIM_MINUTES),
         autonomous_tick,
+        repeating=True,
+    )
+    _AUTONOMY_RESPONSE_ALARM = alarms.add_alarm_real_time(
+        zone_instance,
+        clock.interval_in_real_seconds(1),
+        process_autonomy_responses,
         repeating=True,
     )
 

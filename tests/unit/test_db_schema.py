@@ -18,6 +18,7 @@ EXPECTED_TABLES = frozenset(
         "cognition_usage",
         "action_results",
         "action_consequences",
+        "action_proposals",
     }
 )
 
@@ -86,6 +87,22 @@ def test_migrates_v1_schema_to_current() -> None:
     assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     assert conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='validate_personality_insert'"
+    ).fetchone() == (1,)
+
+
+def test_migrates_v5_schema_with_pending_action_proposals() -> None:
+    conn = sqlite3.connect(":memory:")
+    for ddl in ALL_DDL:
+        if "action_proposals" not in ddl:
+            conn.execute(ddl)
+    conn.execute("INSERT INTO schema_version VALUES (5)")
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='action_proposals'"
     ).fetchone() == (1,)
 
 
