@@ -30,6 +30,10 @@ aichat Bella Goth | Why have you been avoiding me?
 aidirector
 ```
 
+With a lot active, the mod also submits one NPC-to-NPC interaction every 30 simulated
+minutes. Player-controlled Sims are excluded, and a new request is skipped while the
+previous one is still running.
+
 ## Configuration
 
 Optional environment variables:

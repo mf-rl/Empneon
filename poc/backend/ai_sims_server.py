@@ -1498,10 +1498,18 @@ def autonomous_action(payload):
     with open_db(CORE_DB_PATH) as conn:
         runtime = CognitiveRuntime(CORE_GOVERNOR, ActionRecordStore(conn))
         record = asyncio.run(runtime.process(request, adapter, unused_resolver))
+    action = next(
+        (
+            change.value
+            for change in record.result.applied_changes
+            if change.path == "animation"
+        ),
+        "idle",
+    )
     return {
         "hook": "Core handled autonomous event",
         "target": record.decision.target_id or "",
-        "suggested_action": record.decision.intent,
+        "suggested_action": action,
         "decision_id": record.decision.id,
         "status": record.result.status,
         "activation": "empneon_core",

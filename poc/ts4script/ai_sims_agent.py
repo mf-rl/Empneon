@@ -4,11 +4,15 @@ import traceback
 import threading
 import urllib.parse
 
+import alarms
+import clock
 import services
 import sims4.commands
+import zone
 
 
 BACKEND_URL = "http://127.0.0.1:8765"
+AUTONOMY_INTERVAL_SIM_MINUTES = 30
 AVAILABLE_ACTIONS = [
     "friendly_chat",
     "funny_chat",
@@ -21,6 +25,9 @@ AVAILABLE_ACTIONS = [
     "flirt",
     "laugh",
 ]
+_AUTONOMY_ALARM = None
+_AUTONOMY_CURSOR = 0
+_AUTONOMY_IN_FLIGHT = False
 
 
 def write_marker(text):
@@ -199,6 +206,83 @@ def iter_sim_infos():
             return
         except Exception:
             pass
+
+
+def instanced_npc_infos():
+    result = []
+    for sim_info in iter_sim_infos() or []:
+        try:
+            sim = sim_info.get_sim_instance()
+            if sim is not None and not sim.is_selectable:
+                result.append(sim_info)
+        except Exception:
+            pass
+    return result
+
+
+def autonomous_tick(_alarm_handle):
+    global _AUTONOMY_CURSOR, _AUTONOMY_IN_FLIGHT
+    if _AUTONOMY_IN_FLIGHT:
+        return
+    candidates = instanced_npc_infos()
+    if len(candidates) < 2:
+        return
+    speaker = candidates[_AUTONOMY_CURSOR % len(candidates)]
+    listener = candidates[(_AUTONOMY_CURSOR + 1) % len(candidates)]
+    _AUTONOMY_CURSOR = (_AUTONOMY_CURSOR + 1) % len(candidates)
+    payload = {
+        "speaker": sim_info_payload(speaker),
+        "listener": sim_info_payload(listener),
+        "relationship": relationship_payload(speaker, listener),
+        "location": current_location(),
+        "event": {"type": "autonomous_social", "source": "sim_alarm"},
+        "available_actions": AVAILABLE_ACTIONS,
+    }
+    _AUTONOMY_IN_FLIGHT = True
+
+    def worker():
+        global _AUTONOMY_IN_FLIGHT
+        try:
+            data = post_json("/autonomous", payload)
+            write_marker(
+                "autonomous {} -> {}: {}".format(
+                    payload["speaker"]["name"],
+                    payload["listener"]["name"],
+                    data.get("suggested_action", "idle"),
+                )
+            )
+        except Exception:
+            write_marker(traceback.format_exc())
+        finally:
+            _AUTONOMY_IN_FLIGHT = False
+
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+
+
+def start_autonomy(zone_instance):
+    global _AUTONOMY_ALARM
+    if _AUTONOMY_ALARM is not None:
+        alarms.cancel_alarm(_AUTONOMY_ALARM)
+    _AUTONOMY_ALARM = alarms.add_alarm(
+        zone_instance,
+        clock.interval_in_sim_minutes(AUTONOMY_INTERVAL_SIM_MINUTES),
+        autonomous_tick,
+        repeating=True,
+    )
+
+
+_ORIGINAL_ZONE_READY = zone.Zone.on_loading_screen_animation_finished
+
+
+def _on_zone_ready(self, *args, **kwargs):
+    result = _ORIGINAL_ZONE_READY(self, *args, **kwargs)
+    start_autonomy(self)
+    return result
+
+
+zone.Zone.on_loading_screen_animation_finished = _on_zone_ready
 
 
 def find_sim_info_by_name(name):

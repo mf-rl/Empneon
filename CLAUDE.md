@@ -72,9 +72,9 @@ performance numbers until measured in-game.
 - Persistent Core action results and ordered consequences
 - Separate Sims 4 connectivity POC that must be migrated behind the core
 
-The POC `AgentManager` is a semaphore, not the target cognitive scheduler. Its
-`autonomous_action` currently creates a story suggestion rather than executing a full
-autonomous game action.
+The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
+submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
+requests, and routes the interaction through Core's admission limit and action records.
 
 ## Session Checkpoint: 2026-07-10
 
@@ -91,15 +91,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next Stage 2 task: run bounded autonomous NPC interactions without a
-player command. The adapter maps generic intent to a whitelisted action intersected with
-actions reported available by the game payload; provider-proposed animation no longer
-enters Core decisions. Core persists action results and their ordered consequences.
+Resume with the next Stage 2 task: recover safely from provider timeout and out-of-memory
+errors. The adapter maps generic intent to a whitelisted action intersected with actions
+reported available by the game payload; provider-proposed animation no longer enters Core
+decisions. Core persists action results and their ordered consequences.
 
 ## Current Work Order
 
-1. Run bounded autonomous NPC interactions without a player command.
-2. Recover safely from provider timeout and out-of-memory errors.
+1. Recover safely from provider timeout and out-of-memory errors.
+2. Document installation, configuration, privacy, and hardware profiles.
 3. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

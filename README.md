@@ -123,6 +123,7 @@ Version **0.2.0** is an early framework release.
 - [x] Sims identity, relationship, location, mood, and social-event observations
 - [x] Generic-intent mapping to validated available Sims actions
 - [x] Persistent Core action results and ordered consequences
+- [x] Bounded automatic NPC-to-NPC Core interactions
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
@@ -136,7 +137,9 @@ paths now resolve through Core, execute through the adapter, and persist action 
 and their ordered game-confirmed consequences.
 The adapter now observes game identities, relationships, locations, moods, and social
 events, and maps generic intents to whitelisted actions reported available by the game.
-Next, run bounded autonomous NPC interactions without a player command.
+While a lot is active, one non-player pair is submitted every 30 simulated minutes, with
+overlap prevented in the mod and concurrency bounded again by Core. Next, recover safely
+from provider timeout and out-of-memory errors.
 
 ## Documentation
 

@@ -40,7 +40,7 @@ state.
 - [x] Observe game identities, relationships, locations, moods, and social events
 - [x] Map generic decisions to valid available Sims actions
 - [x] Persist consequences and action results
-- [ ] Run bounded autonomous NPC interactions without a player command
+- [x] Run bounded autonomous NPC interactions without a player command
 - [ ] Recover safely from provider timeout and out-of-memory errors
 - [ ] Document installation, configuration, privacy, and hardware profiles
 
@@ -136,5 +136,7 @@ runs generic autonomous and conversation events through Core and persists their 
 results. Stage 1 and the first four Stage 2 tasks are complete. Sims observations enter
 generic world-event facts, and generic intents map to whitelisted actions reported
 available by the game. Game-confirmed applied changes are persisted in order with their
-action results in Core. Next, run bounded autonomous NPC interactions without a player
-command.
+action results in Core. A zone alarm now submits at most one instantiated NPC pair every
+30 simulated minutes, skips player-controlled Sims, prevents overlapping requests, and
+retains Core's configured concurrency admission limit. Next, recover safely from provider
+timeout and out-of-memory errors.
