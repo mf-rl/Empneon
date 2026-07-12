@@ -86,10 +86,11 @@ class CognitiveRequest:
     urgency: float = 0.5
     max_tokens: int = 300
     deadline_ms: int = 3_000
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def __post_init__(self) -> None:
-        if not self.agent_id.strip():
-            raise ValueError("request agent_id must not be empty")
+        if not self.id.strip() or not self.agent_id.strip():
+            raise ValueError("request id and agent_id must not be empty")
         if not 0 <= self.preferred_clod <= 4:
             raise ValueError("preferred_clod must be between 0 and 4")
         if not 0.0 <= self.urgency <= 1.0:

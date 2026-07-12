@@ -15,6 +15,7 @@ EXPECTED_TABLES = frozenset(
         "goals",
         "voice_profiles",
         "agent_metadata",
+        "cognition_usage",
     }
 )
 

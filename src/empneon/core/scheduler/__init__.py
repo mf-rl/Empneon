@@ -3,5 +3,12 @@ from empneon.core.scheduler.priority import (
     RequestDeadlineExceeded,
     SchedulerFull,
 )
+from empneon.core.scheduler.usage import UsageRecord, UsageStore
 
-__all__ = ["PriorityScheduler", "RequestDeadlineExceeded", "SchedulerFull"]
+__all__ = [
+    "PriorityScheduler",
+    "RequestDeadlineExceeded",
+    "SchedulerFull",
+    "UsageRecord",
+    "UsageStore",
+]

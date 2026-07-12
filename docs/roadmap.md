@@ -26,7 +26,7 @@ code exists.
 - [x] Implement a deterministic CLOD 1 rule path
 - [x] Implement a basic priority scheduler with deadlines and backpressure
 - [x] Enforce context, token, latency, concurrency, RAM, and VRAM budgets
-- [ ] Record request estimates and actual provider usage
+- [x] Record request estimates and actual provider usage
 - [ ] Add deterministic degradation and provider-failure fallback
 - [ ] Move Sims POC persistence and cognition behind Empneon Core
 
@@ -129,5 +129,6 @@ Stage 0, the game-adapter contract, and the OpenAI-compatible provider are compl
 Ollama's `/v1/chat/completions` and `/v1/models` endpoints require no distinct adapter,
 and a provider-free deterministic CLOD 1 path is implemented. A bounded priority queue
 now enforces deadlines and backpressure. The resource governor admits work against
-context, token, latency, concurrency, RAM, and VRAM ceilings. Next, record request
-estimates and actual provider usage.
+context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records request
+estimates and actual provider usage. Next, add deterministic degradation and
+provider-failure fallback.
