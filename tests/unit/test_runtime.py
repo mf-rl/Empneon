@@ -22,3 +22,34 @@ def test_sims_event_executes_and_persists_through_core() -> None:
     assert record.result.status == "succeeded"
     assert record.decision.intent == "acknowledge"
     assert actions.get(record.decision.id) == record
+    assert actions.get_consequences(record.decision.id) == record.result.applied_changes
+
+
+def test_applied_consequences_persist_in_order() -> None:
+    adapter = Sims4PocAdapter(
+        {
+            "speaker": {"id": "bella"},
+            "listener": {"id": "mortimer"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    event = adapter.observe()[0]
+    request = CognitiveRequest("bella", 3, event)
+    actions = ActionRecordStore(open_db(":memory:"))
+    runtime = CognitiveRuntime(ResourceGovernor(ResourceBudget(256, 0)), actions)
+
+    async def resolve(_: CognitiveRequest) -> Decision:
+        return adapter.decision_from_response(
+            {
+                "dialogue": "Hello.",
+                "emotion": "happy",
+                "intent": "greet",
+                "relationship": {"friendship_delta": 1},
+                "memory": {"importance": 0.4, "summary": "Bella greeted Mortimer."},
+            },
+            event.id,
+        )
+
+    record = asyncio.run(runtime.process(request, adapter, resolve))
+
+    assert actions.get_consequences(record.decision.id) == record.result.applied_changes

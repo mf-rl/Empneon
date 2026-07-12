@@ -25,25 +25,42 @@ class ActionRecordStore:
     def record(self, event_id: str, decision: Decision, result: ActionResult) -> ActionRecord:
         if result.decision_id != decision.id:
             raise ValueError("action result does not match its decision")
-        self._conn.execute(
-            "INSERT INTO action_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                decision.id,
-                event_id,
-                decision.actor_id,
-                decision.intent,
-                decision.target_id,
-                json.dumps(decision.evidence_ids),
-                json.dumps([dataclasses.asdict(change) for change in decision.state_changes]),
-                decision.confidence,
-                result.status,
-                json.dumps([dataclasses.asdict(change) for change in result.applied_changes]),
-                result.reason,
-                result.completed_at,
-            ),
-        )
-        self._conn.commit()
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO action_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    decision.id,
+                    event_id,
+                    decision.actor_id,
+                    decision.intent,
+                    decision.target_id,
+                    json.dumps(decision.evidence_ids),
+                    json.dumps([dataclasses.asdict(change) for change in decision.state_changes]),
+                    decision.confidence,
+                    result.status,
+                    json.dumps([dataclasses.asdict(change) for change in result.applied_changes]),
+                    result.reason,
+                    result.completed_at,
+                ),
+            )
+            self._conn.executemany(
+                "INSERT INTO action_consequences VALUES (?,?,?,?,?)",
+                [
+                    (decision.id, position, change.path, change.operation, json.dumps(change.value))
+                    for position, change in enumerate(result.applied_changes)
+                ],
+            )
         return ActionRecord(event_id, decision, result)
+
+    def get_consequences(self, decision_id: str) -> tuple[StateDelta, ...]:
+        rows = self._conn.execute(
+            "SELECT path, operation, value FROM action_consequences"
+            " WHERE decision_id=? ORDER BY position",
+            (decision_id,),
+        ).fetchall()
+        return tuple(
+            StateDelta(row["path"], row["operation"], json.loads(row["value"])) for row in rows
+        )
 
     def get(self, decision_id: str) -> ActionRecord | None:
         row = self._conn.execute(

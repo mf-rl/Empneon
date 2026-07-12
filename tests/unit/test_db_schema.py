@@ -17,6 +17,7 @@ EXPECTED_TABLES = frozenset(
         "agent_metadata",
         "cognition_usage",
         "action_results",
+        "action_consequences",
     }
 )
 

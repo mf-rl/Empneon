@@ -39,7 +39,7 @@ state.
 - [x] Convert cheat-console conversation into a core-backed interaction
 - [x] Observe game identities, relationships, locations, moods, and social events
 - [x] Map generic decisions to valid available Sims actions
-- [ ] Persist consequences and action results
+- [x] Persist consequences and action results
 - [ ] Run bounded autonomous NPC interactions without a player command
 - [ ] Recover safely from provider timeout and out-of-memory errors
 - [ ] Document installation, configuration, privacy, and hardware profiles
@@ -133,6 +133,8 @@ context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records req
 estimates and actual provider usage. Resource-admission and provider failures degrade
 deterministically to the provider-free CLOD 1 path. The Sims POC autonomous endpoint now
 runs generic autonomous and conversation events through Core and persists their adapter
-results. Stage 1 and the first three Stage 2 tasks are complete. Sims observations enter
+results. Stage 1 and the first four Stage 2 tasks are complete. Sims observations enter
 generic world-event facts, and generic intents map to whitelisted actions reported
-available by the game. Next, persist consequences and action results in Core stores.
+available by the game. Game-confirmed applied changes are persisted in order with their
+action results in Core. Next, run bounded autonomous NPC interactions without a player
+command.

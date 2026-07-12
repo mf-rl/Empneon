@@ -122,6 +122,7 @@ Version **0.2.0** is an early framework release.
 - [x] Core-backed Sims cheat-console conversation
 - [x] Sims identity, relationship, location, mood, and social-event observations
 - [x] Generic-intent mapping to validated available Sims actions
+- [x] Persistent Core action results and ordered consequences
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
@@ -131,10 +132,11 @@ Version **0.2.0** is an early framework release.
 - [ ] In-game performance and believability benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
-paths now resolve through Core, execute through the adapter, and persist action results.
+paths now resolve through Core, execute through the adapter, and persist action results
+and their ordered game-confirmed consequences.
 The adapter now observes game identities, relationships, locations, moods, and social
 events, and maps generic intents to whitelisted actions reported available by the game.
-Next, persist consequences and action results in Core stores.
+Next, run bounded autonomous NPC interactions without a player command.
 
 ## Documentation
 
