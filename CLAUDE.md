@@ -90,16 +90,15 @@ deselected; Ruff and strict mypy passed. Two existing persistence integration te
 could not run locally because the managed environment denied pytest temporary-directory
 access. No product benchmark or in-game hardware validation has been performed yet.
 
-Resume with the next pending Stage 1 task: determine whether Ollama requires a distinct
-adapter beyond its OpenAI-compatible endpoint. If not, record that decision and proceed
-to the deterministic CLOD 1 rule path.
+Resume with the next pending Stage 1 task: implement the deterministic CLOD 1 rule path.
+Ollama requires no distinct adapter because its required chat and model endpoints are
+OpenAI-compatible.
 
 ## Current Work Order
 
-1. Determine whether Ollama needs a distinct adapter.
-2. Implement a deterministic CLOD 1 rule path.
-3. Build the budgeted event-to-decision vertical slice.
-4. Move the Sims POC onto that path.
-5. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
+1. Implement a deterministic CLOD 1 rule path.
+2. Build the budgeted event-to-decision vertical slice.
+3. Move the Sims POC onto that path.
+4. Benchmark before expanding providers, directors, voice, adapters, or cloud work.
 
 See `docs/roadmap.md` for evidence gates.

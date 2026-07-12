@@ -22,7 +22,7 @@ code exists.
 
 - [x] Define the game-adapter protocol and action-result contract
 - [x] Implement one OpenAI-compatible provider usable by LM Studio and compatible APIs
-- [ ] Implement Ollama only where its API needs a distinct adapter
+- [x] Implement Ollama only where its API needs a distinct adapter (none required)
 - [ ] Implement a deterministic CLOD 1 rule path
 - [ ] Implement a basic priority scheduler with deadlines and backpressure
 - [ ] Enforce context, token, latency, concurrency, RAM, and VRAM budgets
@@ -126,5 +126,5 @@ Begin only after repeated customer demand:
 ## Current Focus
 
 Stage 0, the game-adapter contract, and the OpenAI-compatible provider are complete.
-Next, determine whether Ollama needs a distinct adapter; otherwise proceed to the
-deterministic CLOD 1 rule path.
+Ollama's `/v1/chat/completions` and `/v1/models` endpoints require no distinct adapter.
+Next, implement the deterministic CLOD 1 rule path.
