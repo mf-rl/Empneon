@@ -52,7 +52,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     spec.loader.exec_module(agent)
 
     sim_chat = type("native_NPC_social", (), {})
-    target = SimpleNamespace(is_selectable=False)
+    target = type("Target", (), {"is_selectable": False})()
     interaction = SimpleNamespace(
         affordance=sim_chat,
         finishing_type="FinishingType.NATURAL",
@@ -71,7 +71,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     monkeypatch.setattr(agent, "instanced_npc_infos", lambda: sims)
     services.autonomy_service = lambda: SimpleNamespace(
         find_best_action=lambda selected_request: interaction
-        if selected_request.object_list == (target,)
+        if selected_request.object_list == frozenset((target,))
         else None
     )
     monkeypatch.setattr(

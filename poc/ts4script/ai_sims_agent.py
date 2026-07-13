@@ -239,7 +239,7 @@ def autonomous_tick(_alarm_handle):
         speaker = candidates[(_AUTONOMY_CURSOR + offset) % len(candidates)]
         actor = speaker.get_sim_instance()
         request = actor.autonomy_component._create_autonomy_request()
-        request.object_list = tuple(target for target in npc_sims if target is not actor)
+        request.object_list = frozenset(target for target in npc_sims if target is not actor)
         selected = services.autonomy_service().find_best_action(request)
         target = getattr(selected, "target", None)
         target_info = getattr(target, "sim_info", None)
