@@ -139,8 +139,9 @@ adapter-returned results and ordered consequences, and a bounded zone alarm subm
 pairs without a player command. The confirmation path now persists observed Core
 identities, stores pending proposals separately, attempts the base-game social interaction,
 and finalizes results and observed relationship deltas from the game's finishing callback.
-The generic social tuning resolver excludes namespaced custom-mod tunings and exposes
-filterable `ai.socialtunings` diagnostics for game-version mismatches. Provider timeout/OOM
+The social tuning resolver now selects the exact loaded vanilla `Ask About Day` friendly
+tuning identified by the filterable `ai.socialtunings` diagnostic, instead of guessing
+from unrelated social-super-interaction names. Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game
 protocol in `docs/sims4-setup.md`; keep the two action items unchecked until the game path
 passes, and do not begin Stage 3 before the exit gate passes.

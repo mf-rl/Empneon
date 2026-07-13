@@ -104,19 +104,21 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "mortimer": SimpleNamespace(get_sim_instance=lambda: object()),
     }
     monkeypatch.setattr(agent, "find_sim_info_by_id", infos.get)
-    generic_social = type("socials_Base_SuperInteraction", (), {})
-    expansion_social = type("socials_Expansion_Specific_SuperInteraction", (), {})
+    generic_social = type("mixer_social_AskAboutDay_targeted_Friendly_alwaysOn", (), {})
+    unrelated_social = type("socialSuperInteraction_CarryLetOut", (), {})
     custom_social = type("BC:Slap Child Social SuperInteraction", (), {})
     manager = SimpleNamespace(
         get=lambda _key: None,
-        types={1: expansion_social, 2: generic_social, 3: custom_social},
+        types={1: unrelated_social, 2: generic_social, 3: custom_social},
     )
     monkeypatch.setattr(
         agent.services, "get_instance_manager", lambda _type: manager, raising=False
     )
 
     assert agent.find_action_affordance("friendly_chat") is generic_social
-    assert agent.social_tuning_names("base") == ["socials_Base_SuperInteraction"]
+    assert agent.social_tuning_names("askaboutday") == [
+        "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
+    ]
 
     monkeypatch.setattr(agent, "find_action_affordance", lambda _action: object())
 

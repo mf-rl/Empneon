@@ -377,23 +377,11 @@ def find_action_affordance(action):
     import sims4.resources
 
     manager = services.get_instance_manager(sims4.resources.Types.INTERACTION)
-    key = sims4.resources.get_resource_key(
-        "socials_SuperInteraction", sims4.resources.Types.INTERACTION
-    )
-    affordance = manager.get(key)
-    if affordance is not None:
-        return affordance
-    candidates = []
     for affordance in loaded_interaction_tunings(manager):
         name = str(getattr(affordance, "__name__", ""))
-        if ":" in name:
-            continue
-        normalized = "".join(character for character in name.lower() if character.isalnum())
-        if "social" in normalized and "superinteraction" in normalized:
-            candidates.append((len(name), name, affordance))
-    # ponytail: shortest generic social tuning wins; replace with a tuned resource ID if
-    # game-version diagnostics show this heuristic selecting an expansion-specific action.
-    return min(candidates, default=(0, "", None))[2]
+        if name == "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn":
+            return affordance
+    return None
 
 
 def loaded_interaction_tunings(manager=None):
