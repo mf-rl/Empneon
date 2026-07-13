@@ -85,6 +85,7 @@ performance numbers until measured in-game.
 - Capability-gated shared-prefix batching and cache preparation
 - Archetype approximation gate deferred for lack of benchmark justification
 - Passing differentiated adaptive cost, consistency, and blinded-preference validation
+- Godot 4 selected as the materially different Stage 6 environment
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -209,6 +210,6 @@ is complete.
 
 ## Current Work Order
 
-1. Choose one materially different second environment for Stage 6.
+1. Build the minimal Godot 4 adapter without adding game concepts to Core.
 
 See `docs/roadmap.md` for evidence gates.

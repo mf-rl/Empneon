@@ -88,8 +88,8 @@ Do not build billing or a broad cloud platform before:
 
 ### Prove Portability
 
-- Build one small but materially different adapter, such as a minimal Unity or Roblox
-  experience.
+- Build the selected small Godot 4 portability adapter before considering Unity, Roblox,
+  or other integrations.
 - Publish an adapter guide and contract tests.
 
 ### Sell Services and Tooling

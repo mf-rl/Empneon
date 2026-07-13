@@ -26,8 +26,9 @@ game adapter -> ActionResult -> Empneon Core
 ```
 
 The Sims 4 is adapter number one and the first public demonstration. A deliberately
-different second adapter must prove that the core contracts are portable. Roblox,
-Unity, Unreal, and other integrations are adapter candidates, not core dependencies.
+different second adapter must prove that the core contracts are portable. Godot 4 is the
+selected second environment; its GDScript adapter remains outside Core. Roblox, Unity,
+Unreal, and other integrations remain future adapter candidates, not core dependencies.
 
 ### 2. The core is provider-agnostic
 

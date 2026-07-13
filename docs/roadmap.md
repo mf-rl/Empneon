@@ -87,12 +87,27 @@ predefined believability and consistency threshold.
 
 ## Stage 6: Portability Proof
 
-- [ ] Choose one materially different second environment
+- [x] Choose one materially different second environment: Godot 4
 - [ ] Build a minimal second adapter without adding game concepts to the core
 - [ ] Publish adapter contract tests and development guide
 - [ ] Measure adapter implementation effort
 
-Candidates include a small Unity sample, Roblox experience, or standalone simulation.
+The selected environment is a minimal Godot 4 project written in GDScript. It is materially
+different from The Sims 4 adapter across engine, scripting language, process boundary, and
+world model, while remaining small enough to run headlessly in CI. Godot provides
+[headless command-line execution](https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html),
+[HTTP requests](https://docs.godotengine.org/en/stable/classes/class_httprequest.html), and
+[JSON support](https://docs.godotengine.org/en/stable/classes/class_json.html) without an
+adapter dependency, and its
+[MIT license](https://godotengine.org/license/) fits the repository's Apache-licensed work.
+
+The proof will contain only two agents and one deterministic encounter. GDScript will
+translate that encounter to the existing `WorldEvent` wire shape, submit it to a thin local
+bridge, receive an unchanged Core `Decision`, map one generic intent to a Godot state change,
+and return an `ActionResult`. No Godot types or concepts may enter `empneon.core`. A standalone
+Python simulation was rejected as too close to Core to prove portability; Unity and Roblox
+were deferred because their additional editor, account, or platform workflow is unnecessary
+for this minimal contract proof.
 
 **Exit gate:** Both adapters run the same benchmark scenario through unchanged core
 contracts.

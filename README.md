@@ -252,6 +252,12 @@ the one-target-per-agent consistency check found no contradictions. This remains
 synthetic workload and one assistant evaluator; The Sims was not running, so no new frame
 timing was measured. Stage 5 is complete and Stage 6 is next.
 
+Stage 6 will use a minimal Godot 4 project as the second environment. GDScript, a separate
+engine process, and a deliberately different two-agent world provide a stronger portability
+boundary than another Python simulation. The adapter will exchange the existing event,
+decision, and action-result shapes through a thin local bridge; Godot concepts remain outside
+Core. The environment is selected, but the adapter is not yet implemented.
+
 ## Documentation
 
 - [Vision and architecture](docs/vision.md)
