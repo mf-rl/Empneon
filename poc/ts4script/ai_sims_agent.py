@@ -239,7 +239,10 @@ def autonomous_tick(_alarm_handle):
     for offset in range(len(candidates)):
         speaker = candidates[(_AUTONOMY_CURSOR + offset) % len(candidates)]
         actor = speaker.get_sim_instance()
-        selected = actor.run_test_autonomy_ping([affordance], [])
+        selected = actor.run_test_autonomy_ping(
+            affordance_list=(affordance,),
+            commodity_list=affordance.commodity_flags,
+        )
         target = getattr(selected, "target", None)
         target_info = getattr(target, "sim_info", None)
         if target_info is not None and target is not actor and not target.is_selectable:
@@ -248,6 +251,7 @@ def autonomous_tick(_alarm_handle):
             _AUTONOMY_CURSOR = (_AUTONOMY_CURSOR + offset + 1) % len(candidates)
             break
     if selected_interaction is None:
+        write_marker("autonomy skipped: no valid NPC sim_Chat")
         return
     payload = {
         "speaker": sim_info_payload(speaker),

@@ -51,7 +51,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
 
-    sim_chat = type("sim_Chat", (), {})
+    sim_chat = type("sim_Chat", (), {"commodity_flags": ("social",)})
     target = SimpleNamespace(is_selectable=False)
     interaction = SimpleNamespace(
         finishing_type="FinishingType.NATURAL",
@@ -59,8 +59,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     )
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
     actor = SimpleNamespace(
-        run_test_autonomy_ping=lambda affordances, commodities: interaction
-        if affordances == [sim_chat] and commodities == []
+        run_test_autonomy_ping=lambda **kwargs: interaction
+        if kwargs
+        == {"affordance_list": (sim_chat,), "commodity_list": ("social",)}
         else None
     )
     bella = SimpleNamespace(sim_id="bella", get_sim_instance=lambda: actor)
