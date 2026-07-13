@@ -66,7 +66,7 @@ social consequences across save/reload cycles.
 - [x] Implement contradiction and revision
 - [x] Implement bounded trust-weighted propagation without mandatory LLM calls
 - [x] Add secret, rumor, testimony, and correction scenarios
-- [ ] Add developer-facing causal trace output
+- [x] Add developer-facing causal trace output
 
 **Exit gate:** Every tested belief can be traced to observations and transmissions, and
 the system remains coherent after restart.
@@ -177,5 +177,8 @@ provider-free deterministic relay: recipient-to-source trust and per-hop decay
 attenuate confidence, while hop, recipient, confidence, and cycle bounds stop propagation.
 Persistent integration scenarios now verify secret containment, trust-decayed rumor lineage,
 conflicting testimony, and evidence-backed correction across database close/reopen. These are
-deterministic causal checks, not a player-realism claim. The next task is developer-facing
-causal trace output.
+deterministic causal checks, not a player-realism claim. `BeliefStore.causal_trace()` returns
+JSON-serializable canonical
+event, originating observation, ordered belief lineage, and contradiction/revision records;
+the correction scenario verifies the trace after restart. Stage 4 and its exit gate are
+complete. The next task is collecting cheap-versus-expensive cognition comparisons.

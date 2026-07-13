@@ -150,9 +150,13 @@ Persistent integration scenarios cover secret containment, a two-hop trust-decay
 conflicting testimony held by one agent, and correction through contradiction plus revision.
 Each scenario closes and reopens its SQLite database before asserting causal state.
 
+`BeliefStore.causal_trace()` returns JSON-serializable canonical event, originating
+observation, ordered belief chain, and contradiction/revision relation records. The correction
+scenario verifies this developer output after restart. Stage 4 is complete.
+
 ## Current Work Order
 
-1. Add developer-facing causal trace output.
-2. Continue Stage 4 strictly in roadmap order.
+1. Collect cheap-versus-expensive cognition comparisons.
+2. Continue Stage 5 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

@@ -34,7 +34,8 @@ recovery scenarios must remain causally traceable across save/reload cycles.
 
 The first four deterministic scenarios now pass across SQLite close/reopen. Relationship
 recovery remains outside this checklist item and broader believability still requires player
-evaluation.
+evaluation. A JSON-serializable trace exposes each tested belief's canonical event,
+observation, transmission chain, contradictions, and revisions after restart.
 
 ### 3. Typed and Replayable Cognition
 

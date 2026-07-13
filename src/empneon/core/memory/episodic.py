@@ -5,7 +5,7 @@ import sqlite3
 import time
 import uuid
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 BeliefSourceKind = Literal["observation", "belief"]
@@ -345,6 +345,42 @@ class BeliefStore:
                     if len(propagated) >= max_recipients:
                         break
         return propagated
+
+    def causal_trace(self, belief_id: str) -> dict[str, object]:
+        belief = self.get(belief_id)
+        if belief is None:
+            raise ValueError("belief does not exist")
+        chain = [self.get(item_id) for item_id in (*belief.lineage, belief.id)]
+        if any(item is None for item in chain):
+            raise RuntimeError("belief lineage is incomplete")
+        beliefs = [item for item in chain if item is not None]
+        root = beliefs[0]
+        if root.source_kind != "observation":
+            raise RuntimeError("belief lineage has no originating observation")
+        row = self._conn.execute(
+            "SELECT * FROM event_observations WHERE id=?", (root.source_id,)
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("belief observation is missing")
+        observation = _row_to_observation(row)
+        event = EpisodicMemoryStore(self._conn).get(observation.event_id)
+        if event is None:
+            raise RuntimeError("belief event is missing")
+
+        chain_ids = tuple(item.id for item in beliefs)
+        placeholders = ",".join("?" * len(chain_ids))
+        relations = self._conn.execute(
+            f"SELECT * FROM belief_relations WHERE belief_id IN ({placeholders})"
+            f" OR related_belief_id IN ({placeholders})"
+            " ORDER BY created_at, relation, belief_id, related_belief_id",
+            (*chain_ids, *chain_ids),
+        ).fetchall()
+        return {
+            "event": asdict(event),
+            "observation": asdict(observation),
+            "beliefs": [asdict(item) for item in beliefs],
+            "relations": [dict(relation) for relation in relations],
+        }
 
 
 def _row_to_event(row: sqlite3.Row, participant_ids: list[str]) -> Event:

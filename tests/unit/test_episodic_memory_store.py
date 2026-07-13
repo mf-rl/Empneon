@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pytest
@@ -314,6 +315,14 @@ def test_belief_contradiction_and_revision_preserve_history() -> None:
     assert {belief.id for belief in beliefs.get_current_for_agent(alice.id)} == {
         blue.id,
         revision.id,
+    }
+    trace = json.loads(json.dumps(beliefs.causal_trace(revision.id)))
+    assert trace["event"]["id"] == event.id
+    assert trace["observation"]["id"] == observation.id
+    assert [item["id"] for item in trace["beliefs"]] == [blue.id, revision.id]
+    assert {relation["relation"] for relation in trace["relations"]} == {
+        "contradicts",
+        "revises",
     }
 
 

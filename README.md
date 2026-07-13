@@ -128,7 +128,7 @@ Version **0.2.0** is an early framework release.
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
-- [ ] Epistemic social memory
+- [x] Epistemic social memory
 - [x] Sims 4 reference adapter using Empneon Core
 - [x] Deterministic SocietyBench 20-agent scenarios
 - [x] One-call-per-agent and fixed-CLOD baseline execution
@@ -142,6 +142,7 @@ Version **0.2.0** is an early framework release.
 - [x] Persistent belief contradiction and revision history
 - [x] Bounded provider-free trust-weighted belief propagation
 - [x] Persistent secret, rumor, testimony, and correction scenarios
+- [x] JSON-serializable developer-facing belief causal traces
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -195,7 +196,9 @@ decays multiplicatively, statements remain unchanged, and hard hop, recipient, m
 confidence, and cycle bounds prevent unbounded relay.
 Four deterministic integration scenarios now survive database close/reopen: a contained
 secret, a trust-decayed rumor, conflicting witness testimony, and a correction that revises
-the rumor while preserving history. Developer-facing causal trace output remains pending.
+the rumor while preserving history. Developers can request a JSON-serializable causal trace
+containing the canonical event, observation, ordered belief chain, and contradiction/revision
+records. The correction scenario verifies this output after restart, completing Stage 4.
 
 ## Documentation
 

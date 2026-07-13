@@ -1,5 +1,6 @@
 """Persistent secret, rumor, testimony, and correction scenarios."""
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -184,4 +185,12 @@ def test_correction_revises_rumor_and_survives_restart(tmp_path: Path) -> None:
     assert beliefs.get_contradictions(rumor.id) == [correction]
     assert [belief.id for belief in beliefs.get_current_for_agent(bob.id)] == [correction.id]
     assert {belief.id for belief in beliefs.get_for_agent(bob.id)} == {rumor.id, correction.id}
+    trace = json.loads(json.dumps(beliefs.causal_trace(correction.id)))
+    assert trace["event"]["id"] == correction_event.id
+    assert trace["observation"]["id"] == correction_observation.id
+    assert [belief["id"] for belief in trace["beliefs"]] == [correction.id]
+    assert {relation["relation"] for relation in trace["relations"]} == {
+        "contradicts",
+        "revises",
+    }
     conn.close()
