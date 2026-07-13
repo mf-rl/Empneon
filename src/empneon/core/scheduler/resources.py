@@ -70,21 +70,22 @@ class ResourceGovernor:
         self._lock = threading.Lock()
 
     @property
+    def budget(self) -> ResourceBudget:
+        return self._budget
+
+    @property
     def snapshot(self) -> ResourceSnapshot:
         with self._lock:
             return ResourceSnapshot(self._ram_mb, self._vram_mb, self._active)
 
+    def can_reserve(self, estimate: ResourceEstimate) -> bool:
+        with self._lock:
+            return self._can_reserve(estimate)
+
     @contextmanager
     def reserve(self, estimate: ResourceEstimate) -> Iterator[None]:
         with self._lock:
-            if (
-                self._active >= self._budget.max_concurrent_requests
-                or self._ram_mb + estimate.ram_mb > self._budget.max_ram_mb
-                or self._vram_mb + estimate.vram_mb > self._budget.max_vram_mb
-                or _exceeds(estimate.context_tokens, self._budget.max_context_tokens)
-                or _exceeds(estimate.completion_tokens, self._budget.max_completion_tokens)
-                or _exceeds(estimate.latency_ms, self._budget.max_latency_ms)
-            ):
+            if not self._can_reserve(estimate):
                 raise ResourceLimitExceeded("cognitive request exceeds the resource budget")
             self._ram_mb += estimate.ram_mb
             self._vram_mb += estimate.vram_mb
@@ -96,6 +97,16 @@ class ResourceGovernor:
                 self._ram_mb -= estimate.ram_mb
                 self._vram_mb -= estimate.vram_mb
                 self._active -= 1
+
+    def _can_reserve(self, estimate: ResourceEstimate) -> bool:
+        return not (
+            self._active >= self._budget.max_concurrent_requests
+            or self._ram_mb + estimate.ram_mb > self._budget.max_ram_mb
+            or self._vram_mb + estimate.vram_mb > self._budget.max_vram_mb
+            or _exceeds(estimate.context_tokens, self._budget.max_context_tokens)
+            or _exceeds(estimate.completion_tokens, self._budget.max_completion_tokens)
+            or _exceeds(estimate.latency_ms, self._budget.max_latency_ms)
+        )
 
 
 def _exceeds(value: int, limit: int | None) -> bool:

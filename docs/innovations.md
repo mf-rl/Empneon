@@ -27,6 +27,13 @@ produce a signed net estimate where `+1` always favors deeper reasoning, `0` is 
 `-1` always favors cheap reasoning. The first 19-to-1 result is `+0.90`; because it comes from
 one synthetic evaluator, it is a preliminary player-visible proxy rather than player data.
 
+The first adaptive policy uses that value as a calibrated input rather than a learned model.
+It multiplies expected value by request urgency, keeps low-value work at CLOD 1, and otherwise
+chooses the highest affordable provider route no deeper than the requested CLOD. The route's
+declared context window and resource estimate clamp context and completion tokens before
+atomic admission. This is an implemented deterministic policy, not evidence that it beats
+the Stage 3 baselines.
+
 ### 2. Epistemic Social Memory
 
 **Question:** Can provenance-aware beliefs create coherent social consequences without

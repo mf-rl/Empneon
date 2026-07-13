@@ -36,6 +36,16 @@ def test_request_rejects_invalid_clod(clod: int) -> None:
         CognitiveRequest("alice", preferred_clod=clod, event=WorldEvent("event"))
 
 
+def test_request_rejects_negative_context_budget() -> None:
+    with pytest.raises(ValueError, match="max_context_tokens"):
+        CognitiveRequest(
+            "alice",
+            preferred_clod=3,
+            event=WorldEvent("event"),
+            max_context_tokens=-1,
+        )
+
+
 def test_decision_rejects_invalid_confidence() -> None:
     with pytest.raises(ValueError, match="confidence"):
         Decision("alice", "wait", confidence=1.1)

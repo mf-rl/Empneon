@@ -145,6 +145,7 @@ Version **0.2.0** is an early framework release.
 - [x] JSON-serializable developer-facing belief causal traces
 - [x] Validated cheap-versus-expensive cognition comparison collection
 - [x] Preliminary player-visible value proxy from blinded preferences
+- [x] Dynamic CLOD, provider, context, and completion-token selection
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -209,7 +210,14 @@ the following estimate reuses those samples rather than claiming an independent 
 The same blinded ratings now yield a signed net-preference estimate: deeper-reasoning
 wins minus cheap-reasoning wins, divided by evaluated pairs. The initial 19-to-1 result
 is `+0.90` on a `-1` to `+1` scale. This is a synthetic single-evaluator proxy, not
-measured player utility. Dynamic selection is the next Stage 5 task.
+measured player utility.
+Core now accepts provider routes with a CLOD, capability declaration, resource estimate,
+and resolver. Expected value multiplied by request urgency gates deeper cognition; eligible
+routes are degraded to the highest affordable CLOD, with provider choice ordered by estimated
+cost. Context and completion limits are clamped to the request, runtime budget, and provider
+context window before the existing governor reserves resources. If no route fits, selection
+remains deterministic at provider-free CLOD 1. Optional batching and cache preparation are
+next; the overall adaptive-scheduler item remains open until Stage 5 validation is complete.
 
 ## Documentation
 

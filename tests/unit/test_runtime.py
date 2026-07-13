@@ -5,6 +5,7 @@ import pytest
 from empneon.adapters.sims4 import Sims4PocAdapter
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
+from empneon.core.scheduler import CognitionRoute, select_cognition
 from empneon.core.scheduler.resources import (
     ResourceBudget,
     ResourceEstimate,
@@ -12,6 +13,7 @@ from empneon.core.scheduler.resources import (
     ResourceSnapshot,
 )
 from empneon.db.connection import open_db
+from empneon.providers.llm import ModelCapabilities
 
 
 def test_sims_event_executes_and_persists_through_core() -> None:
@@ -110,3 +112,90 @@ def test_failed_game_confirmation_persists_no_consequence() -> None:
 
     assert record.result.status == "failed"
     assert actions.get_consequences(decision.id) == ()
+
+
+def test_dynamic_selection_routes_and_trims_provider_cognition() -> None:
+    governor = ResourceGovernor(
+        ResourceBudget(
+            256,
+            128,
+            max_context_tokens=800,
+            max_completion_tokens=100,
+            max_latency_ms=1_000,
+        )
+    )
+    runtime = CognitiveRuntime(governor, ActionRecordStore(open_db(":memory:")))
+    request = CognitiveRequest(
+        "bella",
+        4,
+        Sims4PocAdapter({"sim": {"id": "bella"}}).observe()[0],
+        urgency=1,
+        max_tokens=300,
+        max_context_tokens=2_000,
+        deadline_ms=1_000,
+    )
+    selected_requests: list[CognitiveRequest] = []
+
+    async def unavailable(request: CognitiveRequest) -> Decision:
+        raise AssertionError(f"unavailable route selected for {request.id}")
+
+    async def selected(request: CognitiveRequest) -> Decision:
+        selected_requests.append(request)
+        return Decision(request.agent_id, "consider context")
+
+    routes = (
+        CognitionRoute(
+            "large-provider",
+            4,
+            ModelCapabilities(context_window=4_096),
+            ResourceEstimate(128, 256, 2_000, 300, 900),
+            unavailable,
+        ),
+        CognitionRoute(
+            "small-provider",
+            3,
+            ModelCapabilities(context_window=600),
+            ResourceEstimate(64, 64, 1_000, 200, 500),
+            selected,
+        ),
+    )
+
+    plan = select_cognition(request, routes, governor, 0.9)
+    decision = asyncio.run(runtime.decide_dynamic(request, routes, 0.9))
+
+    assert (plan.clod, plan.provider) == (3, "small-provider")
+    assert (plan.context_tokens, plan.completion_tokens) == (500, 100)
+    assert decision.intent == "consider context"
+    assert len(selected_requests) == 1
+    assert selected_requests[0].preferred_clod == 3
+    assert selected_requests[0].max_context_tokens == 500
+    assert selected_requests[0].max_tokens == 100
+    assert governor.snapshot == ResourceSnapshot(0, 0, 0)
+
+
+def test_dynamic_selection_uses_clod1_when_expected_value_is_low() -> None:
+    runtime = CognitiveRuntime(
+        ResourceGovernor(ResourceBudget(256, 128)),
+        ActionRecordStore(open_db(":memory:")),
+    )
+    request = CognitiveRequest(
+        "bella",
+        3,
+        Sims4PocAdapter({"sim": {"id": "bella"}}).observe()[0],
+        urgency=0.4,
+    )
+
+    async def unused(_: CognitiveRequest) -> Decision:
+        raise AssertionError("low-value cognition must not call a provider")
+
+    route = CognitionRoute(
+        "provider",
+        3,
+        ModelCapabilities(context_window=4_096),
+        ResourceEstimate(64, 64, 1_000, 200, 500),
+        unused,
+    )
+
+    decision = asyncio.run(runtime.decide_dynamic(request, (route,), 0.9))
+
+    assert decision.intent == "acknowledge"

@@ -111,6 +111,12 @@ of established level-of-detail principles, not a novelty claim by itself.
 The long-term scheduler should estimate the expected player-visible value of deeper
 reasoning and choose the cheapest sufficient resolution.
 
+The first implemented selector multiplies an expected-value estimate by request urgency.
+When the threshold is met, it chooses the highest affordable provider route at or below the
+requested CLOD, then clamps context and completion tokens to request limits, runtime limits,
+and the provider's declared context window. Otherwise, or when no route fits, it uses the
+provider-free CLOD 1 rule.
+
 ## Typed Cognition
 
 Model output does not directly mutate a game or database. Providers return content;

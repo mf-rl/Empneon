@@ -3,12 +3,14 @@
 import dataclasses
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from empneon.adapters import GameAdapter
 from empneon.core.clod.fallback import Resolver, resolve_with_fallback
+from empneon.core.clod.rules import resolve_clod1
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
 from empneon.core.scheduler.resources import ResourceEstimate, ResourceGovernor
+from empneon.core.scheduler.selection import CognitionRoute, select_cognition
 
 
 @dataclass(frozen=True)
@@ -159,6 +161,26 @@ class CognitiveRuntime:
                 return await resolver(current)
 
         return await resolve_with_fallback(request, admitted)
+
+    async def decide_dynamic(
+        self,
+        request: CognitiveRequest,
+        routes: tuple[CognitionRoute, ...],
+        deeper_reasoning_value: float,
+        minimum_value: float = 0.5,
+    ) -> Decision:
+        plan = select_cognition(
+            request, routes, self._governor, deeper_reasoning_value, minimum_value
+        )
+        if plan.resolver is None:
+            return resolve_clod1(request)
+        selected = replace(
+            request,
+            preferred_clod=plan.clod,
+            max_tokens=plan.completion_tokens,
+            max_context_tokens=plan.context_tokens,
+        )
+        return await self.decide(selected, plan.resolver, plan.estimate)
 
 
 def _decision_from_row(row: sqlite3.Row) -> Decision:

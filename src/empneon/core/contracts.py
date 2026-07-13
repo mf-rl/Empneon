@@ -87,6 +87,7 @@ class CognitiveRequest:
     max_tokens: int = 300
     deadline_ms: int = 3_000
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    max_context_tokens: int = 4_096
 
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.agent_id.strip():
@@ -95,5 +96,7 @@ class CognitiveRequest:
             raise ValueError("preferred_clod must be between 0 and 4")
         if not 0.0 <= self.urgency <= 1.0:
             raise ValueError("urgency must be between 0 and 1")
-        if self.max_tokens <= 0 or self.deadline_ms <= 0:
-            raise ValueError("max_tokens and deadline_ms must be positive")
+        if self.max_tokens <= 0 or self.max_context_tokens < 0 or self.deadline_ms <= 0:
+            raise ValueError(
+                "max_tokens and deadline_ms must be positive; max_context_tokens cannot be negative"
+            )

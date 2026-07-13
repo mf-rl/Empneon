@@ -81,6 +81,7 @@ performance numbers until measured in-game.
 - Published Stage 3 configuration, raw evidence, checksums, and limitations
 - Validated per-request cheap-versus-expensive cognition comparisons
 - Signed deeper-reasoning net-preference estimate from blinded ratings
+- Dynamic CLOD, provider, context, and completion-token route selection
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -101,9 +102,9 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 149 tests and Ruff pass. Strict mypy passes for the changed SocietyBench
-comparison path and its source dependencies; the full test tree still has pre-existing annotation
-failures. No product performance benchmark has been published yet.
+Current verification: 152 tests and Ruff pass. Strict mypy passes for the changed dynamic
+selection path and its source dependencies; the full test tree still has pre-existing
+annotation failures. No product performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
 one-call-per-agent and provider-free fixed-CLOD 1 baseline execution. The workloads use
@@ -164,9 +165,16 @@ produces a `+0.90` signed net preference, where `+1` always favors deeper reason
 neutral, and `-1` always favors cheap reasoning.
 This is a single synthetic evaluator's player-visible proxy, not measured player utility.
 
+Dynamic selection accepts provider routes containing CLOD, capabilities, a resource estimate,
+and a resolver. Expected value multiplied by urgency gates provider use. Eligible routes are
+ordered by the highest affordable CLOD and then estimated cost; context and completion tokens
+are clamped to request limits, runtime limits, and the provider context window. The runtime
+executes the selected resolver through the existing atomic governor reservation and CLOD 1
+failure fallback. This deterministic first policy is not yet benchmarked against Stage 3.
+
 ## Current Work Order
 
-1. Select CLOD, provider, context, and token budget dynamically.
+1. Add optional shared-prefix batching and cache preparation by capability.
 2. Continue Stage 5 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

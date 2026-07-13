@@ -75,7 +75,7 @@ the system remains coherent after restart.
 
 - [x] Collect cheap-versus-expensive cognition comparisons
 - [x] Estimate player-visible value of deeper reasoning
-- [ ] Select CLOD, provider, context, and token budget dynamically
+- [x] Select CLOD, provider, context, and token budget dynamically
 - [ ] Add optional shared-prefix batching and cache preparation by capability
 - [ ] Add archetype approximation only if benchmarks justify it
 - [ ] Compare against Stage 3 baselines
@@ -188,5 +188,10 @@ the same records. The first evidence set is the 20 paired Stage 3 samples; it re
 single-evaluator synthetic evidence, not a player study. The blinded ratings now provide a
 signed net-preference estimate: `(deeper wins - cheap wins) / evaluated comparisons`. The
 initial 19-to-1 result is `+0.90` on a `-1` to `+1` scale. This is a preliminary proxy from one
-synthetic evaluator, not measured player utility. The next task is selecting CLOD, provider,
-context, and token budget dynamically.
+synthetic evaluator, not measured player utility. Core now gates deeper reasoning on expected
+value times request urgency, then selects the highest affordable route at or below the requested
+CLOD. Provider ordering uses declared resource estimates; context and completion budgets are
+clamped to request limits, runtime limits, and the provider context window. Admission is
+rechecked during reservation, and the absence of an eligible route degrades deterministically
+to CLOD 1.
+The next task is optional shared-prefix batching and cache preparation by capability.
