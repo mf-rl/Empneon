@@ -104,6 +104,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     social_super_base = type("SocialSuperInteraction", (), {})
     social_mixer_base = type("SocialMixerInteraction", (), {})
     generic_social = type("socials_SuperInteraction", (social_super_base,), {})
+    toddler_social = type("Toddler_AskWhy", (social_super_base,), {})
     mixer = type(
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
         (social_mixer_base,),
@@ -116,7 +117,10 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         or SimpleNamespace(interaction=interaction),
     )
     mixer_aop = SimpleNamespace(affordance=mixer)
-    target = SimpleNamespace(potential_interactions=lambda _context: [mixer_aop, aop])
+    toddler_aop = SimpleNamespace(affordance=toddler_social)
+    target = SimpleNamespace(
+        potential_interactions=lambda _context: [toddler_aop, mixer_aop, aop]
+    )
     infos = {
         "bella": SimpleNamespace(get_sim_instance=lambda: actor),
         "mortimer": SimpleNamespace(get_sim_instance=lambda: target),
@@ -132,7 +136,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         agent.services, "get_instance_manager", lambda _type: manager, raising=False
     )
 
-    assert agent.find_action_aop(target, object(), "friendly_chat") is aop
+    assert agent.find_action_aops(target, object(), "friendly_chat") == (aop,)
     assert agent.social_tuning_names("askaboutday") == [
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]
