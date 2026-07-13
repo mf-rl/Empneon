@@ -129,7 +129,7 @@ Version **0.2.0** is an early framework release.
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
 - [ ] Epistemic social memory
-- [ ] Sims 4 reference adapter using Empneon Core
+- [x] Sims 4 reference adapter using Empneon Core
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
@@ -149,8 +149,10 @@ uses the game's full-autonomy request unchanged except for restricting its score
 to other loaded NPCs, then queues the winning prevalidated interaction through the native
 executor.
 Filterable `ai.socialtunings friendly`
-diagnostics remain available for game-version investigation. It still requires
-in-game validation before the two remaining Stage 2 items can be checked.
+diagnostics remain available for game-version investigation. Live validation passed
+across a game restart with 20 persistent Core agents, all 20 participating, 15 successful
+autonomous results, zero pending proposals, and 16 ordered consequences. Stage 2 is
+complete.
 
 ## Documentation
 

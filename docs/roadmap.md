@@ -39,8 +39,8 @@ state.
 - [x] Convert cheat-console conversation into a core-backed interaction
 - [x] Observe game identities, relationships, locations, moods, and social events
 - [x] Map generic decisions to valid available Sims actions
-- [ ] Persist game-confirmed consequences and action results
-- [ ] Run bounded autonomous NPC interactions without a player command
+- [x] Persist game-confirmed consequences and action results
+- [x] Run bounded autonomous NPC interactions without a player command
 - [x] Recover safely from provider timeout and out-of-memory errors
 - [x] Document installation, configuration, privacy, and hardware profiles
 
@@ -144,6 +144,7 @@ its scored targets to other loaded NPCs, then queues the winning prevalidated in
 through the native executor. Filterable
 `ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
-recovery and the operating guide are complete. Follow the in-game
-protocol in `docs/sims4-setup.md`; keep the two action items unchecked until the game path
-passes, and do not begin Stage 3 before the exit gate passes.
+recovery and the operating guide are complete. Follow the in-game protocol in
+`docs/sims4-setup.md`. The Stage 2 exit gate passed in a live game across a restart with
+20 persistent Core agents, all 20 participating, 15 successful autonomous results, zero
+pending proposals, and 16 ordered consequences. Stage 2 is complete.
