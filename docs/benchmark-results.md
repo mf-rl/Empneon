@@ -48,3 +48,15 @@ responses violated the requested plain two-to-six-word format with numbering or 
 [answer key](../output/stage3-believability-key-20260713.json), and
 [scored result](../output/stage3-believability-result-20260713.json) are published with the
 other Stage 3 artifacts.
+
+## Stage 5 comparison collection: 2026-07-13
+
+SocietyBench now exposes a validated comparison record for every request, pairing the
+provider-free fixed-CLOD 1 decision with the one-call provider decision while retaining the
+request and strategy labels. Missing strategies, incomplete result sets, and decisions for
+the wrong agent are rejected. The blinded evaluator now consumes these records directly.
+
+The initial collection is the existing 20-pair social-ring run above. Reusing it avoids
+presenting another execution of the same workload as independent evidence. These records
+support the next value-estimation task; collection alone makes no claim about player-visible
+benefit or an adaptive scheduler.

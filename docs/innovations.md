@@ -19,6 +19,11 @@ cheap and expensive outcomes to estimate the value of deeper reasoning.
 **Validation:** Compare adaptive scheduling with fixed thresholds and one-call-per-agent
 baselines using tokens, latency, memory, contradictions, and blinded believability.
 
+Stage 5 comparison collection now pairs each request with its fixed-CLOD 1 and one-call
+decisions, preserving both labeled strategies and rejecting incomplete or agent-misaligned
+results. The first 20 records reuse the Stage 3 social-ring evidence. They are inputs for
+value estimation, not evidence that the adaptive policy is effective.
+
 ### 2. Epistemic Social Memory
 
 **Question:** Can provenance-aware beliefs create coherent social consequences without

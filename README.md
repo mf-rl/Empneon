@@ -143,6 +143,7 @@ Version **0.2.0** is an early framework release.
 - [x] Bounded provider-free trust-weighted belief propagation
 - [x] Persistent secret, rumor, testimony, and correction scenarios
 - [x] JSON-serializable developer-facing belief causal traces
+- [x] Validated cheap-versus-expensive cognition comparison collection
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -199,6 +200,11 @@ secret, a trust-decayed rumor, conflicting witness testimony, and a correction t
 the rumor while preserving history. Developers can request a JSON-serializable causal trace
 containing the canonical event, observation, ordered belief chain, and contradiction/revision
 records. The correction scenario verifies this output after restart, completing Stage 4.
+Stage 5 now begins from reusable comparison records that align each cognitive request with
+its provider-free fixed-CLOD 1 decision and one-call provider decision. The collector
+validates strategy coverage, result counts, and agent alignment before the records feed the
+existing blinded evaluation. The initial evidence remains the 20 paired Stage 3 samples;
+estimating their player-visible value is the next task.
 
 ## Documentation
 

@@ -79,6 +79,7 @@ performance numbers until measured in-game.
 - SocietyBench identity-continuity and contradiction metrics
 - Seeded blinded SocietyBench believability comparison and scoring
 - Published Stage 3 configuration, raw evidence, checksums, and limitations
+- Validated per-request cheap-versus-expensive cognition comparisons
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -99,8 +100,8 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 147 tests and Ruff pass. Strict mypy passes for the changed epistemic
-scenario and its source dependencies; the full test tree still has pre-existing annotation
+Current verification: 149 tests and Ruff pass. Strict mypy passes for the changed SocietyBench
+comparison path and its source dependencies; the full test tree still has pre-existing annotation
 failures. No product performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
@@ -154,9 +155,15 @@ Each scenario closes and reopens its SQLite database before asserting causal sta
 observation, ordered belief chain, and contradiction/revision relation records. The correction
 scenario verifies this developer output after restart. Stage 4 is complete.
 
+Stage 5 comparison collection pairs each request with its provider-free fixed-CLOD 1
+decision and one-call provider decision. Strategy coverage, result counts, and decision-agent
+alignment are validated, and the blinded evaluator consumes the same records. The first
+collection reuses the 20 Stage 3 social-ring pairs and does not yet estimate player-visible
+value.
+
 ## Current Work Order
 
-1. Collect cheap-versus-expensive cognition comparisons.
+1. Estimate player-visible value of deeper reasoning.
 2. Continue Stage 5 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

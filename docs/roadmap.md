@@ -73,7 +73,7 @@ the system remains coherent after restart.
 
 ## Stage 5: Adaptive Value-of-Thought Scheduler
 
-- [ ] Collect cheap-versus-expensive cognition comparisons
+- [x] Collect cheap-versus-expensive cognition comparisons
 - [ ] Estimate player-visible value of deeper reasoning
 - [ ] Select CLOD, provider, context, and token budget dynamically
 - [ ] Add optional shared-prefix batching and cache preparation by capability
@@ -181,4 +181,9 @@ deterministic causal checks, not a player-realism claim. `BeliefStore.causal_tra
 JSON-serializable canonical
 event, originating observation, ordered belief lineage, and contradiction/revision records;
 the correction scenario verifies the trace after restart. Stage 4 and its exit gate are
-complete. The next task is collecting cheap-versus-expensive cognition comparisons.
+complete. Stage 5 now has validated per-request comparison records pairing the provider-free
+fixed-CLOD 1 decision with the one-call provider decision. Collection rejects missing,
+mis-sized, or agent-misaligned baseline results, and the existing blinded evaluator consumes
+the same records. The first evidence set is the 20 paired Stage 3 samples; it remains
+single-evaluator synthetic evidence, not a player study. The next task is estimating the
+player-visible value of deeper reasoning.

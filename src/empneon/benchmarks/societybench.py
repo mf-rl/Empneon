@@ -27,6 +27,16 @@ class BaselineResult:
 
 
 @dataclass(frozen=True)
+class CognitionComparison:
+    comparison_id: str
+    request: CognitiveRequest
+    cheap_strategy: str
+    cheap_decision: Decision
+    expensive_strategy: str
+    expensive_decision: Decision
+
+
+@dataclass(frozen=True)
 class BenchmarkObservation:
     cpu_percent: float
     ram_mb: float
@@ -160,6 +170,41 @@ async def measure_baselines(
     )
 
 
+def collect_cognition_comparisons(
+    scenario: BenchmarkScenario,
+    results: tuple[BaselineResult, BaselineResult],
+) -> tuple[CognitionComparison, ...]:
+    """Pair cheap and expensive decisions for the same cognitive request."""
+    by_strategy = {result.strategy: result for result in results}
+    required = {"one-call-per-agent", "fixed-clod-1"}
+    if set(by_strategy) != required:
+        raise ValueError("one-call-per-agent and fixed-clod-1 results are required")
+    if any(len(result.decisions) != len(scenario.requests) for result in results):
+        raise ValueError("each strategy must contain one decision per request")
+    cheap = by_strategy["fixed-clod-1"]
+    expensive = by_strategy["one-call-per-agent"]
+    comparisons = []
+    for index, request in enumerate(scenario.requests):
+        cheap_decision = cheap.decisions[index]
+        expensive_decision = expensive.decisions[index]
+        if {
+            cheap_decision.actor_id,
+            expensive_decision.actor_id,
+        } != {request.agent_id}:
+            raise ValueError("comparison decisions must match the request agent")
+        comparisons.append(
+            CognitionComparison(
+                f"{scenario.name}-{index:02d}",
+                request,
+                cheap.strategy,
+                cheap_decision,
+                expensive.strategy,
+                expensive_decision,
+            )
+        )
+    return tuple(comparisons)
+
+
 def summarize_metrics(
     strategy: str, observations: tuple[BenchmarkObservation, ...]
 ) -> BenchmarkMetrics:
@@ -212,37 +257,29 @@ def build_blinded_believability_evaluation(
     seed: int = 0,
 ) -> tuple[tuple[BelievabilitySample, ...], tuple[BelievabilityKey, ...]]:
     """Randomize baseline labels while retaining a separate answer key."""
-    by_strategy = {result.strategy: result for result in results}
-    required = {"one-call-per-agent", "fixed-clod-1"}
-    if set(by_strategy) != required:
-        raise ValueError("one-call-per-agent and fixed-clod-1 results are required")
-    if any(len(result.decisions) != len(scenario.requests) for result in results):
-        raise ValueError("each strategy must contain one decision per request")
     random = Random(seed)
     samples = []
     keys = []
-    for index, request in enumerate(scenario.requests):
-        sample_id = f"{scenario.name}-{index:02d}"
+    for comparison in collect_cognition_comparisons(scenario, results):
         options = [
-            (
-                by_strategy["one-call-per-agent"].decisions[index].intent,
-                "one-call-per-agent",
-            ),
-            (by_strategy["fixed-clod-1"].decisions[index].intent, "fixed-clod-1"),
+            (comparison.expensive_decision.intent, comparison.expensive_strategy),
+            (comparison.cheap_decision.intent, comparison.cheap_strategy),
         ]
         if random.randrange(2):
             options.reverse()
         samples.append(
             BelievabilitySample(
-                sample_id,
-                request.id,
-                request.event.type,
-                request.event.actor_ids,
+                comparison.comparison_id,
+                comparison.request.id,
+                comparison.request.event.type,
+                comparison.request.event.actor_ids,
                 options[0][0],
                 options[1][0],
             )
         )
-        keys.append(BelievabilityKey(sample_id, options[0][1], options[1][1]))
+        keys.append(
+            BelievabilityKey(comparison.comparison_id, options[0][1], options[1][1])
+        )
     return tuple(samples), tuple(keys)
 
 

@@ -9,6 +9,7 @@ from empneon.benchmarks import (
     BenchmarkObservation,
     build_20_agent_scenarios,
     build_blinded_believability_evaluation,
+    collect_cognition_comparisons,
     measure_baselines,
     measure_believability,
     measure_consistency,
@@ -84,6 +85,45 @@ def test_metrics_retain_raw_samples_and_compute_totals_and_percentiles() -> None
     assert (metrics.latency_p50_ms, metrics.latency_p95_ms) == (25, 38.5)
     with pytest.raises(ValueError, match="finite and nonnegative"):
         BenchmarkObservation(-1, 0, 0, 0, 0, 0, 0)
+
+
+def test_collects_aligned_cheap_and_expensive_cognition_comparisons() -> None:
+    scenario = build_20_agent_scenarios()[0]
+    expensive = BaselineResult(
+        "one-call-per-agent",
+        tuple(Decision(agent, "consider context") for agent in scenario.agent_ids),
+        20,
+    )
+    cheap = BaselineResult(
+        "fixed-clod-1",
+        tuple(Decision(agent, "acknowledge") for agent in scenario.agent_ids),
+        0,
+    )
+
+    comparisons = collect_cognition_comparisons(scenario, (expensive, cheap))
+
+    assert len(comparisons) == 20
+    assert comparisons[0].comparison_id == "social-ring-00"
+    assert comparisons[0].request == scenario.requests[0]
+    assert comparisons[0].cheap_strategy == "fixed-clod-1"
+    assert comparisons[0].cheap_decision.intent == "acknowledge"
+    assert comparisons[0].expensive_strategy == "one-call-per-agent"
+    assert comparisons[0].expensive_decision.intent == "consider context"
+
+
+def test_rejects_misaligned_cognition_comparisons() -> None:
+    scenario = build_20_agent_scenarios()[0]
+    decisions = tuple(Decision(agent, "acknowledge") for agent in scenario.agent_ids)
+    misaligned = (Decision("wrong-agent", "consider context"),) + decisions[1:]
+
+    with pytest.raises(ValueError, match="match the request agent"):
+        collect_cognition_comparisons(
+            scenario,
+            (
+                BaselineResult("fixed-clod-1", decisions, 0),
+                BaselineResult("one-call-per-agent", misaligned, 20),
+            ),
+        )
 
 
 def test_consistency_measures_identity_continuity_and_contradictions() -> None:
