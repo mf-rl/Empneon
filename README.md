@@ -145,7 +145,7 @@ release reserved resources. Installation, configuration, privacy, conservative h
 profiles, and the in-game exit-gate procedure are documented. The current automatic path
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
-queues a currently available, game-tested social super-interaction at low priority so the
+executes a currently available, game-tested social interaction AOP at low priority so the
 game can wait for a compatible state, using the game's autonomy interaction context so it
 can create and own the social group and its mixers.
 Filterable `ai.socialtunings friendly`

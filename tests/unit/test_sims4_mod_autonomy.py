@@ -100,9 +100,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
-    actor = SimpleNamespace(
-        push_super_affordance=lambda *_args: SimpleNamespace(interaction=interaction)
-    )
+    actor = SimpleNamespace()
     social_super_base = type("SocialSuperInteraction", (), {})
     social_mixer_base = type("SocialMixerInteraction", (), {})
     generic_social = type("socials_SuperInteraction", (social_super_base,), {})
@@ -111,8 +109,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         (social_mixer_base,),
         {},
     )
+    executed_contexts = []
     aop = SimpleNamespace(
         affordance=generic_social,
+        test_and_execute=lambda context: executed_contexts.append(context)
+        or SimpleNamespace(interaction=interaction),
     )
     mixer_aop = SimpleNamespace(affordance=mixer)
     target = SimpleNamespace(potential_interactions=lambda _context: [mixer_aop, aop])
@@ -139,6 +140,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent.process_autonomy_responses(None)
 
     assert contexts[0][0][1] == "autonomy"
+    assert len(executed_contexts) == 1
     assert payloads[1] == (
         "/action-result",
         {

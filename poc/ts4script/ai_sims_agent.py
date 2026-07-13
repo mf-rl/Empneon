@@ -292,7 +292,7 @@ def execute_sims_action(payload, data):
         if aop is None:
             raise RuntimeError("no available social super interaction")
         affordance = getattr(aop, "affordance", None)
-        enqueue_result = actor.push_super_affordance(affordance, target, context)
+        enqueue_result = aop.test_and_execute(context)
         interaction = getattr(enqueue_result, "interaction", None)
         if not enqueue_result or interaction is None:
             raise RuntimeError(
