@@ -32,6 +32,10 @@ techniques within this larger system.
 **Validation:** Secret, rumor, conflicting-testimony, correction, and relationship
 recovery scenarios must remain causally traceable across save/reload cycles.
 
+The first four deterministic scenarios now pass across SQLite close/reopen. Relationship
+recovery remains outside this checklist item and broader believability still requires player
+evaluation.
+
 ### 3. Typed and Replayable Cognition
 
 **Question:** Can structured decisions preserve generative behavior while providing

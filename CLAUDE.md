@@ -99,9 +99,9 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 143 tests and Ruff pass. Strict mypy passes for the changed memory,
-schema, and test files; the full test tree still has pre-existing annotation failures. No product
-performance benchmark has been published yet.
+Current verification: 147 tests and Ruff pass. Strict mypy passes for the changed epistemic
+scenario and its source dependencies; the full test tree still has pre-existing annotation
+failures. No product performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
 one-call-per-agent and provider-free fixed-CLOD 1 baseline execution. The workloads use
@@ -146,9 +146,13 @@ edges (`recipient -> source`), multiplies confidence by trust and per-hop decay,
 statements, extends lineage through ordinary belief creation, and enforces hop, recipient,
 minimum-confidence, and cycle bounds.
 
+Persistent integration scenarios cover secret containment, a two-hop trust-decayed rumor,
+conflicting testimony held by one agent, and correction through contradiction plus revision.
+Each scenario closes and reopens its SQLite database before asserting causal state.
+
 ## Current Work Order
 
-1. Add secret, rumor, testimony, and correction scenarios.
+1. Add developer-facing causal trace output.
 2. Continue Stage 4 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

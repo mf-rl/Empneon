@@ -141,6 +141,7 @@ Version **0.2.0** is an early framework release.
 - [x] Belief source, confidence, interpretation, and transmission lineage
 - [x] Persistent belief contradiction and revision history
 - [x] Bounded provider-free trust-weighted belief propagation
+- [x] Persistent secret, rumor, testimony, and correction scenarios
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -191,7 +192,10 @@ between one agent's beliefs. Atomic revisions retain the original belief for aud
 current-belief queries expose its single replacement.
 Beliefs now propagate without model calls through directed relationship trust. Confidence
 decays multiplicatively, statements remain unchanged, and hard hop, recipient, minimum-
-confidence, and cycle bounds prevent unbounded relay. Scenario validation is next.
+confidence, and cycle bounds prevent unbounded relay.
+Four deterministic integration scenarios now survive database close/reopen: a contained
+secret, a trust-decayed rumor, conflicting witness testimony, and a correction that revises
+the rumor while preserving history. Developer-facing causal trace output remains pending.
 
 ## Documentation
 

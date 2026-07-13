@@ -65,7 +65,7 @@ social consequences across save/reload cycles.
 - [x] Record belief source, confidence, interpretation, and lineage
 - [x] Implement contradiction and revision
 - [x] Implement bounded trust-weighted propagation without mandatory LLM calls
-- [ ] Add secret, rumor, testimony, and correction scenarios
+- [x] Add secret, rumor, testimony, and correction scenarios
 - [ ] Add developer-facing causal trace output
 
 **Exit gate:** Every tested belief can be traced to observations and transmissions, and
@@ -175,4 +175,7 @@ contradiction links and directional revision links. Revisions atomically preserv
 belief as history while current-belief queries return its replacement. Propagation is now a
 provider-free deterministic relay: recipient-to-source trust and per-hop decay
 attenuate confidence, while hop, recipient, confidence, and cycle bounds stop propagation.
-The next task is adding secret, rumor, testimony, and correction scenarios.
+Persistent integration scenarios now verify secret containment, trust-decayed rumor lineage,
+conflicting testimony, and evidence-backed correction across database close/reopen. These are
+deterministic causal checks, not a player-realism claim. The next task is developer-facing
+causal trace output.
