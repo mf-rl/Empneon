@@ -76,7 +76,7 @@ the system remains coherent after restart.
 - [x] Collect cheap-versus-expensive cognition comparisons
 - [x] Estimate player-visible value of deeper reasoning
 - [x] Select CLOD, provider, context, and token budget dynamically
-- [ ] Add optional shared-prefix batching and cache preparation by capability
+- [x] Add optional shared-prefix batching and cache preparation by capability
 - [ ] Add archetype approximation only if benchmarks justify it
 - [ ] Compare against Stage 3 baselines
 
@@ -194,4 +194,9 @@ CLOD. Provider ordering uses declared resource estimates; context and completion
 clamped to request limits, runtime limits, and the provider context window. Admission is
 rechecked during reservation, and the absence of an eligible route degrades deterministically
 to CLOD 1.
-The next task is optional shared-prefix batching and cache preparation by capability.
+Generation preparation now finds the longest common message prefix, requires compatible
+temperature and schema settings for a native batch, and invokes batching or prefix-cache
+preparation only when the provider declares the matching capability. Ordinary providers keep
+their existing per-request generation path. Capability/method mismatches and incomplete batch
+results fail explicitly. No backend performance benefit has been measured. The next task is
+archetype approximation, only if benchmarks justify it.

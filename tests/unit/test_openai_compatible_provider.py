@@ -6,9 +6,13 @@ import pytest
 
 from empneon.providers.llm import (
     GenerationRequest,
+    GenerationResult,
     Message,
+    ModelCapabilities,
     OpenAICompatibleProvider,
     ProviderError,
+    generate_requests,
+    prepare_generation_requests,
 )
 
 
@@ -28,7 +32,7 @@ class Response:
 
 def test_generates_with_openai_compatible_chat_endpoint() -> None:
     provider = OpenAICompatibleProvider("http://localhost:1234/v1", "local-model", "key")
-    result_data = {
+    result_data: dict[str, object] = {
         "choices": [{"message": {"content": "hello"}}],
         "usage": {"prompt_tokens": 4, "completion_tokens": 1},
     }
@@ -63,3 +67,94 @@ def test_generation_normalizes_provider_failures(failure: Exception) -> None:
             asyncio.run(
                 provider.generate(GenerationRequest((Message("user", "Hi"),), max_tokens=20))
             )
+
+
+class OptimizedProvider:
+    capabilities = ModelCapabilities(batching=True, prefix_caching=True)
+
+    def __init__(self) -> None:
+        self.prepared: list[tuple[Message, ...]] = []
+        self.batches: list[tuple[GenerationRequest, ...]] = []
+
+    async def generate(self, _: GenerationRequest) -> GenerationResult:
+        raise AssertionError("optimized requests must use native batching")
+
+    async def generate_batch(
+        self,
+        requests: tuple[GenerationRequest, ...],
+        _: tuple[Message, ...],
+    ) -> tuple[GenerationResult, ...]:
+        self.batches.append(requests)
+        return tuple(GenerationResult(f"result-{index}") for index, _ in enumerate(requests))
+
+    async def prepare_prefix_cache(self, prefix: tuple[Message, ...]) -> None:
+        self.prepared.append(prefix)
+
+    async def health_check(self) -> bool:
+        return True
+
+
+class OrdinaryProvider:
+    capabilities = ModelCapabilities()
+
+    def __init__(self) -> None:
+        self.requests: list[GenerationRequest] = []
+
+    async def generate(self, request: GenerationRequest) -> GenerationResult:
+        self.requests.append(request)
+        return GenerationResult(request.messages[-1].content)
+
+    async def health_check(self) -> bool:
+        return True
+
+
+class MisconfiguredProvider(OrdinaryProvider):
+    capabilities = ModelCapabilities(batching=True)
+
+
+def test_prepares_and_executes_declared_shared_prefix_optimizations() -> None:
+    shared = Message("system", "shared society context")
+    trailing = Message("assistant", "same text after divergence")
+    requests = (
+        GenerationRequest((shared, Message("user", "agent A"), trailing), 20),
+        GenerationRequest((shared, Message("user", "agent B"), trailing), 20),
+    )
+    provider = OptimizedProvider()
+
+    preparation = prepare_generation_requests(requests, provider.capabilities)
+    results = asyncio.run(generate_requests(provider, requests))
+
+    assert preparation.shared_prefix == (shared,)
+    assert preparation.use_batch is True
+    assert preparation.prepare_cache is True
+    assert provider.prepared == [(shared,)]
+    assert provider.batches == [requests]
+    assert tuple(result.content for result in results) == ("result-0", "result-1")
+
+
+def test_preserves_ordinary_generation_without_declared_capabilities() -> None:
+    shared = Message("system", "shared society context")
+    requests = (
+        GenerationRequest((shared, Message("user", "agent A")), 20),
+        GenerationRequest((shared, Message("user", "agent B")), 20),
+    )
+    provider = OrdinaryProvider()
+
+    preparation = prepare_generation_requests(requests, provider.capabilities)
+    results = asyncio.run(generate_requests(provider, requests))
+
+    assert preparation.use_batch is False
+    assert preparation.prepare_cache is False
+    assert provider.requests == list(requests)
+    assert tuple(result.content for result in results) == ("agent A", "agent B")
+
+
+def test_rejects_declared_batching_without_native_method() -> None:
+    shared = Message("system", "shared society context")
+    requests = (
+        GenerationRequest((shared, Message("user", "agent A")), 20),
+        GenerationRequest((shared, Message("user", "agent B")), 20),
+    )
+
+    with pytest.raises(ProviderError, match="without generate_batch"):
+        asyncio.run(generate_requests(MisconfiguredProvider(), requests))

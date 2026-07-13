@@ -146,6 +146,7 @@ Version **0.2.0** is an early framework release.
 - [x] Validated cheap-versus-expensive cognition comparison collection
 - [x] Preliminary player-visible value proxy from blinded preferences
 - [x] Dynamic CLOD, provider, context, and completion-token selection
+- [x] Capability-gated shared-prefix batching and cache preparation
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -216,8 +217,14 @@ and resolver. Expected value multiplied by request urgency gates deeper cognitio
 routes are degraded to the highest affordable CLOD, with provider choice ordered by estimated
 cost. Context and completion limits are clamped to the request, runtime budget, and provider
 context window before the existing governor reserves resources. If no route fits, selection
-remains deterministic at provider-free CLOD 1. Optional batching and cache preparation are
-next; the overall adaptive-scheduler item remains open until Stage 5 validation is complete.
+remains deterministic at provider-free CLOD 1. The overall adaptive-scheduler item remains
+open until Stage 5 validation is complete.
+Provider helpers now detect the longest common message prefix across compatible generation
+requests. Native batching is used only when the provider declares `batching`; prefix
+preparation is invoked only when it declares `prefix_caching`. Providers declaring neither
+capability continue through ordinary generation unchanged, and the OpenAI-compatible adapter
+currently declares neither. This is working capability routing, not a latency or cache-hit
+claim. Archetype approximation is the next conditional Stage 5 task.
 
 ## Documentation
 

@@ -82,6 +82,7 @@ performance numbers until measured in-game.
 - Validated per-request cheap-versus-expensive cognition comparisons
 - Signed deeper-reasoning net-preference estimate from blinded ratings
 - Dynamic CLOD, provider, context, and completion-token route selection
+- Capability-gated shared-prefix batching and cache preparation
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -102,8 +103,8 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 152 tests and Ruff pass. Strict mypy passes for the changed dynamic
-selection path and its source dependencies; the full test tree still has pre-existing
+Current verification: 155 tests and Ruff pass. Strict mypy passes for the changed provider
+preparation path and its source dependencies; the full test tree still has pre-existing
 annotation failures. No product performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
@@ -172,9 +173,16 @@ are clamped to request limits, runtime limits, and the provider context window. 
 executes the selected resolver through the existing atomic governor reservation and CLOD 1
 failure fallback. This deterministic first policy is not yet benchmarked against Stage 3.
 
+Generation preparation detects the longest exact common message prefix. Multiple requests
+use native batching only when their temperature and schema settings are compatible and the
+provider declares `batching`; cache preparation runs only when `prefix_caching` is declared.
+Providers declaring neither keep ordinary generation unchanged. The OpenAI-compatible
+provider currently declares neither capability. This path has contract tests but no backend
+performance evidence; predictive prewarming is intentionally excluded.
+
 ## Current Work Order
 
-1. Add optional shared-prefix batching and cache preparation by capability.
+1. Add archetype approximation only if benchmarks justify it.
 2. Continue Stage 5 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

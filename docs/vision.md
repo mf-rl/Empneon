@@ -46,6 +46,12 @@ Supported deployments may include:
 Basic generation must work everywhere. Backend-specific optimizations are enabled
 only when declared and measured.
 
+Shared-prefix generation preparation preserves that contract: ordinary providers keep the
+single-request path, while providers declaring native batching or prefix caching receive the
+detected common prefix through `generate_batch(requests, shared_prefix)` or
+`prepare_prefix_cache(shared_prefix)`. Capability declarations never cause Empneon to emulate
+native batching with a combined multi-character prompt.
+
 ### 3. Resource constraints are runtime invariants
 
 The game has priority over optional cognition. Empneon operates inside the resources

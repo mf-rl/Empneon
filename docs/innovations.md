@@ -108,10 +108,19 @@ The scheduler may batch compatible requests or reuse prefixes when a backend exp
 the capability. One prompt producing several characters is not equivalent to
 independent continuations with shared KV cache. Each backend needs its own benchmark.
 
+Generation preparation now detects the exact longest common message prefix. Compatible
+requests use a provider's native batch method only when `batching` is declared; the prefix is
+prepared only when `prefix_caching` is declared. Providers without either capability retain
+ordinary independent generation. This implements capability routing without claiming that
+batching or caching improves a particular backend.
+
 ### Predictive Cache Preparation
 
 Behavioral patterns may predict future context needs. Preparation is enabled only when
 its measured latency benefit exceeds its VRAM and CPU cost.
+
+The implemented cache preparation applies only to already queued requests with an observed
+shared prefix. Predictive prewarming remains unimplemented pending measured benefit.
 
 ### Archetype Approximation
 
