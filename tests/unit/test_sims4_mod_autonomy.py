@@ -51,7 +51,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
 
-    sim_chat = type("sim_Chat", (), {"commodity_flags": ("social",)})
+    sim_chat = type(
+        "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+        (),
+        {"commodity_flags": ("social",)},
+    )
     target = SimpleNamespace(is_selectable=False)
     interaction = SimpleNamespace(
         finishing_type="FinishingType.NATURAL",

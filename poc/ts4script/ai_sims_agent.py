@@ -236,6 +236,7 @@ def autonomous_tick(_alarm_handle):
     selected_interaction = None
     speaker = None
     listener = None
+    skip_reason = "no scored friendly interaction"
     for offset in range(len(candidates)):
         speaker = candidates[(_AUTONOMY_CURSOR + offset) % len(candidates)]
         actor = speaker.get_sim_instance()
@@ -250,8 +251,12 @@ def autonomous_tick(_alarm_handle):
             listener = target_info
             _AUTONOMY_CURSOR = (_AUTONOMY_CURSOR + offset + 1) % len(candidates)
             break
+        if target_info is not None:
+            skip_reason = "selected non-NPC target " + str(
+                getattr(target_info, "sim_id", "unknown")
+            )
     if selected_interaction is None:
-        write_marker("autonomy skipped: no valid NPC sim_Chat")
+        write_marker("autonomy skipped: " + skip_reason)
         return
     payload = {
         "speaker": sim_info_payload(speaker),
@@ -377,7 +382,9 @@ def find_sim_info_by_id(sim_id):
 
 
 def find_action_affordance(action):
-    tuning_name = {"friendly_chat": "sim_Chat"}.get(action)
+    tuning_name = {
+        "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
+    }.get(action)
     return next(
         (
             tuning
