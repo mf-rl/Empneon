@@ -405,12 +405,18 @@ def loaded_interaction_tunings(manager=None):
     return tuple(tunings.values())
 
 
-def social_tuning_names():
+def social_tuning_names(query=""):
     names = {
         str(getattr(affordance, "__name__", ""))
         for affordance in loaded_interaction_tunings()
     }
-    filtered = [name for name in names if "social" in name.lower() or "chat" in name.lower()]
+    query = str(query or "").strip().lower()
+    filtered = [
+        name
+        for name in names
+        if ("social" in name.lower() or "chat" in name.lower())
+        and (not query or query in name.lower())
+    ]
     return sorted(filtered, key=lambda name: (":" in name, name.lower()))
 
 
@@ -570,12 +576,14 @@ def ai_help(_connection=None):
 
 @command("ai.socialtunings")
 @command("aisims.socialtunings")
-def ai_social_tunings(_connection=None):
-    names = social_tuning_names()
-    out(_connection, "Loaded social/chat tunings: {}".format(len(names)))
+def ai_social_tunings(*args, _connection=None):
+    query = " ".join(str(item) for item in args).strip()
+    names = social_tuning_names(query)
+    out(_connection, "Loaded matching social/chat tunings: {}".format(len(names)))
+    for name in names:
+        write_marker("social tuning: " + name)
     for name in names[:100]:
         out(_connection, name)
-        write_marker("social tuning: " + name)
 
 
 @command("ai.loaded")

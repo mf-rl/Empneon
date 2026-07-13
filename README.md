@@ -146,8 +146,8 @@ profiles, and the in-game exit-gate procedure are documented. The current automa
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
 uses a version-tolerant base-game social tuning lookup that excludes namespaced custom
-tunings, with `ai.socialtunings` diagnostics. It still requires in-game validation before
-the two remaining Stage 2 items can be checked.
+tunings, with filterable `ai.socialtunings friendly` diagnostics. It still requires
+in-game validation before the two remaining Stage 2 items can be checked.
 
 ## Documentation
 

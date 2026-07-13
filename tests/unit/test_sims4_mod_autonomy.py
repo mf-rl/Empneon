@@ -116,6 +116,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     )
 
     assert agent.find_action_affordance("friendly_chat") is generic_social
+    assert agent.social_tuning_names("base") == ["socials_Base_SuperInteraction"]
 
     monkeypatch.setattr(agent, "find_action_affordance", lambda _action: object())
 
