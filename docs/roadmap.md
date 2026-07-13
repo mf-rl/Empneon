@@ -141,7 +141,9 @@ identities, stores pending proposals separately, attempts the base-game social i
 and finalizes results and observed relationship deltas from the game's finishing callback.
 The social tuning resolver now selects the exact loaded vanilla `Ask About Day` friendly
 tuning identified by the filterable `ai.socialtunings` diagnostic, instead of guessing
-from unrelated social-super-interaction names. Provider timeout/OOM
+from unrelated social-super-interaction names, and executes the target's game-tested
+potential-interaction pair rather than treating the mixer as a standalone super interaction.
+Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game
 protocol in `docs/sims4-setup.md`; keep the two action items unchecked until the game path
 passes, and do not begin Stage 3 before the exit gate passes.

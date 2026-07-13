@@ -96,15 +96,18 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
-    actor = SimpleNamespace(
-        push_super_affordance=lambda *_args: SimpleNamespace(interaction=interaction)
+    actor = object()
+    generic_social = type("mixer_social_AskAboutDay_targeted_Friendly_alwaysOn", (), {})
+    aop = SimpleNamespace(
+        affordance=generic_social,
+        test_and_execute=lambda _context: SimpleNamespace(interaction=interaction),
     )
+    target = SimpleNamespace(potential_interactions=lambda _context: [aop])
     infos = {
         "bella": SimpleNamespace(get_sim_instance=lambda: actor),
-        "mortimer": SimpleNamespace(get_sim_instance=lambda: object()),
+        "mortimer": SimpleNamespace(get_sim_instance=lambda: target),
     }
     monkeypatch.setattr(agent, "find_sim_info_by_id", infos.get)
-    generic_social = type("mixer_social_AskAboutDay_targeted_Friendly_alwaysOn", (), {})
     unrelated_social = type("socialSuperInteraction_CarryLetOut", (), {})
     custom_social = type("BC:Slap Child Social SuperInteraction", (), {})
     manager = SimpleNamespace(
@@ -119,8 +122,6 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert agent.social_tuning_names("askaboutday") == [
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]
-
-    monkeypatch.setattr(agent, "find_action_affordance", lambda _action: object())
 
     agent.process_autonomy_responses(None)
 

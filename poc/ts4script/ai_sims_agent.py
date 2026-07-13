@@ -292,11 +292,15 @@ def execute_sims_action(payload, data):
             Priority.High,
             insert_strategy=QueueInsertStrategy.NEXT,
         )
-        enqueue_result = actor.push_super_affordance(affordance, target, context)
+        enqueue_result = None
+        for aop in target.potential_interactions(context):
+            if getattr(aop, "affordance", None) is affordance:
+                enqueue_result = aop.test_and_execute(context)
+                break
         interaction = getattr(enqueue_result, "interaction", None)
         if not enqueue_result or interaction is None:
             raise RuntimeError(
-                "game rejected interaction enqueue: {}".format(
+                "game rejected potential interaction: {}".format(
                     getattr(affordance, "__name__", affordance)
                 )
             )

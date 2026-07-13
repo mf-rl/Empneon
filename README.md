@@ -146,7 +146,8 @@ profiles, and the in-game exit-gate procedure are documented. The current automa
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
 uses the loaded vanilla `Ask About Day` friendly tuning identified by the filterable
-`ai.socialtunings friendly` diagnostic. It still requires
+`ai.socialtunings friendly` diagnostic and executes its game-tested potential-interaction
+pair rather than pushing the mixer as a standalone super interaction. It still requires
 in-game validation before the two remaining Stage 2 items can be checked.
 
 ## Documentation
