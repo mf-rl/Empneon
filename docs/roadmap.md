@@ -139,9 +139,9 @@ adapter-returned results and ordered consequences, and a bounded zone alarm subm
 pairs without a player command. The confirmation path now persists observed Core
 identities, stores pending proposals separately, attempts the base-game social interaction,
 and finalizes results and observed relationship deltas from the game's finishing callback.
-The action bridge now asks the game's autonomy component to score a base-game friendly
-mixer and valid NPC target, then queues that exact prevalidated interaction through the
-game's native executor so it can create the required `sim_Chat` social group. Filterable
+The action bridge now uses a base-game friendly mixer's social commodities to let the
+game's autonomy component select a valid parent interaction and NPC target, then queues
+that exact prevalidated interaction through the native executor. Filterable
 `ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game

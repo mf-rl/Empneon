@@ -58,6 +58,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     )
     target = SimpleNamespace(is_selectable=False)
     interaction = SimpleNamespace(
+        affordance=sim_chat,
         finishing_type="FinishingType.NATURAL",
         target=target,
     )
@@ -65,7 +66,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     actor = SimpleNamespace(
         run_test_autonomy_ping=lambda **kwargs: interaction
         if kwargs
-        == {"affordance_list": (sim_chat,), "commodity_list": ("social",)}
+        == {"affordance_list": None, "commodity_list": ("social",)}
         else None
     )
     bella = SimpleNamespace(sim_id="bella", get_sim_instance=lambda: actor)

@@ -241,7 +241,7 @@ def autonomous_tick(_alarm_handle):
         speaker = candidates[(_AUTONOMY_CURSOR + offset) % len(candidates)]
         actor = speaker.get_sim_instance()
         selected = actor.run_test_autonomy_ping(
-            affordance_list=(affordance,),
+            affordance_list=None,
             commodity_list=affordance.commodity_flags,
         )
         target = getattr(selected, "target", None)
@@ -341,8 +341,11 @@ def execute_sims_action(payload, data, interaction):
         if not AffordanceObjectPair.execute_interaction(interaction):
             raise RuntimeError("game rejected native autonomous interaction")
         write_marker(
-            "queued {} -> {}: {}".format(
-                payload["speaker"]["name"], payload["listener"]["name"], action
+            "queued {} -> {}: {} ({})".format(
+                payload["speaker"]["name"],
+                payload["listener"]["name"],
+                action,
+                getattr(getattr(interaction, "affordance", None), "__name__", "unknown"),
             )
         )
     except Exception as exc:
