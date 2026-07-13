@@ -1,0 +1,107 @@
+{
+  "scenario": "social-ring",
+  "model": "gemma-4-e4b-it-uncensored",
+  "seed": 20260713,
+  "keys": [
+    {
+      "sample_id": "social-ring-00",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-01",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-02",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-03",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-04",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-05",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-06",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-07",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-08",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-09",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-10",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-11",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-12",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-13",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-14",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-15",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-16",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-17",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "social-ring-18",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "social-ring-19",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    }
+  ]
+}

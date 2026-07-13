@@ -136,6 +136,7 @@ Version **0.2.0** is an early framework release.
 - [x] Concurrent Sims 4 run on baseline hardware
 - [x] SocietyBench identity-continuity and contradiction metrics
 - [x] Blinded SocietyBench believability evaluation
+- [x] Published Stage 3 configuration, raw results, and limitations
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -174,6 +175,10 @@ completed, its ordered consequence persisted, and no proposal remained pending.
 The first blinded 20-sample believability comparison preferred the one-call candidates
 19 times and fixed CLOD 1 once. This is a single-evaluator synthetic result, not a player
 study; recognizable output styles and model formatting violations limit the evidence.
+The foreground provider observations, raw PresentMon rows, blind evaluation artifacts,
+checksums, configuration, and limitations are published in the
+[Stage 3 artifact manifest](output/README.md). Stage 3 is complete, but its preliminary
+results support no scalability or acceptable-performance claim.
 
 ## Documentation
 

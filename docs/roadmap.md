@@ -55,7 +55,7 @@ social consequences across save/reload cycles.
 - [x] Run The Sims 4 concurrently on baseline hardware
 - [x] Add identity continuity and contradiction metrics
 - [x] Run blinded believability evaluation
-- [ ] Publish configuration, raw results, and limitations
+- [x] Publish configuration, raw results, and limitations
 
 **Exit gate:** Results are reproducible and no scalability claim exceeds measured data.
 
@@ -164,4 +164,7 @@ regression run completed one NPC social and its ordered consequence with zero pe
 proposals and no new desync. A seeded 20-sample blind comparison preferred the one-call
 candidate 19 times and fixed CLOD 1 once. Its single evaluator, synthetic context,
 recognizable output styles, and formatting violations prevent any broader player-quality
-claim. The next task is publishing the configuration, raw results, and limitations.
+claim. The selected raw provider, PresentMon, packet, key, and score artifacts are published
+with checksums, reproduction commands, configuration, privacy scope, and limitations.
+Stage 3 is complete. The next task is storing canonical events separately from agent
+observations and beliefs.

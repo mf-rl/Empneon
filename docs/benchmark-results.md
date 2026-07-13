@@ -23,8 +23,8 @@ RTX 2060 Laptop 6 GB, and 16 GB RAM system. LM Studio served
 This is evidence of severe baseline pressure, not acceptable-performance validation.
 The run used short synthetic prompts and sequential calls; it did not compare alternative
 models, context sizes, concurrency policies, or player-rated believability. Raw provider
-and PresentMon files remain local under `output/` until the roadmap publication task adds
-configuration, sanitization, and limitations alongside them.
+and PresentMon evidence is published with its configuration, checksums, and limitations in
+the [Stage 3 artifact manifest](../output/README.md).
 
 ## Blinded believability run: 2026-07-13
 
@@ -44,5 +44,7 @@ Fixed CLOD 1 won when the model introduced an unsupported threat assessment into
 social event. This is preliminary evidence from one assistant evaluator and synthetic,
 minimal contexts—not a player study. Candidate styles were recognizable, and several model
 responses violated the requested plain two-to-six-word format with numbering or emoji. The
-blind packet, answer key, and scored result remain local until the next roadmap task reviews
-and publishes raw artifacts and complete limitations.
+[blind packet](../output/stage3-believability-blind-20260713.json),
+[answer key](../output/stage3-believability-key-20260713.json), and
+[scored result](../output/stage3-believability-result-20260713.json) are published with the
+other Stage 3 artifacts.

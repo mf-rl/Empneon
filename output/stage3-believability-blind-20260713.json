@@ -1,0 +1,248 @@
+{
+  "scenario": "social-ring",
+  "model": "gemma-4-e4b-it-uncensored",
+  "seed": 20260713,
+  "rubric": "Choose A, B, or tie for the action that is more believable in context. Consider contextual fit, social plausibility, and specificity.",
+  "samples": [
+    {
+      "sample_id": "social-ring-00",
+      "request_id": "social-ring-request-00",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-00",
+        "agent-01"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Greeting exchange initiated.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-01",
+      "request_id": "social-ring-request-01",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-01",
+        "agent-02"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Nodding acknowledgment.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-02",
+      "request_id": "social-ring-request-02",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-02",
+        "agent-03"
+      ],
+      "option_a": "1. Greet and assess threat level.",
+      "option_b": "acknowledge",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-03",
+      "request_id": "social-ring-request-03",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-03",
+        "agent-04"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Greeting exchange initiated.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-04",
+      "request_id": "social-ring-request-04",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-04",
+        "agent-05"
+      ],
+      "option_a": "1. Acknowledging the presence with a nod.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "social-ring-05",
+      "request_id": "social-ring-request-05",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-05",
+        "agent-06"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Acknowledging presence with a nod.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-06",
+      "request_id": "social-ring-request-06",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-06",
+        "agent-07"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Acknowledging presence with a nod.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-07",
+      "request_id": "social-ring-request-07",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-07",
+        "agent-08"
+      ],
+      "option_a": "\ud83e\udd1d Nods in acknowledgment.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "social-ring-08",
+      "request_id": "social-ring-request-08",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-08",
+        "agent-09"
+      ],
+      "option_a": "1. Acknowledgment and brief greeting.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "social-ring-09",
+      "request_id": "social-ring-request-09",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-09",
+        "agent-10"
+      ],
+      "option_a": "\ud83e\udd1d Nod acknowledgment exchange.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "social-ring-10",
+      "request_id": "social-ring-request-10",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-10",
+        "agent-11"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Nods head in greeting.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-11",
+      "request_id": "social-ring-request-11",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-11",
+        "agent-12"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Nodding acknowledgment exchange.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-12",
+      "request_id": "social-ring-request-12",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-12",
+        "agent-13"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Acknowledging the presence with a slight nod.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-13",
+      "request_id": "social-ring-request-13",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-13",
+        "agent-14"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "13 nods to 14 in greeting.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-14",
+      "request_id": "social-ring-request-14",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-14",
+        "agent-15"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Nods head politely.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-15",
+      "request_id": "social-ring-request-15",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-15",
+        "agent-16"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "15 nods to 16 in greeting.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-16",
+      "request_id": "social-ring-request-16",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-16",
+        "agent-17"
+      ],
+      "option_a": "1. Acknowledging nod and brief greeting.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "social-ring-17",
+      "request_id": "social-ring-request-17",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-17",
+        "agent-18"
+      ],
+      "option_a": "\ud83e\udd1d Greeting exchange initiated.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "social-ring-18",
+      "request_id": "social-ring-request-18",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-18",
+        "agent-19"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "18 nods politely to 19.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "social-ring-19",
+      "request_id": "social-ring-request-19",
+      "event_type": "benchmark_social",
+      "actor_ids": [
+        "agent-19",
+        "agent-00"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Greeting exchange initiated.",
+      "preferred": "B"
+    }
+  ]
+}

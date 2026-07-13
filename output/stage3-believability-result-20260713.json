@@ -1,0 +1,8 @@
+{
+  "evaluated_samples": 20,
+  "one_call_wins": 19,
+  "fixed_clod_wins": 1,
+  "ties": 0,
+  "one_call_win_rate": 0.95,
+  "fixed_clod_win_rate": 0.05
+}

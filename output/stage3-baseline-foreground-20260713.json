@@ -1,0 +1,175 @@
+{
+  "scenario": "social-ring",
+  "model": "gemma-4-e4b-it-uncensored",
+  "captured_at": 1783960317,
+  "one_call": {
+    "decisions": 20,
+    "provider_calls": 20,
+    "observations": [
+      {
+        "cpu_percent": 41.2,
+        "ram_mb": 15479.359375,
+        "vram_mb": 5886.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 23595
+      },
+      {
+        "cpu_percent": 42.4,
+        "ram_mb": 15593.921875,
+        "vram_mb": 5892.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 22005
+      },
+      {
+        "cpu_percent": 41.0,
+        "ram_mb": 15588.28125,
+        "vram_mb": 5887.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 9746
+      },
+      {
+        "cpu_percent": 42.2,
+        "ram_mb": 15594.9375,
+        "vram_mb": 5884.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 22209
+      },
+      {
+        "cpu_percent": 45.3,
+        "ram_mb": 15503.57421875,
+        "vram_mb": 5880.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 21832
+      },
+      {
+        "cpu_percent": 56.4,
+        "ram_mb": 15546.62109375,
+        "vram_mb": 5880.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 4785
+      },
+      {
+        "cpu_percent": 44.5,
+        "ram_mb": 15541.00390625,
+        "vram_mb": 5878.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 23725
+      },
+      {
+        "cpu_percent": 55.4,
+        "ram_mb": 15497.84375,
+        "vram_mb": 5882.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 18210
+      },
+      {
+        "cpu_percent": 59.8,
+        "ram_mb": 15573.7265625,
+        "vram_mb": 5890.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 3626
+      },
+      {
+        "cpu_percent": 48.6,
+        "ram_mb": 15227.62109375,
+        "vram_mb": 5888.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 19432
+      },
+      {
+        "cpu_percent": 50.6,
+        "ram_mb": 15194.90625,
+        "vram_mb": 5886.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 25357
+      },
+      {
+        "cpu_percent": 49.1,
+        "ram_mb": 15534.25390625,
+        "vram_mb": 5879.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 12767
+      },
+      {
+        "cpu_percent": 73.2,
+        "ram_mb": 15526.33984375,
+        "vram_mb": 5871.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 3453
+      },
+      {
+        "cpu_percent": 76.5,
+        "ram_mb": 15541.6484375,
+        "vram_mb": 5879.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 4709
+      },
+      {
+        "cpu_percent": 42.9,
+        "ram_mb": 15531.82421875,
+        "vram_mb": 5878.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 33581
+      },
+      {
+        "cpu_percent": 42.2,
+        "ram_mb": 15633.7109375,
+        "vram_mb": 5903.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 35994
+      },
+      {
+        "cpu_percent": 53.3,
+        "ram_mb": 15580.07421875,
+        "vram_mb": 5916.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 7378
+      },
+      {
+        "cpu_percent": 40.6,
+        "ram_mb": 15705.234375,
+        "vram_mb": 5918.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 32433
+      },
+      {
+        "cpu_percent": 74.9,
+        "ram_mb": 15645.59765625,
+        "vram_mb": 5910.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 1634
+      },
+      {
+        "cpu_percent": 67.3,
+        "ram_mb": 15691.08984375,
+        "vram_mb": 5914.0,
+        "prompt_tokens": 16,
+        "completion_tokens": 16,
+        "latency_ms": 3462
+      }
+    ]
+  },
+  "fixed_clod": {
+    "decisions": 20,
+    "provider_calls": 0
+  }
+}

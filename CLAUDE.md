@@ -78,6 +78,7 @@ performance numbers until measured in-game.
 - Foreground Sims 4 baseline-hardware benchmark evidence
 - SocietyBench identity-continuity and contradiction metrics
 - Seeded blinded SocietyBench believability comparison and scoring
+- Published Stage 3 configuration, raw evidence, checksums, and limitations
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -126,9 +127,13 @@ The first seeded 20-sample blind believability run preferred one-call candidates
 and fixed CLOD 1 once. Treat it only as single-evaluator synthetic evidence: output styles
 were recognizable and several model candidates violated the requested response format.
 
+Stage 3 evidence is published under `output/`: the foreground baseline JSON, raw PresentMon
+CSV, blind packet, answer key, and score. `output/README.md` records checksums,
+reproduction commands, configuration, privacy scope, and limitations. Stage 3 is complete.
+
 ## Current Work Order
 
-1. Publish configuration, raw results, and limitations.
-2. Continue Stage 3 strictly in roadmap order.
+1. Store canonical events separately from agent observations and beliefs.
+2. Continue Stage 4 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.
