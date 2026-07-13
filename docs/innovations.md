@@ -112,5 +112,6 @@ Every research item uses one label:
 
 Current status: all four primary contributions remain hypotheses. Generic contracts, an
 initial resource governor, deterministic 20-agent SocietyBench workloads, and comparable
-one-call-per-agent and fixed-CLOD execution are implementation foundations, not hardware-
-benchmarked or validated research results.
+one-call-per-agent and fixed-CLOD execution with raw resource, frame-time, token, and
+latency recording are implementation foundations, not in-game benchmarked or validated
+research results.

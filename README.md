@@ -132,6 +132,7 @@ Version **0.2.0** is an early framework release.
 - [x] Sims 4 reference adapter using Empneon Core
 - [x] Deterministic SocietyBench 20-agent scenarios
 - [x] One-call-per-agent and fixed-CLOD baseline execution
+- [x] SocietyBench resource, frame-time, token, and latency metrics
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
@@ -156,7 +157,9 @@ across a game restart with 20 persistent Core agents, all 20 participating, 15 s
 autonomous results, zero pending proposals, and 16 ordered consequences. Stage 2 is
 complete. Stage 3 now includes deterministic 20-agent social-ring and reciprocal-pair
 workloads plus comparable one-call-per-agent and provider-free fixed-CLOD baseline
-execution. Hardware and latency measurement remain pending.
+execution. Raw metric observations retain CPU, RAM, VRAM, frame time, tokens, and
+latency, with aggregate token totals and p50/p95 latency. The concurrent in-game
+hardware run remains pending.
 
 ## Documentation
 

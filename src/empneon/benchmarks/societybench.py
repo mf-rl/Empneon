@@ -1,6 +1,7 @@
 """Deterministic SocietyBench workloads and baseline execution."""
 
 from dataclasses import dataclass, replace
+from math import isfinite
 
 from empneon.core.clod.fallback import Resolver
 from empneon.core.clod.rules import resolve_clod1
@@ -21,6 +22,44 @@ class BaselineResult:
     strategy: str
     decisions: tuple[Decision, ...]
     provider_calls: int
+
+
+@dataclass(frozen=True)
+class BenchmarkObservation:
+    cpu_percent: float
+    ram_mb: float
+    vram_mb: float
+    frame_time_ms: float
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: float
+
+    def __post_init__(self) -> None:
+        values = (
+            self.cpu_percent,
+            self.ram_mb,
+            self.vram_mb,
+            self.frame_time_ms,
+            self.prompt_tokens,
+            self.completion_tokens,
+            self.latency_ms,
+        )
+        if any(not isfinite(value) or value < 0 for value in values):
+            raise ValueError("benchmark observations must be finite and nonnegative")
+
+
+@dataclass(frozen=True)
+class BenchmarkMetrics:
+    strategy: str
+    observations: tuple[BenchmarkObservation, ...]
+    peak_cpu_percent: float
+    peak_ram_mb: float
+    peak_vram_mb: float
+    peak_frame_time_ms: float
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    latency_p50_ms: float
+    latency_p95_ms: float
 
 
 def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
@@ -52,6 +91,35 @@ async def measure_baselines(
         BaselineResult("one-call-per-agent", one_call, len(one_call)),
         BaselineResult("fixed-clod-1", fixed_clod, 0),
     )
+
+
+def summarize_metrics(
+    strategy: str, observations: tuple[BenchmarkObservation, ...]
+) -> BenchmarkMetrics:
+    """Retain raw observations and summarize one benchmark strategy."""
+    if not strategy.strip() or not observations:
+        raise ValueError("strategy and observations are required")
+    latencies = tuple(observation.latency_ms for observation in observations)
+    return BenchmarkMetrics(
+        strategy,
+        observations,
+        max(observation.cpu_percent for observation in observations),
+        max(observation.ram_mb for observation in observations),
+        max(observation.vram_mb for observation in observations),
+        max(observation.frame_time_ms for observation in observations),
+        sum(observation.prompt_tokens for observation in observations),
+        sum(observation.completion_tokens for observation in observations),
+        _percentile(latencies, 0.50),
+        _percentile(latencies, 0.95),
+    )
+
+
+def _percentile(values: tuple[float, ...], quantile: float) -> float:
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * quantile
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
 def _build_scenario(

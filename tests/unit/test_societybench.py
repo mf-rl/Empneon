@@ -1,6 +1,13 @@
 import asyncio
 
-from empneon.benchmarks import build_20_agent_scenarios, measure_baselines
+import pytest
+
+from empneon.benchmarks import (
+    BenchmarkObservation,
+    build_20_agent_scenarios,
+    measure_baselines,
+    summarize_metrics,
+)
 from empneon.core.clod import resolve_clod1
 from empneon.core.contracts import CognitiveRequest, Decision
 
@@ -42,3 +49,32 @@ def test_baselines_measure_one_call_per_agent_against_fixed_clod() -> None:
     assert fixed_clod.strategy == "fixed-clod-1"
     assert len(fixed_clod.decisions) == 20
     assert fixed_clod.provider_calls == 0
+
+
+def test_metrics_retain_raw_samples_and_compute_totals_and_percentiles() -> None:
+    observations = tuple(
+        BenchmarkObservation(
+            cpu_percent=index * 10,
+            ram_mb=index * 100,
+            vram_mb=index * 200,
+            frame_time_ms=index * 5,
+            prompt_tokens=index,
+            completion_tokens=index * 2,
+            latency_ms=index * 10,
+        )
+        for index in range(1, 5)
+    )
+
+    metrics = summarize_metrics("one-call-per-agent", observations)
+
+    assert metrics.observations == observations
+    assert (metrics.peak_cpu_percent, metrics.peak_ram_mb, metrics.peak_vram_mb) == (
+        40,
+        400,
+        800,
+    )
+    assert metrics.peak_frame_time_ms == 20
+    assert (metrics.total_prompt_tokens, metrics.total_completion_tokens) == (10, 20)
+    assert (metrics.latency_p50_ms, metrics.latency_p95_ms) == (25, 38.5)
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        BenchmarkObservation(-1, 0, 0, 0, 0, 0, 0)

@@ -51,7 +51,7 @@ social consequences across save/reload cycles.
 
 - [x] Build deterministic 20-agent benchmark scenarios
 - [x] Measure one-call-per-agent and fixed-CLOD baselines
-- [ ] Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency
+- [x] Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency
 - [ ] Run The Sims 4 concurrently on baseline hardware
 - [ ] Add identity continuity and contradiction metrics
 - [ ] Run blinded believability evaluation
@@ -151,5 +151,6 @@ pending proposals, and 16 ordered consequences. Stage 2 is complete. SocietyBenc
 defines deterministic 20-agent social-ring and reciprocal-pair workloads with stable
 request and event data. Both workloads can run comparable one-call-per-agent and
 provider-free fixed-CLOD 1 baselines while retaining their decisions and provider-call
-counts. The next task is recording CPU, RAM, VRAM, frame time, tokens, and p50/p95
-latency.
+counts. SocietyBench retains validated raw CPU, RAM, VRAM, frame-time, token, and latency
+observations and summarizes peaks, token totals, and p50/p95 latency. The next task is
+running The Sims 4 concurrently on baseline hardware.
