@@ -71,15 +71,21 @@ performance numbers until measured in-game.
 - Initial RAM/VRAM/concurrency resource governor
 - Persistent Core action results and ordered consequences
 - Deterministic timeout and out-of-memory fallback with resource release
-- Separate Sims 4 connectivity POC that must be migrated behind the core
+- Game-confirmed Sims action results and ordered consequences through Core
+- Deterministic SocietyBench 20-agent social-ring and reciprocal-pair scenarios
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
 requests, and routes the interaction through Core's admission limit and action records.
 
-## Session Checkpoint: 2026-07-10
+## Session Checkpoint: 2026-07-13
 
-Stage 0 is complete. The final foundation changes were:
+Stages 0 through 2 are complete. The Stage 2 exit gate passed across a game restart
+using `stage2-5-config.json`: 20 persistent Core agents all participated, 15 automatic
+actions succeeded, one failed safely as displaced, no proposals remained pending, and
+16 ordered consequences persisted.
+
+The final foundation changes were:
 
 - `d70c8ae`: schema v2 adds transactional `v1 -> v2` migration, rejects newer
   databases, and installs SQLite validation triggers for persisted identity ranges.
@@ -87,20 +93,16 @@ Stage 0 is complete. The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Last verification: 96 unit tests passed with one filesystem temporary-path test
-deselected; Ruff and strict mypy passed. Two existing persistence integration tests
-could not run locally because the managed environment denied pytest temporary-directory
-access. No product benchmark or in-game hardware validation has been performed yet.
+Current verification: 127 tests pass. Ruff and strict mypy pass for Core and tests. No
+product performance benchmark has been published yet.
 
-Stage 2 remains pending in-game validation. The zone alarm submits bounded NPC pairs,
-persists observed Core identities and pending proposals, queues the base-game social
-interaction on the simulation thread, and reports its finishing result and observed
-relationship delta. The adapter maps generic intent to a whitelisted available action.
+Stage 3 has begun with deterministic 20-agent social-ring and reciprocal-pair workload
+definitions. They use synthetic stable IDs and do not depend on personal Sims save data.
 
 ## Current Work Order
 
-1. Run the documented in-game confirmation test and fix any Sims API/tuning mismatch.
-2. Check the remaining Stage 2 items only after game-confirmed evidence passes.
-3. Build SocietyBench only after the gate passes.
+1. Measure one-call-per-agent and fixed-CLOD baselines.
+2. Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency.
+3. Continue Stage 3 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

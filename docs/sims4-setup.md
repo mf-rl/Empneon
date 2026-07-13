@@ -1,7 +1,7 @@
 # Sims 4 POC Setup and Privacy
 
-This guide covers the current Windows proof of concept. It is not yet the validated
-20-agent reference-adapter release.
+This guide covers the validated Windows 20-agent reference-adapter proof of concept and
+its reproducible exit-gate procedure.
 
 ## Requirements
 
@@ -246,6 +246,14 @@ Mark the Stage 2 exit gate complete only when all are true:
 
 If any condition fails, retain the evidence, leave the exit gate unvalidated, and fix the
 failing path before beginning Stage 3.
+
+### Recorded validation
+
+The exit gate passed across a game restart using `stage2-5-config.json`: 20 persistent
+Core agents all participated in automatic events, 15 actions succeeded, one failed safely
+with `FinishingType.DISPLACED`, zero proposals remained pending, and Core stored 16
+ordered consequences. The separate POC profile, relationship, and memory counts remained
+zero for this autonomous path.
 
 ## Troubleshooting
 

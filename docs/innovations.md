@@ -110,5 +110,6 @@ Every research item uses one label:
 - **Benchmarked:** compared against a stated baseline with raw results
 - **Validated:** independently repeatable and improves the target outcome
 
-Current status: all four primary contributions are hypotheses. Generic contracts and
-an initial resource governor are implementation foundations, not validated results.
+Current status: all four primary contributions remain hypotheses. Generic contracts, an
+initial resource governor, and deterministic 20-agent SocietyBench workload definitions
+are implementation foundations, not benchmarked or validated research results.

@@ -122,14 +122,15 @@ Version **0.2.0** is an early framework release.
 - [x] Core-backed Sims cheat-console conversation
 - [x] Sims identity, relationship, location, mood, and social-event observations
 - [x] Generic-intent mapping to validated available Sims actions
-- [ ] Game-confirmed Core action results and ordered consequences
-- [ ] Executed automatic NPC-to-NPC Sims interactions
+- [x] Game-confirmed Core action results and ordered consequences
+- [x] Executed automatic NPC-to-NPC Sims interactions
 - [x] Sims 4 installation, configuration, privacy, and hardware-profile guide
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
 - [ ] Adaptive CLOD scheduler
 - [ ] Epistemic social memory
 - [x] Sims 4 reference adapter using Empneon Core
+- [x] Deterministic SocietyBench 20-agent scenarios
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
@@ -152,7 +153,8 @@ Filterable `ai.socialtunings friendly`
 diagnostics remain available for game-version investigation. Live validation passed
 across a game restart with 20 persistent Core agents, all 20 participating, 15 successful
 autonomous results, zero pending proposals, and 16 ordered consequences. Stage 2 is
-complete.
+complete. Stage 3 now includes deterministic 20-agent social-ring and reciprocal-pair
+workloads; baseline measurement remains pending.
 
 ## Documentation
 
