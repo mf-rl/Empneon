@@ -138,6 +138,7 @@ Version **0.2.0** is an early framework release.
 - [x] Blinded SocietyBench believability evaluation
 - [x] Published Stage 3 configuration, raw results, and limitations
 - [x] Separate canonical event, agent-observation, and agent-belief storage
+- [x] Belief source, confidence, interpretation, and transmission lineage
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -180,9 +181,10 @@ The foreground provider observations, raw PresentMon rows, blind evaluation arti
 checksums, configuration, and limitations are published in the
 [Stage 3 artifact manifest](output/README.md). Stage 3 is complete, but its preliminary
 results support no scalability or acceptable-performance claim.
-Stage 4 has begun with schema migration 7 and separate stores for canonical events,
-per-agent observations, and minimal agent beliefs. Belief provenance, confidence,
-interpretation, and transmission lineage remain the next roadmap task.
+Stage 4 now has separate canonical-event, observation, and belief storage plus schema-backed
+belief provenance. Direct beliefs reference their agent's observation; transmitted beliefs
+reference their source belief and inherit an ordered lineage. Confidence is bounded, source
+evidence is protected by foreign keys, and contradiction and revision are the next task.
 
 ## Documentation
 

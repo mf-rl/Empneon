@@ -1,9 +1,13 @@
 """Canonical events and separate agent observations and beliefs."""
 
+import json
 import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Literal
+
+BeliefSourceKind = Literal["observation", "belief"]
 
 
 @dataclass
@@ -29,8 +33,30 @@ class Observation:
 class Belief:
     agent_id: str
     statement: str
+    source_kind: BeliefSourceKind
+    source_id: str
+    confidence: float
+    interpretation: str
+    lineage: tuple[str, ...] = ()
     created_at: int = field(default_factory=lambda: int(time.time()))
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def __post_init__(self) -> None:
+        if self.source_kind not in ("observation", "belief"):
+            raise ValueError("belief source kind must be observation or belief")
+        if not all(
+            (
+                self.agent_id.strip(),
+                self.statement.strip(),
+                self.source_id.strip(),
+                self.interpretation.strip(),
+            )
+        ):
+            raise ValueError(
+                "belief agent, statement, source, and interpretation must not be empty"
+            )
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError("belief confidence must be between 0 and 1")
 
 
 class EpisodicMemoryStore:
@@ -139,16 +165,50 @@ class BeliefStore:
         self._conn = conn
 
     def create(self, belief: Belief) -> Belief:
-        self._conn.execute(
-            "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
-            (belief.id, belief.agent_id, belief.statement, belief.created_at),
-        )
-        self._conn.commit()
+        if belief.source_kind == "observation":
+            source = self._conn.execute(
+                "SELECT 1 FROM event_observations WHERE id=? AND agent_id=?",
+                (belief.source_id, belief.agent_id),
+            ).fetchone()
+            belief.lineage = ()
+        else:
+            source_belief = self.get(belief.source_id)
+            source = source_belief
+            if source_belief is not None:
+                belief.lineage = (*source_belief.lineage, source_belief.id)
+        if source is None:
+            raise ValueError("belief source does not exist")
+
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
+                (belief.id, belief.agent_id, belief.statement, belief.created_at),
+            )
+            self._conn.execute(
+                "INSERT INTO belief_provenance VALUES (?,?,?,?,?,?)",
+                (
+                    belief.id,
+                    belief.source_id if belief.source_kind == "observation" else None,
+                    belief.source_id if belief.source_kind == "belief" else None,
+                    belief.confidence,
+                    belief.interpretation,
+                    json.dumps(belief.lineage),
+                ),
+            )
         return belief
+
+    def get(self, belief_id: str) -> Belief | None:
+        row = self._conn.execute(
+            "SELECT b.*, p.* FROM beliefs b JOIN belief_provenance p ON p.belief_id=b.id"
+            " WHERE b.id=?",
+            (belief_id,),
+        ).fetchone()
+        return None if row is None else _row_to_belief(row)
 
     def get_for_agent(self, agent_id: str) -> list[Belief]:
         rows = self._conn.execute(
-            "SELECT * FROM beliefs WHERE agent_id=? ORDER BY created_at DESC, id",
+            "SELECT b.*, p.* FROM beliefs b JOIN belief_provenance p ON p.belief_id=b.id"
+            " WHERE b.agent_id=? ORDER BY b.created_at DESC, b.id",
             (agent_id,),
         ).fetchall()
         return [_row_to_belief(row) for row in rows]
@@ -180,5 +240,10 @@ def _row_to_belief(row: sqlite3.Row) -> Belief:
         id=row["id"],
         agent_id=row["agent_id"],
         statement=row["statement"],
+        source_kind="observation" if row["source_observation_id"] is not None else "belief",
+        source_id=row["source_observation_id"] or row["source_belief_id"],
+        confidence=row["confidence"],
+        interpretation=row["interpretation"],
+        lineage=tuple(json.loads(row["lineage"])),
         created_at=row["created_at"],
     )

@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from empneon.core.identity.models import Agent
@@ -157,14 +159,24 @@ def test_beliefs_are_separate_from_events_and_observations() -> None:
     observation = observations.create(
         Observation(event.id, alice.id, "Alice saw a red coat", observed_at=11)
     )
-    belief = beliefs.create(Belief(alice.id, "The masked guest was Charlie", created_at=12))
+    belief = beliefs.create(
+        Belief(
+            alice.id,
+            "The masked guest was Charlie",
+            "observation",
+            observation.id,
+            0.7,
+            "Alice associated the red coat with Charlie",
+            created_at=12,
+        )
+    )
 
     assert beliefs.get_for_agent(alice.id) == [belief]
     assert observations.get_for_event(event.id) == [observation]
     assert events.get(event.id) == event
 
 
-def test_deleting_canonical_event_cascades_observations_not_beliefs() -> None:
+def test_belief_provenance_prevents_deleting_its_canonical_evidence() -> None:
     conn = open_db(":memory:")
     agents = AgentStore(conn)
     events = EpisodicMemoryStore(conn)
@@ -173,9 +185,86 @@ def test_deleting_canonical_event_cascades_observations_not_beliefs() -> None:
     alice = agents.create(Agent.new("Alice"))
     event = events.create(Event("A masked guest entered", [alice.id]))
     observations.create(Observation(event.id, alice.id, "Alice saw a red coat"))
-    belief = beliefs.create(Belief(alice.id, "The guest was Charlie"))
+    observation = observations.get_for_event(event.id)[0]
+    belief = beliefs.create(
+        Belief(
+            alice.id,
+            "The guest was Charlie",
+            "observation",
+            observation.id,
+            0.7,
+            "Alice recognized the coat",
+        )
+    )
 
-    events.delete(event.id)
+    with pytest.raises(sqlite3.IntegrityError):
+        events.delete(event.id)
 
-    assert observations.get_for_event(event.id) == []
+    assert observations.get_for_event(event.id) == [observation]
     assert beliefs.get_for_agent(alice.id) == [belief]
+
+    agents.delete(alice.id)
+    assert beliefs.get_for_agent(alice.id) == []
+
+
+def test_belief_records_source_confidence_interpretation_and_lineage() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent.new("Alice"))
+    bob = agents.create(Agent.new("Bob"))
+    carol = agents.create(Agent.new("Carol"))
+    event = events.create(Event("A masked guest entered", [alice.id, bob.id, carol.id]))
+    observation = observations.create(
+        Observation(event.id, alice.id, "Alice saw Charlie remove the mask")
+    )
+    alice_belief = beliefs.create(
+        Belief(
+            alice.id,
+            "The guest was Charlie",
+            "observation",
+            observation.id,
+            0.95,
+            "Alice recognized Charlie directly",
+        )
+    )
+    bob_belief = beliefs.create(
+        Belief(
+            bob.id,
+            "The guest was Charlie",
+            "belief",
+            alice_belief.id,
+            0.75,
+            "Bob trusted Alice's account",
+        )
+    )
+    carol_belief = beliefs.create(
+        Belief(
+            carol.id,
+            "The guest was Charlie",
+            "belief",
+            bob_belief.id,
+            0.6,
+            "Carol accepted Bob's retelling",
+        )
+    )
+
+    assert beliefs.get(alice_belief.id) == alice_belief
+    assert beliefs.get(bob_belief.id) == bob_belief
+    assert bob_belief.lineage == (alice_belief.id,)
+    assert carol_belief.lineage == (alice_belief.id, bob_belief.id)
+
+
+def test_belief_rejects_missing_source_and_invalid_confidence() -> None:
+    conn = open_db(":memory:")
+    alice = AgentStore(conn).create(Agent.new("Alice"))
+    beliefs = BeliefStore(conn)
+
+    with pytest.raises(ValueError, match="source"):
+        beliefs.create(
+            Belief(alice.id, "Claim", "observation", "missing", 0.5, "Interpretation")
+        )
+    with pytest.raises(ValueError, match="confidence"):
+        Belief(alice.id, "Claim", "observation", "missing", 1.1, "Interpretation")

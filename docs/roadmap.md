@@ -62,7 +62,7 @@ social consequences across save/reload cycles.
 ## Stage 4: Epistemic Social Memory
 
 - [x] Store canonical events separately from agent observations and beliefs
-- [ ] Record belief source, confidence, interpretation, and lineage
+- [x] Record belief source, confidence, interpretation, and lineage
 - [ ] Implement contradiction and revision
 - [ ] Implement bounded trust-weighted propagation without mandatory LLM calls
 - [ ] Add secret, rumor, testimony, and correction scenarios
@@ -166,8 +166,8 @@ candidate 19 times and fixed CLOD 1 once. Its single evaluator, synthetic contex
 recognizable output styles, and formatting violations prevent any broader player-quality
 claim. The selected raw provider, PresentMon, packet, key, and score artifacts are published
 with checksums, reproduction commands, configuration, privacy scope, and limitations.
-Stage 3 is complete. Stage 4 now stores canonical events, per-agent observations, and
-agent beliefs in separate SQLite tables through distinct store APIs. Schema migration 7
-preserves existing event data; event deletion cascades only its observations, while beliefs
-remain independent. The next task is recording belief source, confidence, interpretation,
-and lineage.
+Stage 3 is complete. Stage 4 stores canonical events, per-agent observations, and agent
+beliefs separately. Schema migration 8 adds source foreign keys, bounded confidence,
+interpretation, and ordered transmission lineage. The belief store validates direct
+observations and derives lineage from transmitted beliefs; referenced evidence cannot be
+deleted while a belief depends on it. The next task is contradiction and revision.

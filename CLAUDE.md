@@ -99,7 +99,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 135 tests and Ruff pass. Strict mypy passes for the changed memory,
+Current verification: 138 tests and Ruff pass. Strict mypy passes for the changed memory,
 schema, and test files; the full test tree still has pre-existing annotation failures. No product
 performance benchmark has been published yet.
 
@@ -131,14 +131,15 @@ Stage 3 evidence is published under `output/`: the foreground baseline JSON, raw
 CSV, blind packet, answer key, and score. `output/README.md` records checksums,
 reproduction commands, configuration, privacy scope, and limitations. Stage 3 is complete.
 
-Schema migration 7 stores canonical events, per-agent observations, and minimal beliefs in
-separate tables. Deleting a canonical event cascades its observations but does not erase an
-agent's independently held beliefs. Provenance fields and behavior are intentionally deferred
-to the next Stage 4 task.
+Schema migration 7 stores canonical events, per-agent observations, and beliefs separately.
+Migration 8 adds a one-to-one provenance record with a foreign key to either an observation
+or source belief, bounded confidence, interpretation, and ordered transmission lineage.
+The store validates sources and derives lineage; SQLite prevents referenced evidence from
+being deleted.
 
 ## Current Work Order
 
-1. Record belief source, confidence, interpretation, and lineage.
+1. Implement contradiction and revision.
 2. Continue Stage 4 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

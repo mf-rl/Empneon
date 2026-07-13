@@ -24,6 +24,7 @@ EXPECTED_TABLES = frozenset(
         "event_participants",
         "event_observations",
         "beliefs",
+        "belief_provenance",
     }
 )
 
@@ -128,6 +129,22 @@ def test_migrates_v6_schema_with_separate_epistemic_tables() -> None:
     assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"event_observations", "beliefs"}.issubset(tables)
+
+
+def test_migrates_v7_schema_with_belief_provenance() -> None:
+    conn = sqlite3.connect(":memory:")
+    for ddl in ALL_DDL:
+        if "belief_provenance" not in ddl:
+            conn.execute(ddl)
+    conn.execute("INSERT INTO schema_version VALUES (7)")
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='belief_provenance'"
+    ).fetchone() == (1,)
 
 
 def test_rejects_database_newer_than_runtime() -> None:

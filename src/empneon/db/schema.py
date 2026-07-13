@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -117,6 +117,18 @@ CREATE TABLE IF NOT EXISTS beliefs (
     agent_id   TEXT    NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     statement  TEXT    NOT NULL,
     created_at INTEGER NOT NULL
+)
+"""
+
+_CREATE_BELIEF_PROVENANCE = """
+CREATE TABLE IF NOT EXISTS belief_provenance (
+    belief_id            TEXT PRIMARY KEY REFERENCES beliefs(id) ON DELETE CASCADE,
+    source_observation_id TEXT REFERENCES event_observations(id) ON DELETE NO ACTION,
+    source_belief_id      TEXT REFERENCES beliefs(id) ON DELETE NO ACTION,
+    confidence           REAL NOT NULL CHECK(confidence BETWEEN 0.0 AND 1.0),
+    interpretation       TEXT NOT NULL,
+    lineage              TEXT NOT NULL,
+    CHECK((source_observation_id IS NULL) != (source_belief_id IS NULL))
 )
 """
 
@@ -254,6 +266,7 @@ ALL_DDL: list[str] = [
     _CREATE_IDX_EVENTS_HAPPENED_AT,
     _CREATE_EVENT_OBSERVATIONS,
     _CREATE_BELIEFS,
+    _CREATE_BELIEF_PROVENANCE,
     _CREATE_IDX_EVENT_OBSERVATIONS_AGENT,
     _CREATE_IDX_BELIEFS_AGENT,
 ]
@@ -369,4 +382,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         _CREATE_IDX_EVENT_OBSERVATIONS_AGENT,
         _CREATE_IDX_BELIEFS_AGENT,
     ),
+    8: (_CREATE_BELIEF_PROVENANCE,),
 }
