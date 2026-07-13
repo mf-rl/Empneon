@@ -25,6 +25,7 @@ EXPECTED_TABLES = frozenset(
         "event_observations",
         "beliefs",
         "belief_provenance",
+        "belief_relations",
     }
 )
 
@@ -38,6 +39,7 @@ EXPECTED_INDEXES = frozenset(
         "idx_events_happened_at",
         "idx_event_observations_agent",
         "idx_beliefs_agent",
+        "idx_belief_single_revision",
     }
 )
 
@@ -119,7 +121,11 @@ def test_migrates_v5_schema_with_pending_action_proposals() -> None:
 def test_migrates_v6_schema_with_separate_epistemic_tables() -> None:
     conn = sqlite3.connect(":memory:")
     for ddl in ALL_DDL:
-        if "event_observations" not in ddl and "beliefs" not in ddl:
+        if (
+            "event_observations" not in ddl
+            and "beliefs" not in ddl
+            and "belief_relations" not in ddl
+        ):
             conn.execute(ddl)
     conn.execute("INSERT INTO schema_version VALUES (6)")
     conn.commit()
@@ -144,6 +150,22 @@ def test_migrates_v7_schema_with_belief_provenance() -> None:
     assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
     assert conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='belief_provenance'"
+    ).fetchone() == (1,)
+
+
+def test_migrates_v8_schema_with_belief_relations() -> None:
+    conn = sqlite3.connect(":memory:")
+    for ddl in ALL_DDL:
+        if "belief_relations" not in ddl:
+            conn.execute(ddl)
+    conn.execute("INSERT INTO schema_version VALUES (8)")
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='belief_relations'"
     ).fetchone() == (1,)
 
 

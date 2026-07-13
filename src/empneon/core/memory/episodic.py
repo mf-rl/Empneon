@@ -165,6 +165,11 @@ class BeliefStore:
         self._conn = conn
 
     def create(self, belief: Belief) -> Belief:
+        with self._conn:
+            self._insert(belief)
+        return belief
+
+    def _insert(self, belief: Belief) -> None:
         if belief.source_kind == "observation":
             source = self._conn.execute(
                 "SELECT 1 FROM event_observations WHERE id=? AND agent_id=?",
@@ -179,23 +184,21 @@ class BeliefStore:
         if source is None:
             raise ValueError("belief source does not exist")
 
-        with self._conn:
-            self._conn.execute(
-                "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
-                (belief.id, belief.agent_id, belief.statement, belief.created_at),
-            )
-            self._conn.execute(
-                "INSERT INTO belief_provenance VALUES (?,?,?,?,?,?)",
-                (
-                    belief.id,
-                    belief.source_id if belief.source_kind == "observation" else None,
-                    belief.source_id if belief.source_kind == "belief" else None,
-                    belief.confidence,
-                    belief.interpretation,
-                    json.dumps(belief.lineage),
-                ),
-            )
-        return belief
+        self._conn.execute(
+            "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
+            (belief.id, belief.agent_id, belief.statement, belief.created_at),
+        )
+        self._conn.execute(
+            "INSERT INTO belief_provenance VALUES (?,?,?,?,?,?)",
+            (
+                belief.id,
+                belief.source_id if belief.source_kind == "observation" else None,
+                belief.source_id if belief.source_kind == "belief" else None,
+                belief.confidence,
+                belief.interpretation,
+                json.dumps(belief.lineage),
+            ),
+        )
 
     def get(self, belief_id: str) -> Belief | None:
         row = self._conn.execute(
@@ -212,6 +215,72 @@ class BeliefStore:
             (agent_id,),
         ).fetchall()
         return [_row_to_belief(row) for row in rows]
+
+    def get_current_for_agent(self, agent_id: str) -> list[Belief]:
+        rows = self._conn.execute(
+            "SELECT b.*, p.* FROM beliefs b JOIN belief_provenance p ON p.belief_id=b.id"
+            " WHERE b.agent_id=? AND NOT EXISTS ("
+            " SELECT 1 FROM belief_relations r WHERE r.related_belief_id=b.id"
+            " AND r.relation='revises') ORDER BY b.created_at DESC, b.id",
+            (agent_id,),
+        ).fetchall()
+        return [_row_to_belief(row) for row in rows]
+
+    def record_contradiction(self, first_id: str, second_id: str, reason: str) -> None:
+        first = self.get(first_id)
+        second = self.get(second_id)
+        if first is None or second is None:
+            raise ValueError("contradictory belief does not exist")
+        if first.agent_id != second.agent_id:
+            raise ValueError("contradictory beliefs must belong to the same agent")
+        if not reason.strip():
+            raise ValueError("contradiction reason must not be empty")
+        belief_id, related_id = sorted((first_id, second_id))
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO belief_relations VALUES (?,?,?,?,?)",
+                (belief_id, related_id, "contradicts", reason, int(time.time())),
+            )
+
+    def get_contradictions(self, belief_id: str) -> list[Belief]:
+        rows = self._conn.execute(
+            "SELECT b.*, p.* FROM belief_relations r"
+            " JOIN beliefs b ON b.id=CASE WHEN r.belief_id=?"
+            " THEN r.related_belief_id ELSE r.belief_id END"
+            " JOIN belief_provenance p ON p.belief_id=b.id"
+            " WHERE r.relation='contradicts'"
+            " AND (r.belief_id=? OR r.related_belief_id=?) ORDER BY b.created_at, b.id",
+            (belief_id, belief_id, belief_id),
+        ).fetchall()
+        return [_row_to_belief(row) for row in rows]
+
+    def revise(self, original_id: str, revision: Belief, reason: str) -> Belief:
+        original = self.get(original_id)
+        if original is None:
+            raise ValueError("original belief does not exist")
+        if original.agent_id != revision.agent_id:
+            raise ValueError("belief revision must belong to the same agent")
+        if not reason.strip():
+            raise ValueError("revision reason must not be empty")
+        if self.get_revision(original_id) is not None:
+            raise ValueError("belief has already been revised")
+        with self._conn:
+            self._insert(revision)
+            self._conn.execute(
+                "INSERT INTO belief_relations VALUES (?,?,?,?,?)",
+                (revision.id, original_id, "revises", reason, int(time.time())),
+            )
+        return revision
+
+    def get_revision(self, belief_id: str) -> Belief | None:
+        row = self._conn.execute(
+            "SELECT b.*, p.* FROM belief_relations r"
+            " JOIN beliefs b ON b.id=r.belief_id"
+            " JOIN belief_provenance p ON p.belief_id=b.id"
+            " WHERE r.related_belief_id=? AND r.relation='revises'",
+            (belief_id,),
+        ).fetchone()
+        return None if row is None else _row_to_belief(row)
 
 
 def _row_to_event(row: sqlite3.Row, participant_ids: list[str]) -> Event:

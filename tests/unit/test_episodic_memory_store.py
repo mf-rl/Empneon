@@ -268,3 +268,77 @@ def test_belief_rejects_missing_source_and_invalid_confidence() -> None:
         )
     with pytest.raises(ValueError, match="confidence"):
         Belief(alice.id, "Claim", "observation", "missing", 1.1, "Interpretation")
+
+
+def test_belief_contradiction_and_revision_preserve_history() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent.new("Alice"))
+    event = events.create(Event("Charlie entered wearing a coat", [alice.id]))
+    observation = observations.create(
+        Observation(event.id, alice.id, "The coat looked red in dim light")
+    )
+    red = beliefs.create(
+        Belief(alice.id, "The coat was red", "observation", observation.id, 0.6, "Dim light")
+    )
+    blue = beliefs.create(
+        Belief(alice.id, "The coat was blue", "observation", observation.id, 0.8, "Closer look")
+    )
+
+    beliefs.record_contradiction(red.id, blue.id, "The coat cannot be both colors")
+    revision = beliefs.revise(
+        red.id,
+        Belief(
+            alice.id,
+            "The coat was blue",
+            "belief",
+            blue.id,
+            0.9,
+            "Alice accepted the clearer account",
+        ),
+        "Better evidence corrected the color",
+    )
+
+    assert beliefs.get_contradictions(red.id) == [blue]
+    assert beliefs.get_contradictions(blue.id) == [red]
+    assert beliefs.get_revision(red.id) == revision
+    assert {belief.id for belief in beliefs.get_for_agent(alice.id)} == {
+        red.id,
+        blue.id,
+        revision.id,
+    }
+    assert {belief.id for belief in beliefs.get_current_for_agent(alice.id)} == {
+        blue.id,
+        revision.id,
+    }
+
+
+def test_belief_revision_is_single_and_atomic() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent.new("Alice"))
+    event = events.create(Event("A coat changed color", [alice.id]))
+    observation = observations.create(Observation(event.id, alice.id, "The coat looked blue"))
+    original = beliefs.create(
+        Belief(alice.id, "The coat was red", "observation", observation.id, 0.4, "First look")
+    )
+    first = beliefs.revise(
+        original.id,
+        Belief(alice.id, "The coat was blue", "observation", observation.id, 0.9, "Second look"),
+        "Closer inspection",
+    )
+    rejected = Belief(
+        alice.id, "The coat was green", "observation", observation.id, 0.2, "Guess"
+    )
+
+    with pytest.raises(ValueError, match="already been revised"):
+        beliefs.revise(original.id, rejected, "Another guess")
+
+    assert beliefs.get_revision(original.id) == first
+    assert beliefs.get(rejected.id) is None

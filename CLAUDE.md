@@ -99,7 +99,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 138 tests and Ruff pass. Strict mypy passes for the changed memory,
+Current verification: 141 tests and Ruff pass. Strict mypy passes for the changed memory,
 schema, and test files; the full test tree still has pre-existing annotation failures. No product
 performance benchmark has been published yet.
 
@@ -137,9 +137,13 @@ or source belief, bounded confidence, interpretation, and ordered transmission l
 The store validates sources and derives lineage; SQLite prevents referenced evidence from
 being deleted.
 
+Schema migration 9 stores symmetric contradiction and directional revision relations.
+The store restricts contradictions and revisions to one agent, writes revisions atomically,
+retains superseded beliefs as history, and exposes unrevised beliefs as current.
+
 ## Current Work Order
 
-1. Implement contradiction and revision.
+1. Implement bounded trust-weighted propagation without mandatory LLM calls.
 2. Continue Stage 4 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

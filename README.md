@@ -139,6 +139,7 @@ Version **0.2.0** is an early framework release.
 - [x] Published Stage 3 configuration, raw results, and limitations
 - [x] Separate canonical event, agent-observation, and agent-belief storage
 - [x] Belief source, confidence, interpretation, and transmission lineage
+- [x] Persistent belief contradiction and revision history
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -184,7 +185,10 @@ results support no scalability or acceptable-performance claim.
 Stage 4 now has separate canonical-event, observation, and belief storage plus schema-backed
 belief provenance. Direct beliefs reference their agent's observation; transmitted beliefs
 reference their source belief and inherit an ordered lineage. Confidence is bounded, source
-evidence is protected by foreign keys, and contradiction and revision are the next task.
+evidence is protected by foreign keys, and contradictions can be recorded symmetrically
+between one agent's beliefs. Atomic
+revisions retain the original belief for audit while current-belief queries expose its single
+replacement. Trust-weighted propagation remains pending.
 
 ## Documentation
 

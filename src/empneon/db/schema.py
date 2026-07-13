@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -132,6 +132,18 @@ CREATE TABLE IF NOT EXISTS belief_provenance (
 )
 """
 
+_CREATE_BELIEF_RELATIONS = """
+CREATE TABLE IF NOT EXISTS belief_relations (
+    belief_id         TEXT    NOT NULL REFERENCES beliefs(id) ON DELETE CASCADE,
+    related_belief_id TEXT    NOT NULL REFERENCES beliefs(id) ON DELETE CASCADE,
+    relation          TEXT    NOT NULL CHECK(relation IN ('contradicts', 'revises')),
+    reason            TEXT    NOT NULL,
+    created_at        INTEGER NOT NULL,
+    PRIMARY KEY (belief_id, related_belief_id, relation),
+    CHECK(belief_id != related_belief_id)
+)
+"""
+
 _CREATE_AGENT_METADATA = """
 CREATE TABLE IF NOT EXISTS agent_metadata (
     agent_id TEXT    NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -243,6 +255,11 @@ CREATE INDEX IF NOT EXISTS idx_beliefs_agent
     ON beliefs(agent_id, created_at)
 """
 
+_CREATE_IDX_BELIEF_SINGLE_REVISION = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_belief_single_revision
+    ON belief_relations(related_belief_id) WHERE relation = 'revises'
+"""
+
 ALL_DDL: list[str] = [
     _CREATE_SCHEMA_VERSION,
     _CREATE_AGENTS,
@@ -267,8 +284,10 @@ ALL_DDL: list[str] = [
     _CREATE_EVENT_OBSERVATIONS,
     _CREATE_BELIEFS,
     _CREATE_BELIEF_PROVENANCE,
+    _CREATE_BELIEF_RELATIONS,
     _CREATE_IDX_EVENT_OBSERVATIONS_AGENT,
     _CREATE_IDX_BELIEFS_AGENT,
+    _CREATE_IDX_BELIEF_SINGLE_REVISION,
 ]
 
 _VALIDATE_AGENTS_INSERT = """
@@ -383,4 +402,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         _CREATE_IDX_BELIEFS_AGENT,
     ),
     8: (_CREATE_BELIEF_PROVENANCE,),
+    9: (_CREATE_BELIEF_RELATIONS, _CREATE_IDX_BELIEF_SINGLE_REVISION),
 }
