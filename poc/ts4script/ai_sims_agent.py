@@ -230,20 +230,17 @@ def autonomous_tick(_alarm_handle):
     candidates = instanced_npc_infos()
     if len(candidates) < 2:
         return
-    affordance = find_action_affordance("friendly_chat")
-    if affordance is None:
-        return
+    npc_sims = tuple(sim_info.get_sim_instance() for sim_info in candidates)
     selected_interaction = None
     speaker = None
     listener = None
-    skip_reason = "no scored friendly interaction"
+    skip_reason = "no scored NPC interaction"
     for offset in range(len(candidates)):
         speaker = candidates[(_AUTONOMY_CURSOR + offset) % len(candidates)]
         actor = speaker.get_sim_instance()
-        selected = actor.run_test_autonomy_ping(
-            affordance_list=None,
-            commodity_list=affordance.commodity_flags,
-        )
+        request = actor.autonomy_component._create_autonomy_request()
+        request.object_list = tuple(target for target in npc_sims if target is not actor)
+        selected = services.autonomy_service().find_best_action(request)
         target = getattr(selected, "target", None)
         target_info = getattr(target, "sim_info", None)
         if target_info is not None and target is not actor and not target.is_selectable:

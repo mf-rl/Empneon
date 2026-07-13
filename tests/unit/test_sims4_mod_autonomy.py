@@ -51,11 +51,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
 
-    sim_chat = type(
-        "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
-        (),
-        {"commodity_flags": ("social",)},
-    )
+    sim_chat = type("native_NPC_social", (), {})
     target = SimpleNamespace(is_selectable=False)
     interaction = SimpleNamespace(
         affordance=sim_chat,
@@ -63,11 +59,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         target=target,
     )
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
+    request = SimpleNamespace(object_list=None)
     actor = SimpleNamespace(
-        run_test_autonomy_ping=lambda **kwargs: interaction
-        if kwargs
-        == {"affordance_list": None, "commodity_list": ("social",)}
-        else None
+        autonomy_component=SimpleNamespace(_create_autonomy_request=lambda: request)
     )
     bella = SimpleNamespace(sim_id="bella", get_sim_instance=lambda: actor)
     mortimer = SimpleNamespace(sim_id="mortimer", get_sim_instance=lambda: target)
@@ -75,7 +69,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     sims = [bella, mortimer]
     payloads = []
     monkeypatch.setattr(agent, "instanced_npc_infos", lambda: sims)
-    monkeypatch.setattr(agent, "find_action_affordance", lambda _action: sim_chat)
+    services.autonomy_service = lambda: SimpleNamespace(
+        find_best_action=lambda selected_request: interaction
+        if selected_request.object_list == (target,)
+        else None
+    )
     monkeypatch.setattr(
         agent,
         "sim_info_payload",
@@ -139,7 +137,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         agent.services, "get_instance_manager", lambda _type: manager, raising=False
     )
 
-    assert agent.find_action_affordance("friendly_chat") is sim_chat
+    assert agent.find_action_affordance("friendly_chat") is mixer
     assert agent.social_tuning_names("askaboutday") == [
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]
