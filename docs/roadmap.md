@@ -52,7 +52,7 @@ social consequences across save/reload cycles.
 - [x] Build deterministic 20-agent benchmark scenarios
 - [x] Measure one-call-per-agent and fixed-CLOD baselines
 - [x] Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency
-- [ ] Run The Sims 4 concurrently on baseline hardware
+- [x] Run The Sims 4 concurrently on baseline hardware
 - [ ] Add identity continuity and contradiction metrics
 - [ ] Run blinded believability evaluation
 - [ ] Publish configuration, raw results, and limitations
@@ -153,4 +153,7 @@ request and event data. Both workloads can run comparable one-call-per-agent and
 provider-free fixed-CLOD 1 baselines while retaining their decisions and provider-call
 counts. SocietyBench retains validated raw CPU, RAM, VRAM, frame-time, token, and latency
 observations and summarizes peaks, token totals, and p50/p95 latency. The next task is
-running The Sims 4 concurrently on baseline hardware.
+adding identity continuity and contradiction metrics. The first foreground concurrent
+run completed on baseline hardware with 20 provider calls and 20 fixed-CLOD decisions.
+It measured 87.37 ms p50 Sims frame time, 18,821 ms p50 provider latency, and 5,918 MiB
+peak VRAM use, demonstrating severe resource pressure rather than acceptable performance.

@@ -75,6 +75,7 @@ performance numbers until measured in-game.
 - Deterministic SocietyBench 20-agent social-ring and reciprocal-pair scenarios
 - One-call-per-agent and provider-free fixed-CLOD baseline execution
 - Raw CPU, RAM, VRAM, frame-time, token, and latency benchmark metrics
+- Foreground Sims 4 baseline-hardware benchmark evidence
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -103,10 +104,16 @@ one-call-per-agent and provider-free fixed-CLOD 1 baseline execution. The worklo
 synthetic stable IDs and do not depend on personal Sims save data. Metric observations
 retain raw values and summarize peaks, token totals, and p50/p95 latency.
 
+The first foreground concurrent run used LM Studio with the 7.5B Q4_K_M Gemma model.
+Twenty provider calls and 20 fixed-CLOD decisions completed. Sims frame time was
+87.37 ms p50 / 229.27 ms p95; provider latency was 18,821 ms p50 / 33,701.65 ms p95;
+peak system RAM was 15,705.23 MiB and peak VRAM was 5,918 MiB. Treat these as evidence
+of severe pressure, not validated performance.
+
 ## Current Work Order
 
-1. Run The Sims 4 concurrently on baseline hardware.
-2. Add identity continuity and contradiction metrics.
+1. Add identity continuity and contradiction metrics.
+2. Run blinded believability evaluation.
 3. Continue Stage 3 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

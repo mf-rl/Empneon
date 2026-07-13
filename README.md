@@ -133,6 +133,7 @@ Version **0.2.0** is an early framework release.
 - [x] Deterministic SocietyBench 20-agent scenarios
 - [x] One-call-per-agent and fixed-CLOD baseline execution
 - [x] SocietyBench resource, frame-time, token, and latency metrics
+- [x] Concurrent Sims 4 run on baseline hardware
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
@@ -159,12 +160,16 @@ complete. Stage 3 now includes deterministic 20-agent social-ring and reciprocal
 workloads plus comparable one-call-per-agent and provider-free fixed-CLOD baseline
 execution. Raw metric observations retain CPU, RAM, VRAM, frame time, tokens, and
 latency, with aggregate token totals and p50/p95 latency. The concurrent in-game
-hardware run remains pending.
+hardware run completed but showed severe pressure:
+87.37 ms p50 Sims frame time and 18.821 s p50 provider latency with 5,918 MiB peak VRAM
+use. These are preliminary measurements, not a performance claim. See
+[SocietyBench results](docs/benchmark-results.md).
 
 ## Documentation
 
 - [Vision and architecture](docs/vision.md)
 - [Research and innovation program](docs/innovations.md)
+- [SocietyBench results](docs/benchmark-results.md)
 - [Business model](docs/business-model.md)
 - [Validated roadmap](docs/roadmap.md)
 - [Sims 4 POC setup and privacy](docs/sims4-setup.md)
