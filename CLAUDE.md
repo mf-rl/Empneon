@@ -99,8 +99,8 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 131 tests and Ruff pass. Strict mypy passes for the changed benchmark
-package and test; the full test tree still has pre-existing annotation failures. No product
+Current verification: 135 tests and Ruff pass. Strict mypy passes for the changed memory,
+schema, and test files; the full test tree still has pre-existing annotation failures. No product
 performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
@@ -131,9 +131,14 @@ Stage 3 evidence is published under `output/`: the foreground baseline JSON, raw
 CSV, blind packet, answer key, and score. `output/README.md` records checksums,
 reproduction commands, configuration, privacy scope, and limitations. Stage 3 is complete.
 
+Schema migration 7 stores canonical events, per-agent observations, and minimal beliefs in
+separate tables. Deleting a canonical event cascades its observations but does not erase an
+agent's independently held beliefs. Provenance fields and behavior are intentionally deferred
+to the next Stage 4 task.
+
 ## Current Work Order
 
-1. Store canonical events separately from agent observations and beliefs.
+1. Record belief source, confidence, interpretation, and lineage.
 2. Continue Stage 4 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

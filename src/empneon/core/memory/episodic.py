@@ -1,4 +1,4 @@
-"""Episodic memory store — events with timestamps and participant lists."""
+"""Canonical events and separate agent observations and beliefs."""
 
 import sqlite3
 import time
@@ -14,6 +14,23 @@ class Event:
     happened_at: int = field(default_factory=lambda: int(time.time()))
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: int = field(default_factory=lambda: int(time.time()))
+
+
+@dataclass
+class Observation:
+    event_id: str
+    agent_id: str
+    perception: str
+    observed_at: int = field(default_factory=lambda: int(time.time()))
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+
+@dataclass
+class Belief:
+    agent_id: str
+    statement: str
+    created_at: int = field(default_factory=lambda: int(time.time()))
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 
 class EpisodicMemoryStore:
@@ -83,6 +100,60 @@ class EpisodicMemoryStore:
         return event
 
 
+class ObservationStore:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def create(self, observation: Observation) -> Observation:
+        self._conn.execute(
+            "INSERT INTO event_observations(id, event_id, agent_id, perception, observed_at)"
+            " VALUES (?,?,?,?,?)",
+            (
+                observation.id,
+                observation.event_id,
+                observation.agent_id,
+                observation.perception,
+                observation.observed_at,
+            ),
+        )
+        self._conn.commit()
+        return observation
+
+    def get_for_event(self, event_id: str) -> list[Observation]:
+        rows = self._conn.execute(
+            "SELECT * FROM event_observations WHERE event_id=? ORDER BY observed_at, id",
+            (event_id,),
+        ).fetchall()
+        return [_row_to_observation(row) for row in rows]
+
+    def get_for_agent(self, agent_id: str) -> list[Observation]:
+        rows = self._conn.execute(
+            "SELECT * FROM event_observations WHERE agent_id=? ORDER BY observed_at DESC, id",
+            (agent_id,),
+        ).fetchall()
+        return [_row_to_observation(row) for row in rows]
+
+
+class BeliefStore:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def create(self, belief: Belief) -> Belief:
+        self._conn.execute(
+            "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
+            (belief.id, belief.agent_id, belief.statement, belief.created_at),
+        )
+        self._conn.commit()
+        return belief
+
+    def get_for_agent(self, agent_id: str) -> list[Belief]:
+        rows = self._conn.execute(
+            "SELECT * FROM beliefs WHERE agent_id=? ORDER BY created_at DESC, id",
+            (agent_id,),
+        ).fetchall()
+        return [_row_to_belief(row) for row in rows]
+
+
 def _row_to_event(row: sqlite3.Row, participant_ids: list[str]) -> Event:
     return Event(
         id=row["id"],
@@ -91,4 +162,23 @@ def _row_to_event(row: sqlite3.Row, participant_ids: list[str]) -> Event:
         happened_at=row["happened_at"],
         created_at=row["created_at"],
         participant_ids=participant_ids,
+    )
+
+
+def _row_to_observation(row: sqlite3.Row) -> Observation:
+    return Observation(
+        id=row["id"],
+        event_id=row["event_id"],
+        agent_id=row["agent_id"],
+        perception=row["perception"],
+        observed_at=row["observed_at"],
+    )
+
+
+def _row_to_belief(row: sqlite3.Row) -> Belief:
+    return Belief(
+        id=row["id"],
+        agent_id=row["agent_id"],
+        statement=row["statement"],
+        created_at=row["created_at"],
     )

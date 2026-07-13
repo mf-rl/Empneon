@@ -2,7 +2,14 @@ import pytest
 
 from empneon.core.identity.models import Agent
 from empneon.core.identity.store import AgentStore
-from empneon.core.memory.episodic import EpisodicMemoryStore, Event
+from empneon.core.memory.episodic import (
+    Belief,
+    BeliefStore,
+    EpisodicMemoryStore,
+    Event,
+    Observation,
+    ObservationStore,
+)
 from empneon.db.connection import open_db
 
 
@@ -113,3 +120,62 @@ def test_null_location(stores: tuple[AgentStore, EpisodicMemoryStore]) -> None:
     fetched = stores[1].get(event.id)
     assert fetched is not None
     assert fetched.location is None
+
+
+def test_agent_observations_are_separate_from_canonical_event() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    alice = agents.create(Agent.new("Alice"))
+    bob = agents.create(Agent.new("Bob"))
+    event = events.create(Event("A masked guest entered", [alice.id, bob.id], happened_at=10))
+
+    alice_view = observations.create(
+        Observation(event.id, alice.id, "Alice thought the guest was Charlie", observed_at=11)
+    )
+    bob_view = observations.create(
+        Observation(event.id, bob.id, "Bob could not identify the guest", observed_at=12)
+    )
+
+    assert observations.get_for_event(event.id) == [alice_view, bob_view]
+    assert observations.get_for_agent(alice.id) == [alice_view]
+    canonical = events.get(event.id)
+    assert canonical is not None
+    assert canonical.description == event.description
+    assert set(canonical.participant_ids) == {alice.id, bob.id}
+
+
+def test_beliefs_are_separate_from_events_and_observations() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent.new("Alice"))
+    event = events.create(Event("A masked guest entered", [alice.id], happened_at=10))
+    observation = observations.create(
+        Observation(event.id, alice.id, "Alice saw a red coat", observed_at=11)
+    )
+    belief = beliefs.create(Belief(alice.id, "The masked guest was Charlie", created_at=12))
+
+    assert beliefs.get_for_agent(alice.id) == [belief]
+    assert observations.get_for_event(event.id) == [observation]
+    assert events.get(event.id) == event
+
+
+def test_deleting_canonical_event_cascades_observations_not_beliefs() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent.new("Alice"))
+    event = events.create(Event("A masked guest entered", [alice.id]))
+    observations.create(Observation(event.id, alice.id, "Alice saw a red coat"))
+    belief = beliefs.create(Belief(alice.id, "The guest was Charlie"))
+
+    events.delete(event.id)
+
+    assert observations.get_for_event(event.id) == []
+    assert beliefs.get_for_agent(alice.id) == [belief]

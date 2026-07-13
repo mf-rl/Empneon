@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,10 @@ EXPECTED_TABLES = frozenset(
         "action_results",
         "action_consequences",
         "action_proposals",
+        "events",
+        "event_participants",
+        "event_observations",
+        "beliefs",
     }
 )
 
@@ -28,6 +33,10 @@ EXPECTED_INDEXES = frozenset(
         "idx_relationships_target",
         "idx_goals_agent_status",
         "idx_emotional_states_agent",
+        "idx_event_participants_agent",
+        "idx_events_happened_at",
+        "idx_event_observations_agent",
+        "idx_beliefs_agent",
     }
 )
 
@@ -106,6 +115,21 @@ def test_migrates_v5_schema_with_pending_action_proposals() -> None:
     ).fetchone() == (1,)
 
 
+def test_migrates_v6_schema_with_separate_epistemic_tables() -> None:
+    conn = sqlite3.connect(":memory:")
+    for ddl in ALL_DDL:
+        if "event_observations" not in ddl and "beliefs" not in ddl:
+            conn.execute(ddl)
+    conn.execute("INSERT INTO schema_version VALUES (6)")
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"event_observations", "beliefs"}.issubset(tables)
+
+
 def test_rejects_database_newer_than_runtime() -> None:
     conn = sqlite3.connect(":memory:")
     for ddl in ALL_DDL:
@@ -119,8 +143,8 @@ def test_rejects_database_newer_than_runtime() -> None:
     assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION + 1
 
 
-def test_open_db_twice_is_idempotent(tmp_path: pytest.TempPathFactory) -> None:
-    p = str(tmp_path) + "/test.db"  # type: ignore[operator]
+def test_open_db_twice_is_idempotent(tmp_path: Path) -> None:
+    p = str(tmp_path) + "/test.db"
     open_db(p).close()
     open_db(p).close()  # second open must not raise or corrupt
 

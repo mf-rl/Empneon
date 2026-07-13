@@ -137,6 +137,7 @@ Version **0.2.0** is an early framework release.
 - [x] SocietyBench identity-continuity and contradiction metrics
 - [x] Blinded SocietyBench believability evaluation
 - [x] Published Stage 3 configuration, raw results, and limitations
+- [x] Separate canonical event, agent-observation, and agent-belief storage
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -179,6 +180,9 @@ The foreground provider observations, raw PresentMon rows, blind evaluation arti
 checksums, configuration, and limitations are published in the
 [Stage 3 artifact manifest](output/README.md). Stage 3 is complete, but its preliminary
 results support no scalability or acceptable-performance claim.
+Stage 4 has begun with schema migration 7 and separate stores for canonical events,
+per-agent observations, and minimal agent beliefs. Belief provenance, confidence,
+interpretation, and transmission lineage remain the next roadmap task.
 
 ## Documentation
 

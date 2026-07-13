@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -97,6 +97,26 @@ CREATE TABLE IF NOT EXISTS event_participants (
     event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
     PRIMARY KEY (event_id, agent_id)
+)
+"""
+
+_CREATE_EVENT_OBSERVATIONS = """
+CREATE TABLE IF NOT EXISTS event_observations (
+    id          TEXT    PRIMARY KEY,
+    event_id    TEXT    NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    agent_id    TEXT    NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    perception  TEXT    NOT NULL,
+    observed_at INTEGER NOT NULL,
+    UNIQUE(event_id, agent_id)
+)
+"""
+
+_CREATE_BELIEFS = """
+CREATE TABLE IF NOT EXISTS beliefs (
+    id         TEXT    PRIMARY KEY,
+    agent_id   TEXT    NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    statement  TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
 )
 """
 
@@ -201,6 +221,16 @@ CREATE INDEX IF NOT EXISTS idx_events_happened_at
     ON events(happened_at)
 """
 
+_CREATE_IDX_EVENT_OBSERVATIONS_AGENT = """
+CREATE INDEX IF NOT EXISTS idx_event_observations_agent
+    ON event_observations(agent_id, observed_at)
+"""
+
+_CREATE_IDX_BELIEFS_AGENT = """
+CREATE INDEX IF NOT EXISTS idx_beliefs_agent
+    ON beliefs(agent_id, created_at)
+"""
+
 ALL_DDL: list[str] = [
     _CREATE_SCHEMA_VERSION,
     _CREATE_AGENTS,
@@ -222,6 +252,10 @@ ALL_DDL: list[str] = [
     _CREATE_EVENT_PARTICIPANTS,
     _CREATE_IDX_EVENT_PARTICIPANTS_AGENT,
     _CREATE_IDX_EVENTS_HAPPENED_AT,
+    _CREATE_EVENT_OBSERVATIONS,
+    _CREATE_BELIEFS,
+    _CREATE_IDX_EVENT_OBSERVATIONS_AGENT,
+    _CREATE_IDX_BELIEFS_AGENT,
 ]
 
 _VALIDATE_AGENTS_INSERT = """
@@ -329,4 +363,10 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     4: (_CREATE_ACTION_RESULTS,),
     5: (_CREATE_ACTION_CONSEQUENCES,),
     6: (_CREATE_ACTION_PROPOSALS,),
+    7: (
+        _CREATE_EVENT_OBSERVATIONS,
+        _CREATE_BELIEFS,
+        _CREATE_IDX_EVENT_OBSERVATIONS_AGENT,
+        _CREATE_IDX_BELIEFS_AGENT,
+    ),
 }
