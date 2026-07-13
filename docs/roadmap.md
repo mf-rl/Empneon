@@ -77,7 +77,7 @@ the system remains coherent after restart.
 - [x] Estimate player-visible value of deeper reasoning
 - [x] Select CLOD, provider, context, and token budget dynamically
 - [x] Add optional shared-prefix batching and cache preparation by capability
-- [ ] Add archetype approximation only if benchmarks justify it
+- [x] Evaluate archetype approximation; do not add without benchmark justification
 - [ ] Compare against Stage 3 baselines
 
 **Exit gate:** Adaptive scheduling reduces measured cost or latency while preserving a
@@ -198,5 +198,11 @@ Generation preparation now finds the longest common message prefix, requires com
 temperature and schema settings for a native batch, and invokes batching or prefix-cache
 preparation only when the provider declares the matching capability. Ordinary providers keep
 their existing per-request generation path. Capability/method mismatches and incomplete batch
-results fail explicitly. No backend performance benefit has been measured. The next task is
-archetype approximation, only if benchmarks justify it.
+results fail explicitly. No backend performance benefit has been measured.
+The archetype gate found no pooled-versus-individual benchmark, no measured resource benefit,
+no quality-loss result, and no promotion criterion. Stage 3 pressure establishes a need for
+optimization, but not for this approximation specifically; the `+0.90` deeper-reasoning
+preference increases the cost of guessing. Archetype code is therefore intentionally absent.
+Reopen the gate only after a controlled SocietyBench comparison shows a resource or latency
+benefit while meeting predefined identity-continuity, contradiction, and believability
+thresholds. The next task is comparing the adaptive scheduler against Stage 3 baselines.

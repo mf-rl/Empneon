@@ -147,6 +147,7 @@ Version **0.2.0** is an early framework release.
 - [x] Preliminary player-visible value proxy from blinded preferences
 - [x] Dynamic CLOD, provider, context, and completion-token selection
 - [x] Capability-gated shared-prefix batching and cache preparation
+- [x] Archetype approximation gate (not justified; not implemented)
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -224,7 +225,12 @@ requests. Native batching is used only when the provider declares `batching`; pr
 preparation is invoked only when it declares `prefix_caching`. Providers declaring neither
 capability continue through ordinary generation unchanged, and the OpenAI-compatible adapter
 currently declares neither. This is working capability routing, not a latency or cache-hit
-claim. Archetype approximation is the next conditional Stage 5 task.
+claim.
+The archetype approximation gate found no supporting comparison in the published evidence.
+Stage 3 measured individual one-call and fixed-CLOD paths, not pooled policies; it contains no
+archetype resource delta, quality-loss score, or promotion criterion. The `+0.90` preference
+for deeper individual reasoning also makes unmeasured approximation a quality risk. No
+archetype code was added. The next task compares the adaptive path against Stage 3 baselines.
 
 ## Documentation
 

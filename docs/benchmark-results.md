@@ -71,3 +71,15 @@ comparison favors deeper reasoning. The 19-to-1 blind result produces `+0.90`.
 This signed preference is a reproducible player-visible value proxy, not measured player
 utility. It captures contextual fit, social plausibility, and specificity under the published
 rubric, but it comes from one synthetic evaluator and one model run.
+
+## Stage 5 archetype decision gate: 2026-07-13
+
+Archetype approximation is not justified by the published evidence and was not implemented.
+The hardware run shows severe pressure, but it compares only one-call-per-agent with fixed
+CLOD 1. It does not measure an archetype or pooled-policy path, resource savings attributable
+to pooling, identity or contradiction regressions, believability loss, or promotion criteria.
+
+The `+0.90` deeper-reasoning preference is evidence that decision quality can be visible, not
+evidence that agents can safely share an approximation. Reconsideration requires a controlled
+SocietyBench arm showing lower cost or latency while meeting predefined identity-continuity,
+contradiction, and believability thresholds.

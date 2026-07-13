@@ -83,6 +83,7 @@ performance numbers until measured in-game.
 - Signed deeper-reasoning net-preference estimate from blinded ratings
 - Dynamic CLOD, provider, context, and completion-token route selection
 - Capability-gated shared-prefix batching and cache preparation
+- Archetype approximation gate deferred for lack of benchmark justification
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -180,9 +181,16 @@ Providers declaring neither keep ordinary generation unchanged. The OpenAI-compa
 provider currently declares neither capability. This path has contract tests but no backend
 performance evidence; predictive prewarming is intentionally excluded.
 
+Archetype approximation was evaluated and intentionally not implemented. Published evidence
+has no pooled-versus-individual arm, resource delta attributable to pooling, quality-loss
+measurement, or promotion criterion. Severe Stage 3 pressure does not identify archetypes as
+the solution, and the `+0.90` deeper-reasoning preference makes speculative pooling risky.
+Reopen only after a controlled SocietyBench comparison meets predefined consistency and
+believability thresholds while reducing cost or latency.
+
 ## Current Work Order
 
-1. Add archetype approximation only if benchmarks justify it.
+1. Compare the adaptive scheduler against Stage 3 baselines.
 2. Continue Stage 5 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

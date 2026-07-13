@@ -128,6 +128,12 @@ Background agents may share cheap policies while retaining individual state and 
 promoted when their histories diverge. Quality loss and promotion criteria must be
 measured rather than assumed.
 
+The current evidence does not justify implementation. Stage 3 has no archetype arm and thus
+measures neither pooled-policy savings nor identity, contradiction, or believability loss.
+The observed `+0.90` preference for deeper individual reasoning makes an unmeasured shortcut
+especially risky. This remains a deferred hypothesis until a controlled comparison establishes
+both benefit and safe promotion criteria.
+
 ### Personality Expression
 
 Prompt content, retrieved behavioral evidence, rules, fine-tuning, and sampling
