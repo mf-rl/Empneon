@@ -145,8 +145,8 @@ release reserved resources. Installation, configuration, privacy, conservative h
 profiles, and the in-game exit-gate procedure are documented. The current automatic path
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
-queues the base-game `sim_Chat` conversation promptly so competing autonomous work cannot
-invalidate it, using the game's autonomy interaction context so it
+asks the game's autonomy component to select a valid base-game `sim_Chat` and NPC target,
+then queues that exact prevalidated interaction through the game's native executor so it
 can create and own the social group and its mixers.
 Filterable `ai.socialtunings friendly`
 diagnostics remain available for game-version investigation. It still requires

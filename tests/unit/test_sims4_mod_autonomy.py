@@ -14,20 +14,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     clock = ModuleType("clock")
     clock.interval_in_sim_minutes = lambda minutes: minutes
     services = ModuleType("services")
-    context_module = ModuleType("interactions.context")
-    contexts = []
-    context_module.InteractionContext = type(
-        "InteractionContext",
-        (),
-        {
-            "SOURCE_AUTONOMY": "autonomy",
-            "__init__": lambda self, *args, **kwargs: contexts.append((args, kwargs)),
-        },
-    )
-    context_module.QueueInsertStrategy = SimpleNamespace(NEXT="next")
-    priority_module = ModuleType("interactions.priority")
-    priority_module.Priority = SimpleNamespace(High="high")
     interactions = ModuleType("interactions")
+    aop_module = ModuleType("interactions.aop")
+    executed = []
+    aop_module.AffordanceObjectPair = SimpleNamespace(
+        execute_interaction=lambda interaction: executed.append(interaction) or True
+    )
     commands = ModuleType("sims4.commands")
     commands.CommandType = SimpleNamespace(Live="live")
     commands.Command = lambda *_args, **_kwargs: lambda function: function
@@ -44,8 +36,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "alarms": alarms,
         "clock": clock,
         "interactions": interactions,
-        "interactions.context": context_module,
-        "interactions.priority": priority_module,
+        "interactions.aop": aop_module,
         "services": services,
         "sims4": sims4,
         "sims4.commands": commands,
@@ -60,9 +51,25 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
 
-    sims = [SimpleNamespace(sim_id="bella"), SimpleNamespace(sim_id="mortimer")]
+    sim_chat = type("sim_Chat", (), {})
+    target = SimpleNamespace(is_selectable=False)
+    interaction = SimpleNamespace(
+        finishing_type="FinishingType.NATURAL",
+        target=target,
+    )
+    interaction.register_on_finishing_callback = lambda callback: callback(interaction)
+    actor = SimpleNamespace(
+        run_test_autonomy_ping=lambda affordances, commodities: interaction
+        if affordances == [sim_chat] and commodities == []
+        else None
+    )
+    bella = SimpleNamespace(sim_id="bella", get_sim_instance=lambda: actor)
+    mortimer = SimpleNamespace(sim_id="mortimer", get_sim_instance=lambda: target)
+    target.sim_info = mortimer
+    sims = [bella, mortimer]
     payloads = []
     monkeypatch.setattr(agent, "instanced_npc_infos", lambda: sims)
+    monkeypatch.setattr(agent, "find_action_affordance", lambda _action: sim_chat)
     monkeypatch.setattr(
         agent,
         "sim_info_payload",
@@ -98,14 +105,6 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "source": "sim_alarm",
     }
 
-    interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
-    interaction.register_on_finishing_callback = lambda callback: callback(interaction)
-    pushed = []
-    actor = SimpleNamespace(
-        push_super_affordance=lambda *args: pushed.append(args)
-        or SimpleNamespace(interaction=interaction)
-    )
-    sim_chat = type("sim_Chat", (), {})
     generic_social = type("socials_SuperInteraction", (), {})
     social_mixer_base = type("SocialMixerInteraction", (), {})
     mixer = type(
@@ -113,10 +112,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         (social_mixer_base,),
         {},
     )
-    target = SimpleNamespace()
     infos = {
-        "bella": SimpleNamespace(get_sim_instance=lambda: actor),
-        "mortimer": SimpleNamespace(get_sim_instance=lambda: target),
+        "bella": bella,
+        "mortimer": mortimer,
     }
     monkeypatch.setattr(agent, "find_sim_info_by_id", infos.get)
     unrelated_social = type("socialSuperInteraction_CarryLetOut", (), {})
@@ -142,10 +140,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     agent.process_autonomy_responses(None)
 
-    assert contexts[0][0][1] == "autonomy"
-    assert contexts[0][0][2] == "high"
-    assert contexts[0][1]["insert_strategy"] == "next"
-    assert pushed[0][0:2] == (sim_chat, target)
+    assert executed == [interaction]
     assert payloads[1] == (
         "/action-result",
         {

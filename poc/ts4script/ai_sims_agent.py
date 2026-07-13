@@ -230,9 +230,25 @@ def autonomous_tick(_alarm_handle):
     candidates = instanced_npc_infos()
     if len(candidates) < 2:
         return
-    speaker = candidates[_AUTONOMY_CURSOR % len(candidates)]
-    listener = candidates[(_AUTONOMY_CURSOR + 1) % len(candidates)]
-    _AUTONOMY_CURSOR = (_AUTONOMY_CURSOR + 1) % len(candidates)
+    affordance = find_action_affordance("friendly_chat")
+    if affordance is None:
+        return
+    selected_interaction = None
+    speaker = None
+    listener = None
+    for offset in range(len(candidates)):
+        speaker = candidates[(_AUTONOMY_CURSOR + offset) % len(candidates)]
+        actor = speaker.get_sim_instance()
+        selected = actor.run_test_autonomy_ping([affordance], [])
+        target = getattr(selected, "target", None)
+        target_info = getattr(target, "sim_info", None)
+        if target_info is not None and target is not actor and not target.is_selectable:
+            selected_interaction = selected
+            listener = target_info
+            _AUTONOMY_CURSOR = (_AUTONOMY_CURSOR + offset + 1) % len(candidates)
+            break
+    if selected_interaction is None:
+        return
     payload = {
         "speaker": sim_info_payload(speaker),
         "listener": sim_info_payload(listener),
@@ -247,7 +263,7 @@ def autonomous_tick(_alarm_handle):
         try:
             data = post_json("/autonomous", payload)
             with _AUTONOMY_RESPONSES_LOCK:
-                _AUTONOMY_RESPONSES.append((payload, data))
+                _AUTONOMY_RESPONSES.append((payload, data, selected_interaction))
         except Exception:
             global _AUTONOMY_IN_FLIGHT
             _AUTONOMY_IN_FLIGHT = False
@@ -263,11 +279,11 @@ def process_autonomy_responses(_alarm_handle):
         item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
     if item is None:
         return
-    payload, data = item
-    execute_sims_action(payload, data)
+    payload, data, selected_interaction = item
+    execute_sims_action(payload, data, selected_interaction)
 
 
-def execute_sims_action(payload, data):
+def execute_sims_action(payload, data, interaction):
     decision_id = str(data.get("decision_id") or "")
     action = str(data.get("suggested_action") or "")
     speaker_id = str(payload["speaker"]["id"])
@@ -279,22 +295,8 @@ def execute_sims_action(payload, data):
         target = target_info.get_sim_instance() if target_info is not None else None
         if actor is None or target is None:
             raise RuntimeError("actor or target left the active zone")
-        from interactions.context import InteractionContext, QueueInsertStrategy
-        from interactions.priority import Priority
-
-        context = InteractionContext(
-            actor,
-            InteractionContext.SOURCE_AUTONOMY,
-            Priority.High,
-            insert_strategy=QueueInsertStrategy.NEXT,
-        )
-        affordance = find_action_affordance(action)
-        if affordance is None:
-            raise RuntimeError("no loaded tuning for " + action)
-        enqueue_result = actor.push_super_affordance(affordance, target, context)
-        interaction = getattr(enqueue_result, "interaction", None)
-        if not enqueue_result or interaction is None:
-            raise RuntimeError("game rejected interaction enqueue: sim_Chat")
+        if action != "friendly_chat":
+            raise RuntimeError("native autonomy selected only for friendly_chat")
         callback = getattr(interaction, "register_on_finishing_callback", None)
         if not callable(callback):
             raise RuntimeError("game interaction has no completion callback")
@@ -325,6 +327,10 @@ def execute_sims_action(payload, data):
             )
 
         callback(finished)
+        from interactions.aop import AffordanceObjectPair
+
+        if not AffordanceObjectPair.execute_interaction(interaction):
+            raise RuntimeError("game rejected native autonomous interaction")
         write_marker(
             "queued {} -> {}: {}".format(
                 payload["speaker"]["name"], payload["listener"]["name"], action
