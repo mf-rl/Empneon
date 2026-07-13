@@ -77,6 +77,7 @@ performance numbers until measured in-game.
 - Raw CPU, RAM, VRAM, frame-time, token, and latency benchmark metrics
 - Foreground Sims 4 baseline-hardware benchmark evidence
 - SocietyBench identity-continuity and contradiction metrics
+- Seeded blinded SocietyBench believability comparison and scoring
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -97,8 +98,9 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 130 tests pass. Ruff and strict mypy pass for Core and tests. No
-product performance benchmark has been published yet.
+Current verification: 131 tests and Ruff pass. Strict mypy passes for the changed benchmark
+package and test; the full test tree still has pre-existing annotation failures. No product
+performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
 one-call-per-agent and provider-free fixed-CLOD 1 baseline execution. The workloads use
@@ -120,10 +122,13 @@ result to loaded NPC targets. Injecting a restricted `object_list` triggers a ga
 Stage 2.6 live run completed one NPC social with one ordered consequence, zero pending
 proposals, and no new desync.
 
+The first seeded 20-sample blind believability run preferred one-call candidates 19 times
+and fixed CLOD 1 once. Treat it only as single-evaluator synthetic evidence: output styles
+were recognizable and several model candidates violated the requested response format.
+
 ## Current Work Order
 
-1. Run blinded believability evaluation.
-2. Publish configuration, raw results, and limitations.
-3. Continue Stage 3 strictly in roadmap order.
+1. Publish configuration, raw results, and limitations.
+2. Continue Stage 3 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

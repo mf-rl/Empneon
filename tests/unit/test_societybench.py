@@ -3,10 +3,14 @@ import asyncio
 import pytest
 
 from empneon.benchmarks import (
+    BaselineResult,
+    BelievabilityRating,
     BenchmarkClaim,
     BenchmarkObservation,
     build_20_agent_scenarios,
+    build_blinded_believability_evaluation,
     measure_baselines,
+    measure_believability,
     measure_consistency,
     summarize_metrics,
 )
@@ -100,3 +104,49 @@ def test_consistency_measures_identity_continuity_and_contradictions() -> None:
     assert metrics.identity_continuity_rate == 0.9
     assert (metrics.contradictory_subjects, metrics.evaluated_subjects) == (1, 3)
     assert metrics.contradiction_rate == pytest.approx(1 / 3)
+
+
+def test_believability_evaluation_blinds_and_reveals_baseline_preferences() -> None:
+    scenario = build_20_agent_scenarios()[0]
+    one_call = BaselineResult(
+        "one-call-per-agent",
+        tuple(Decision(agent, "ask about their day") for agent in scenario.agent_ids),
+        20,
+    )
+    fixed_clod = BaselineResult(
+        "fixed-clod-1",
+        tuple(Decision(agent, "acknowledge") for agent in scenario.agent_ids),
+        0,
+    )
+
+    samples, keys = build_blinded_believability_evaluation(
+        scenario, (one_call, fixed_clod), seed=7
+    )
+    rebuilt, rebuilt_keys = build_blinded_believability_evaluation(
+        scenario, (one_call, fixed_clod), seed=7
+    )
+    ratings = tuple(
+        BelievabilityRating(
+            sample.sample_id,
+            "A" if key.option_a_strategy == "one-call-per-agent" else "B",
+        )
+        for sample, key in zip(samples, keys, strict=True)
+    )
+    ratings = ratings[:-1] + (BelievabilityRating(ratings[-1].sample_id, "tie"),)
+    metrics = measure_believability(ratings, keys)
+
+    assert (samples, keys) == (rebuilt, rebuilt_keys)
+    assert {sample.option_a for sample in samples} == {"acknowledge", "ask about their day"}
+    counts = (
+        metrics.evaluated_samples,
+        metrics.one_call_wins,
+        metrics.fixed_clod_wins,
+        metrics.ties,
+    )
+    assert counts == (
+        20,
+        19,
+        0,
+        1,
+    )
+    assert metrics.one_call_win_rate == 0.95

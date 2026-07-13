@@ -135,8 +135,9 @@ Version **0.2.0** is an early framework release.
 - [x] SocietyBench resource, frame-time, token, and latency metrics
 - [x] Concurrent Sims 4 run on baseline hardware
 - [x] SocietyBench identity-continuity and contradiction metrics
+- [x] Blinded SocietyBench believability evaluation
 - [ ] Second adapter proving portability
-- [ ] In-game performance and believability benchmarks
+- [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
 paths now resolve through Core, execute through the adapter, and persist action results
@@ -170,6 +171,9 @@ agent subject; scenario-specific consistency evaluation remains separate from th
 hardware run. A 30-sim-minute Stage 2.6 regression run confirmed that native target
 discovery avoids the game-build desync caused by injecting an object list: one NPC social
 completed, its ordered consequence persisted, and no proposal remained pending.
+The first blinded 20-sample believability comparison preferred the one-call candidates
+19 times and fixed CLOD 1 once. This is a single-evaluator synthetic result, not a player
+study; recognizable output styles and model formatting violations limit the evidence.
 
 ## Documentation
 

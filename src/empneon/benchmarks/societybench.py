@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, replace
 from math import isfinite
+from random import Random
+from typing import Literal
 
 from empneon.core.clod.fallback import Resolver
 from empneon.core.clod.rules import resolve_clod1
@@ -83,6 +85,50 @@ class ConsistencyMetrics:
     contradiction_rate: float
 
 
+@dataclass(frozen=True)
+class BelievabilitySample:
+    sample_id: str
+    request_id: str
+    event_type: str
+    actor_ids: tuple[str, ...]
+    option_a: str
+    option_b: str
+
+
+@dataclass(frozen=True)
+class BelievabilityKey:
+    sample_id: str
+    option_a_strategy: str
+    option_b_strategy: str
+
+    def __post_init__(self) -> None:
+        if {self.option_a_strategy, self.option_b_strategy} != {
+            "one-call-per-agent",
+            "fixed-clod-1",
+        }:
+            raise ValueError("each answer key must contain both baseline strategies")
+
+
+@dataclass(frozen=True)
+class BelievabilityRating:
+    sample_id: str
+    preferred: Literal["A", "B", "tie"]
+
+    def __post_init__(self) -> None:
+        if not self.sample_id.strip() or self.preferred not in {"A", "B", "tie"}:
+            raise ValueError("rating requires a sample id and A, B, or tie preference")
+
+
+@dataclass(frozen=True)
+class BelievabilityMetrics:
+    evaluated_samples: int
+    one_call_wins: int
+    fixed_clod_wins: int
+    ties: int
+    one_call_win_rate: float
+    fixed_clod_win_rate: float
+
+
 def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
     """Return stable social topologies for comparing later benchmark strategies."""
     agent_ids = tuple(f"agent-{index:02d}" for index in range(AGENT_COUNT))
@@ -157,6 +203,80 @@ def measure_consistency(
         contradictory,
         evaluated,
         contradictory / evaluated if evaluated else 0.0,
+    )
+
+
+def build_blinded_believability_evaluation(
+    scenario: BenchmarkScenario,
+    results: tuple[BaselineResult, BaselineResult],
+    seed: int = 0,
+) -> tuple[tuple[BelievabilitySample, ...], tuple[BelievabilityKey, ...]]:
+    """Randomize baseline labels while retaining a separate answer key."""
+    by_strategy = {result.strategy: result for result in results}
+    required = {"one-call-per-agent", "fixed-clod-1"}
+    if set(by_strategy) != required:
+        raise ValueError("one-call-per-agent and fixed-clod-1 results are required")
+    if any(len(result.decisions) != len(scenario.requests) for result in results):
+        raise ValueError("each strategy must contain one decision per request")
+    random = Random(seed)
+    samples = []
+    keys = []
+    for index, request in enumerate(scenario.requests):
+        sample_id = f"{scenario.name}-{index:02d}"
+        options = [
+            (
+                by_strategy["one-call-per-agent"].decisions[index].intent,
+                "one-call-per-agent",
+            ),
+            (by_strategy["fixed-clod-1"].decisions[index].intent, "fixed-clod-1"),
+        ]
+        if random.randrange(2):
+            options.reverse()
+        samples.append(
+            BelievabilitySample(
+                sample_id,
+                request.id,
+                request.event.type,
+                request.event.actor_ids,
+                options[0][0],
+                options[1][0],
+            )
+        )
+        keys.append(BelievabilityKey(sample_id, options[0][1], options[1][1]))
+    return tuple(samples), tuple(keys)
+
+
+def measure_believability(
+    ratings: tuple[BelievabilityRating, ...],
+    keys: tuple[BelievabilityKey, ...],
+) -> BelievabilityMetrics:
+    """Reveal blinded preferences and count wins for each baseline."""
+    key_by_id = {key.sample_id: key for key in keys}
+    if not ratings or len(key_by_id) != len(keys):
+        raise ValueError("ratings and unique answer keys are required")
+    if len({rating.sample_id for rating in ratings}) != len(ratings):
+        raise ValueError("ratings must have unique sample ids")
+    one_call_wins = 0
+    fixed_clod_wins = 0
+    ties = 0
+    for rating in ratings:
+        key = key_by_id.get(rating.sample_id)
+        if key is None:
+            raise ValueError(f"missing answer key for {rating.sample_id}")
+        if rating.preferred == "tie":
+            ties += 1
+        elif getattr(key, f"option_{rating.preferred.lower()}_strategy") == "one-call-per-agent":
+            one_call_wins += 1
+        else:
+            fixed_clod_wins += 1
+    evaluated = len(ratings)
+    return BelievabilityMetrics(
+        evaluated,
+        one_call_wins,
+        fixed_clod_wins,
+        ties,
+        one_call_wins / evaluated,
+        fixed_clod_wins / evaluated,
     )
 
 

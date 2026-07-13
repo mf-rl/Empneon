@@ -54,7 +54,7 @@ social consequences across save/reload cycles.
 - [x] Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency
 - [x] Run The Sims 4 concurrently on baseline hardware
 - [x] Add identity continuity and contradiction metrics
-- [ ] Run blinded believability evaluation
+- [x] Run blinded believability evaluation
 - [ ] Publish configuration, raw results, and limitations
 
 **Exit gate:** Results are reproducible and no scalability claim exceeds measured data.
@@ -161,4 +161,7 @@ peak VRAM use, demonstrating severe resource pressure rather than acceptable per
 Identity continuity now reports retained expected agent IDs, while contradiction rate
 reports agent-subject groups containing multiple distinct values. A 30-sim-minute Stage 2.6
 regression run completed one NPC social and its ordered consequence with zero pending
-proposals and no new desync. The next task is the blinded believability evaluation.
+proposals and no new desync. A seeded 20-sample blind comparison preferred the one-call
+candidate 19 times and fixed CLOD 1 once. Its single evaluator, synthetic context,
+recognizable output styles, and formatting violations prevent any broader player-quality
+claim. The next task is publishing the configuration, raw results, and limitations.
