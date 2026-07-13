@@ -1,0 +1,305 @@
+{
+  "scenario": "adaptive-differentiated",
+  "model": "gemma-4-e4b-it-uncensored",
+  "seed": 20260713,
+  "keys": [
+    {
+      "sample_id": "adaptive-differentiated-00",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-01",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-02",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-03",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-04",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-05",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-06",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-07",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-08",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-09",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-10",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-11",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-12",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-13",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-14",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-15",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-16",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-17",
+      "option_a_strategy": "one-call-per-agent",
+      "option_b_strategy": "fixed-clod-1"
+    },
+    {
+      "sample_id": "adaptive-differentiated-18",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    },
+    {
+      "sample_id": "adaptive-differentiated-19",
+      "option_a_strategy": "fixed-clod-1",
+      "option_b_strategy": "one-call-per-agent"
+    }
+  ],
+  "adaptive": {
+    "minimum_value": 0.5,
+    "minimum_preference_retention": 0.9,
+    "minimum_identity_continuity": 1.0,
+    "maximum_contradiction_rate": 0.0,
+    "selections": [
+      {
+        "sample_id": "adaptive-differentiated-00",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-01",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-02",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-03",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-04",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-05",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-06",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-07",
+        "strategy": "fixed-clod-1"
+      },
+      {
+        "sample_id": "adaptive-differentiated-08",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-09",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-10",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-11",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-12",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-13",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-14",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-15",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-16",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-17",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-18",
+        "strategy": "one-call-per-agent"
+      },
+      {
+        "sample_id": "adaptive-differentiated-19",
+        "strategy": "one-call-per-agent"
+      }
+    ],
+    "one_call_observations": [
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 16,
+        "latency_ms": 2605
+      },
+      {
+        "prompt_tokens": 37,
+        "completion_tokens": 9,
+        "latency_ms": 1655
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 10,
+        "latency_ms": 1207
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 12,
+        "latency_ms": 1350
+      },
+      {
+        "prompt_tokens": 36,
+        "completion_tokens": 12,
+        "latency_ms": 1389
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 10,
+        "latency_ms": 1381
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 7,
+        "latency_ms": 1070
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 9,
+        "latency_ms": 1217
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 12,
+        "latency_ms": 1505
+      },
+      {
+        "prompt_tokens": 36,
+        "completion_tokens": 12,
+        "latency_ms": 1517
+      },
+      {
+        "prompt_tokens": 37,
+        "completion_tokens": 8,
+        "latency_ms": 997
+      },
+      {
+        "prompt_tokens": 37,
+        "completion_tokens": 6,
+        "latency_ms": 862
+      },
+      {
+        "prompt_tokens": 36,
+        "completion_tokens": 7,
+        "latency_ms": 979
+      },
+      {
+        "prompt_tokens": 36,
+        "completion_tokens": 8,
+        "latency_ms": 1130
+      },
+      {
+        "prompt_tokens": 37,
+        "completion_tokens": 11,
+        "latency_ms": 1297
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 10,
+        "latency_ms": 1275
+      },
+      {
+        "prompt_tokens": 36,
+        "completion_tokens": 11,
+        "latency_ms": 1350
+      },
+      {
+        "prompt_tokens": 35,
+        "completion_tokens": 8,
+        "latency_ms": 1167
+      },
+      {
+        "prompt_tokens": 37,
+        "completion_tokens": 10,
+        "latency_ms": 1205
+      },
+      {
+        "prompt_tokens": 36,
+        "completion_tokens": 9,
+        "latency_ms": 1166
+      }
+    ],
+    "consistency": {
+      "retained_agents": 20,
+      "expected_agents": 20,
+      "identity_continuity_rate": 1.0,
+      "contradictory_subjects": 0,
+      "evaluated_subjects": 20,
+      "contradiction_rate": 0.0
+    }
+  }
+}

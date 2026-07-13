@@ -84,7 +84,7 @@ performance numbers until measured in-game.
 - Dynamic CLOD, provider, context, and completion-token route selection
 - Capability-gated shared-prefix batching and cache preparation
 - Archetype approximation gate deferred for lack of benchmark justification
-- Adaptive replay against Stage 3 baselines with a failed quality gate
+- Passing differentiated adaptive cost, consistency, and blinded-preference validation
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -105,9 +105,9 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 157 tests and Ruff pass. Strict mypy passes for the changed adaptive
+Current verification: 158 tests and Ruff pass. Strict mypy passes for the changed adaptive
 comparison path and its source dependencies; the full test tree still has pre-existing
-annotation failures. No product performance benchmark has been published yet.
+annotation failures. Published evidence supports no scalability or player-quality claim.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
 one-call-per-agent and provider-free fixed-CLOD 1 baseline execution. The workloads use
@@ -173,7 +173,7 @@ and a resolver. Expected value multiplied by urgency gates provider use. Eligibl
 ordered by the highest affordable CLOD and then estimated cost; context and completion tokens
 are clamped to request limits, runtime limits, and the provider context window. The runtime
 executes the selected resolver through the existing atomic governor reservation and CLOD 1
-failure fallback. This deterministic first policy is not yet benchmarked against Stage 3.
+failure fallback. The differentiated Stage 5 validation below benchmarks this policy.
 
 Generation preparation detects the longest exact common message prefix. Multiple requests
 use native batching only when their temperature and schema settings are compatible and the
@@ -193,7 +193,7 @@ The initial adaptive replay fixed preference retention at 90% before scoring. Gl
 `0.90` times uniform urgency `0.50` produced `0.45`, below the `0.50` selection threshold, so
 all 20 requests chose CLOD 1. Provider calls fell 100%, but adaptive preference was 5% versus
 the one-call baseline's 95%, retaining only 5.26%; consistency was not re-evaluated. The
-comparison checklist item is complete, but Stage 5 failed its exit gate and remains open.
+initial comparison failed the Stage 5 exit gate and triggered the remediation below.
 
 The remediation workload declares 20 deterministic event-semantic requests before provider
 output or rating: 8 low-, 6 medium-, and 6 high-value cases. Urgency and bounded consequence,
@@ -201,8 +201,14 @@ novelty, and social-complexity features determine each selection score. Their de
 at the existing threshold is 8 CLOD 1 and 12 provider routes; this is workload design, not an
 exit-gate result.
 
+The differentiated rerun passes Stage 5: 40% fewer provider calls, 40.31% fewer selected-call
+tokens, 45.11% lower selected-call summed latency, 94.44% preference retention against a 90%
+minimum, 100% identity continuity, and 0% one-target-per-agent contradictions. It is a
+single synthetic run with one assistant evaluator and no new in-game frame timing. Stage 5
+is complete.
+
 ## Current Work Order
 
-1. Re-run cost, consistency, and blinded-believability comparison.
+1. Choose one materially different second environment for Stage 6.
 
 See `docs/roadmap.md` for evidence gates.

@@ -1,0 +1,40 @@
+{
+  "baseline_believability": {
+    "evaluated_samples": 20,
+    "one_call_wins": 15,
+    "fixed_clod_wins": 2,
+    "ties": 3,
+    "one_call_win_rate": 0.75,
+    "fixed_clod_win_rate": 0.1,
+    "deeper_reasoning_net_preference": 0.65
+  },
+  "adaptive_comparison": {
+    "evaluated_samples": 20,
+    "adaptive_provider_calls": 12,
+    "provider_call_reduction": 0.4,
+    "adaptive_preferred_selections": 17,
+    "adaptive_preference_rate": 0.85,
+    "one_call_preference_rate": 0.9,
+    "preference_retention": 0.9444444444444444,
+    "minimum_preference_retention": 0.9,
+    "meets_believability_threshold": true
+  },
+  "cost": {
+    "one_call_tokens": 913,
+    "adaptive_tokens": 545,
+    "token_reduction": 0.40306681270536693,
+    "one_call_latency_ms": 26324,
+    "adaptive_latency_ms": 14450,
+    "latency_reduction": 0.4510712657650813
+  },
+  "consistency": {
+    "retained_agents": 20,
+    "expected_agents": 20,
+    "identity_continuity_rate": 1.0,
+    "contradictory_subjects": 0,
+    "evaluated_subjects": 20,
+    "contradiction_rate": 0.0
+  },
+  "meets_consistency_threshold": true,
+  "stage5_exit_gate_passed": true
+}

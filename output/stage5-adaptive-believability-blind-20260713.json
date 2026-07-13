@@ -1,0 +1,248 @@
+{
+  "scenario": "adaptive-differentiated",
+  "model": "gemma-4-e4b-it-uncensored",
+  "seed": 20260713,
+  "rubric": "Choose A, B, or tie for the action that is more believable in context. Consider contextual fit, social plausibility, and specificity.",
+  "samples": [
+    {
+      "sample_id": "adaptive-differentiated-00",
+      "request_id": "adaptive-request-00",
+      "event_type": "routine_presence",
+      "actor_ids": [
+        "agent-00",
+        "agent-01"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Acknowledge and greet warmly. 2. Offer assistance immediately.",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "adaptive-differentiated-01",
+      "request_id": "adaptive-request-01",
+      "event_type": "shared_space_idle",
+      "actor_ids": [
+        "agent-01",
+        "agent-02"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Acknowledge and pause.",
+      "preferred": "tie"
+    },
+    {
+      "sample_id": "adaptive-differentiated-02",
+      "request_id": "adaptive-request-02",
+      "event_type": "passing_encounter",
+      "actor_ids": [
+        "agent-02",
+        "agent-03"
+      ],
+      "option_a": "1. Nod and offer a brief greeting.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "adaptive-differentiated-03",
+      "request_id": "adaptive-request-03",
+      "event_type": "routine_arrival",
+      "actor_ids": [
+        "agent-03",
+        "agent-04"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Greet warmly and inquire about the journey.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-04",
+      "request_id": "adaptive-request-04",
+      "event_type": "ambient_smalltalk",
+      "actor_ids": [
+        "agent-04",
+        "agent-05"
+      ],
+      "option_a": "1. Acknowledging the presence with a nod.",
+      "option_b": "acknowledge",
+      "preferred": "tie"
+    },
+    {
+      "sample_id": "adaptive-differentiated-05",
+      "request_id": "adaptive-request-05",
+      "event_type": "familiar_greeting",
+      "actor_ids": [
+        "agent-05",
+        "agent-06"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Offer a warm smile and nod.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-06",
+      "request_id": "adaptive-request-06",
+      "event_type": "parallel_activity",
+      "actor_ids": [
+        "agent-06",
+        "agent-07"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Nodding acknowledgment exchange.",
+      "preferred": "tie"
+    },
+    {
+      "sample_id": "adaptive-differentiated-07",
+      "request_id": "adaptive-request-07",
+      "event_type": "ordinary_departure",
+      "actor_ids": [
+        "agent-07",
+        "agent-08"
+      ],
+      "option_a": "1. Nod and offer a greeting.",
+      "option_b": "acknowledge",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-08",
+      "request_id": "adaptive-request-08",
+      "event_type": "social_request",
+      "actor_ids": [
+        "agent-08",
+        "agent-09"
+      ],
+      "option_a": "1. Greet and inquire about well-being.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "adaptive-differentiated-09",
+      "request_id": "adaptive-request-09",
+      "event_type": "minor_disagreement",
+      "actor_ids": [
+        "agent-09",
+        "agent-10"
+      ],
+      "option_a": "\ud83e\udd1d Offer a brief apology and de-escalate.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "adaptive-differentiated-10",
+      "request_id": "adaptive-request-10",
+      "event_type": "new_acquaintance",
+      "actor_ids": [
+        "agent-10",
+        "agent-11"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Offer a friendly greeting.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-11",
+      "request_id": "adaptive-request-11",
+      "event_type": "relationship_check_in",
+      "actor_ids": [
+        "agent-11",
+        "agent-12"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Exchange knowing glances.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-12",
+      "request_id": "adaptive-request-12",
+      "event_type": "group_invitation",
+      "actor_ids": [
+        "agent-12",
+        "agent-13"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "\ud83e\udd1d Nod and smile back.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-13",
+      "request_id": "adaptive-request-13",
+      "event_type": "unexpected_reunion",
+      "actor_ids": [
+        "agent-13",
+        "agent-14"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "1. Offer a warm greeting.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-14",
+      "request_id": "adaptive-request-14",
+      "event_type": "betrayal_confrontation",
+      "actor_ids": [
+        "agent-14",
+        "agent-15"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "14 confronts 15's deceit.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-15",
+      "request_id": "adaptive-request-15",
+      "event_type": "secret_disclosure",
+      "actor_ids": [
+        "agent-15",
+        "agent-16"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "15 nods knowingly at 16.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-16",
+      "request_id": "adaptive-request-16",
+      "event_type": "conflicting_testimony",
+      "actor_ids": [
+        "agent-16",
+        "agent-17"
+      ],
+      "option_a": "16 challenges 17's account.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "adaptive-differentiated-17",
+      "request_id": "adaptive-request-17",
+      "event_type": "relationship_repair",
+      "actor_ids": [
+        "agent-17",
+        "agent-18"
+      ],
+      "option_a": "\ud83e\udd1d Offer sincere apology and reassurance.",
+      "option_b": "acknowledge",
+      "preferred": "A"
+    },
+    {
+      "sample_id": "adaptive-differentiated-18",
+      "request_id": "adaptive-request-18",
+      "event_type": "urgent_goal_conflict",
+      "actor_ids": [
+        "agent-18",
+        "agent-19"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "18 yields priority to 19.",
+      "preferred": "B"
+    },
+    {
+      "sample_id": "adaptive-differentiated-19",
+      "request_id": "adaptive-request-19",
+      "event_type": "public_accusation",
+      "actor_ids": [
+        "agent-19",
+        "agent-00"
+      ],
+      "option_a": "acknowledge",
+      "option_b": "19 publicly accuses 00.",
+      "preferred": "B"
+    }
+  ]
+}

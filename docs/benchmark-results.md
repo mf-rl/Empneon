@@ -127,3 +127,33 @@ expected value.
 The existing threshold is `0.50`, so the design plans 8 cheap and 12 provider selections.
 These are workload properties only. No provider cost, consistency, or blinded-believability
 result is claimed until the next comparison is executed and scored.
+
+## Stage 5 differentiated adaptive validation: 2026-07-13
+
+The 20-case differentiated workload was generated with the same local model as Stage 3.
+Candidate order was seeded and blinded; the assistant evaluator fixed all preferences before
+the separate key was revealed. Thresholds were fixed in that key before scoring: at least
+90% preference retention, 100% identity continuity, 0% contradictions, and a positive
+provider-call reduction.
+
+| Measurement | Result |
+|---|---:|
+| Adaptive provider calls / reduction | 12 / 40% |
+| One-call / adaptive selected-call tokens | 913 / 545 |
+| Token reduction | 40.31% |
+| One-call / adaptive selected-call latency sum | 26,324 / 14,450 ms |
+| Summed latency reduction | 45.11% |
+| One-call-or-tie / adaptive preference | 90% / 85% |
+| Preference retention / minimum | 94.44% / 90% |
+| Identity continuity / minimum | 100% / 100% |
+| Contradiction rate / maximum | 0% / 0% |
+| Stage 5 exit gate | Passed |
+
+Stage 5 is complete. This is a single synthetic run with one assistant evaluator. The
+consistency arm observes one target claim per agent, so it is a routing integrity check, not
+a longitudinal contradiction test. The Sims was not running; no frame timing, system RAM,
+CPU, or VRAM was measured. Adaptive token and latency totals select the 12 routed calls from
+the paired 20-call evidence; they are not a separately timed adaptive execution. Model
+formatting violations also remained visible in several candidates. The packet, key, and
+scored result are published in the
+[artifact manifest](../output/README.md).

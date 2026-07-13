@@ -20,6 +20,7 @@ from empneon.benchmarks import (
     measure_consistency,
     summarize_metrics,
 )
+from empneon.benchmarks.believability import score_packet
 from empneon.core.clod import resolve_clod1
 from empneon.core.contracts import CognitiveRequest, Decision
 
@@ -257,3 +258,55 @@ def test_adaptive_comparison_exposes_cost_quality_tradeoff() -> None:
     assert metrics.one_call_preference_rate == 0.95
     assert metrics.preference_retention == pytest.approx(1 / 19)
     assert metrics.meets_believability_threshold is False
+
+
+def test_adaptive_packet_score_combines_cost_quality_and_consistency() -> None:
+    packet = {
+        "samples": [
+            {"sample_id": "sample-0", "preferred": "A"},
+            {"sample_id": "sample-1", "preferred": "B"},
+        ]
+    }
+    key = {
+        "keys": [
+            {
+                "sample_id": "sample-0",
+                "option_a_strategy": "fixed-clod-1",
+                "option_b_strategy": "one-call-per-agent",
+            },
+            {
+                "sample_id": "sample-1",
+                "option_a_strategy": "fixed-clod-1",
+                "option_b_strategy": "one-call-per-agent",
+            },
+        ],
+        "adaptive": {
+            "minimum_preference_retention": 0.9,
+            "minimum_identity_continuity": 1.0,
+            "maximum_contradiction_rate": 0.0,
+            "selections": [
+                {"sample_id": "sample-0", "strategy": "fixed-clod-1"},
+                {"sample_id": "sample-1", "strategy": "one-call-per-agent"},
+            ],
+            "one_call_observations": [
+                {"prompt_tokens": 4, "completion_tokens": 2, "latency_ms": 10},
+                {"prompt_tokens": 4, "completion_tokens": 2, "latency_ms": 20},
+            ],
+            "consistency": {
+                "identity_continuity_rate": 1.0,
+                "contradiction_rate": 0.0,
+            },
+        },
+    }
+
+    result = score_packet(packet, key)
+
+    assert result["stage5_exit_gate_passed"] is True
+    assert result["cost"] == {
+        "one_call_tokens": 12,
+        "adaptive_tokens": 6,
+        "token_reduction": 0.5,
+        "one_call_latency_ms": 30,
+        "adaptive_latency_ms": 20,
+        "latency_reduction": pytest.approx(1 / 3),
+    }

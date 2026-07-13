@@ -127,7 +127,7 @@ Version **0.2.0** is an early framework release.
 - [x] Sims 4 installation, configuration, privacy, and hardware-profile guide
 - [x] Initial RAM/VRAM/concurrency resource governor
 - [x] Sims 4 connectivity proof of concept
-- [ ] Adaptive CLOD scheduler
+- [x] Adaptive CLOD scheduler
 - [x] Epistemic social memory
 - [x] Sims 4 reference adapter using Empneon Core
 - [x] Deterministic SocietyBench 20-agent scenarios
@@ -220,7 +220,7 @@ routes are degraded to the highest affordable CLOD, with provider choice ordered
 cost. Context and completion limits are clamped to the request, runtime budget, and provider
 context window before the existing governor reserves resources. If no route fits, selection
 remains deterministic at provider-free CLOD 1. The overall adaptive-scheduler item remains
-open until Stage 5 validation is complete.
+validated by the differentiated Stage 5 result below.
 Provider helpers now detect the longest common message prefix across compatible generation
 requests. Native batching is used only when the provider declares `batching`; prefix
 preparation is invoked only when it declares `prefix_caching`. Providers declaring neither
@@ -242,7 +242,15 @@ events: 8 low-, 6 medium-, and 6 high-value cases. Each event declares urgency p
 consequence, novelty, and social-complexity features before any cognition output or rating
 exists. Their unweighted mean supplies expected value, producing a planned split of 8 cheap
 and 12 provider routes at the existing `0.50` threshold. This is a test design, not a quality
-or cost result; the comparison still must be rerun.
+or cost result; it required the rerun below.
+
+The differentiated rerun passes the Stage 5 exit gate. Its 8 CLOD 1 and 12 provider
+selections reduced provider calls by 40%, selected-call tokens by 40.31%, and selected-call
+summed latency by 45.11%. Blinded adaptive preference was 85% versus a 90% one-call-or-tie rate,
+retaining 94.44% against the predefined 90% minimum. All 20 identities were retained and
+the one-target-per-agent consistency check found no contradictions. This remains one
+synthetic workload and one assistant evaluator; The Sims was not running, so no new frame
+timing was measured. Stage 5 is complete and Stage 6 is next.
 
 ## Documentation
 

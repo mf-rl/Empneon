@@ -80,7 +80,7 @@ the system remains coherent after restart.
 - [x] Evaluate archetype approximation; do not add without benchmark justification
 - [x] Compare against Stage 3 baselines
 - [x] Build a differentiated adaptive workload with predeclared urgency and value features
-- [ ] Re-run cost, consistency, and blinded-believability comparison
+- [x] Re-run cost, consistency, and blinded-believability comparison
 
 **Exit gate:** Adaptive scheduling reduces measured cost or latency while preserving a
 predefined believability and consistency threshold.
@@ -155,9 +155,9 @@ defines deterministic 20-agent social-ring and reciprocal-pair workloads with st
 request and event data. Both workloads can run comparable one-call-per-agent and
 provider-free fixed-CLOD 1 baselines while retaining their decisions and provider-call
 counts. SocietyBench retains validated raw CPU, RAM, VRAM, frame-time, token, and latency
-observations and summarizes peaks, token totals, and p50/p95 latency. The next task is
-adding identity continuity and contradiction metrics. The first foreground concurrent
-run completed on baseline hardware with 20 provider calls and 20 fixed-CLOD decisions.
+observations and summarizes peaks, token totals, and p50/p95 latency. Identity continuity
+and contradiction metrics were subsequently added. The first foreground concurrent run
+completed on baseline hardware with 20 provider calls and 20 fixed-CLOD decisions.
 It measured 87.37 ms p50 Sims frame time, 18,821 ms p50 provider latency, and 5,918 MiB
 peak VRAM use, demonstrating severe resource pressure rather than acceptable performance.
 Identity continuity now reports retained expected agent IDs, while contradiction rate
@@ -212,10 +212,17 @@ urgency `0.50`, and the predeclared selection threshold `0.50`. Every score was 
 all 20 requests chose CLOD 1. Provider calls fell from 20 to 0, but adaptive blinded
 preference was 5% versus the
 one-call baseline's 95%: only 5.26% retention against the predefined 90% threshold.
-Consistency was not re-evaluated. The comparison task is complete, but the Stage 5 exit gate
-failed and Stage 5 remains open. The remediation workload now declares 20 event-semantic
+Consistency was not re-evaluated. That initial comparison failed the Stage 5 exit gate and
+triggered remediation. The remediation workload declares 20 event-semantic
 cases before observing outcomes: 8 low, 6 medium, and 6 high. Each records urgency,
 consequence, novelty, and social complexity; expected value is their unweighted mean. At the
 existing `0.50` threshold, the declared scores plan 8 CLOD 1 and 12 provider selections. This
-split is not an exit-gate result. Cost, consistency, and blinded believability must now be
-re-run without label leakage.
+split alone is not an exit-gate result. Cost, consistency, and blinded believability were
+then re-run without label leakage. The blinded rerun selected 12 provider and 8 CLOD 1 decisions,
+reducing provider calls 40%, selected-call tokens 40.31%, and selected-call summed latency
+45.11%.
+Adaptive preference retained 94.44% of the one-call-or-tie rate against the predefined 90%
+minimum. Identity continuity was 100% and the one-target-per-agent consistency check found
+0% contradictions, meeting its 100%/0% thresholds. Stage 5 therefore passes its exit gate.
+The run used synthetic events and one assistant evaluator, and no new in-game frame timing;
+those limits prevent a broader player-quality or hardware-performance claim.

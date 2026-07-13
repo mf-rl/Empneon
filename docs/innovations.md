@@ -47,6 +47,14 @@ the scheduler input is their unweighted mean. At the existing `0.50` gate this d
 8 cheap and 12 provider routes. The tier rubric is hand-authored and deliberately simple,
 not a learned value model or evidence that the resulting routing preserves quality.
 
+The blinded differentiated rerun passed the predeclared gate. Twelve provider selections
+and eight CLOD 1 selections reduced provider calls 40%, selected-call tokens 40.31%, and
+selected-call summed latency 45.11%. Adaptive selections retained 94.44% of the one-call-or-tie
+preference rate, above the 90% minimum; identity continuity was 100% and the
+one-target-per-agent contradiction rate was 0%. This supports the deterministic policy for
+this synthetic workload only. It is not a learned value model, player study, longitudinal
+consistency test, or in-game performance result.
+
 ### 2. Epistemic Social Memory
 
 **Question:** Can provenance-aware beliefs create coherent social consequences without
