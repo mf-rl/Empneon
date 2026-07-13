@@ -114,6 +114,12 @@ of severe pressure, not validated performance.
 Consistency measurement reports retained expected identities and contradictory
 agent-subject value groups without implementing the Stage 4 belief model early.
 
+The Sims action bridge leaves full-autonomy object discovery native and filters the winning
+result to loaded NPC targets. Injecting a restricted `object_list` triggers a game-build
+`frozenset & tuple` desync. The regression test mirrors that branch, and a 30-sim-minute
+Stage 2.6 live run completed one NPC social with one ordered consequence, zero pending
+proposals, and no new desync.
+
 ## Current Work Order
 
 1. Run blinded believability evaluation.

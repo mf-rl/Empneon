@@ -150,9 +150,9 @@ release reserved resources. Installation, configuration, privacy, conservative h
 profiles, and the in-game exit-gate procedure are documented. The current automatic path
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
-uses the game's full-autonomy request unchanged except for restricting its scored targets
-to other loaded NPCs, then queues the winning prevalidated interaction through the native
-executor.
+uses the game's full-autonomy request and native object discovery unchanged, rejects a
+winning result unless its target is another loaded NPC, then queues that prevalidated
+interaction through the native executor.
 Filterable `ai.socialtunings friendly`
 diagnostics remain available for game-version investigation. Live validation passed
 across a game restart with 20 persistent Core agents, all 20 participating, 15 successful
@@ -167,7 +167,9 @@ use. These are preliminary measurements, not a performance claim. See
 [SocietyBench results](docs/benchmark-results.md).
 SocietyBench can also measure retained expected identities and contradictory values per
 agent subject; scenario-specific consistency evaluation remains separate from the raw
-hardware run.
+hardware run. A 30-sim-minute Stage 2.6 regression run confirmed that native target
+discovery avoids the game-build desync caused by injecting an object list: one NPC social
+completed, its ordered consequence persisted, and no proposal remained pending.
 
 ## Documentation
 

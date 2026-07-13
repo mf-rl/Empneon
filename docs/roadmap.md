@@ -139,9 +139,10 @@ adapter-returned results and ordered consequences, and a bounded zone alarm subm
 pairs without a player command. The confirmation path now persists observed Core
 identities, stores pending proposals separately, attempts the base-game social interaction,
 and finalizes results and observed relationship deltas from the game's finishing callback.
-The action bridge now uses the game's full-autonomy request unchanged except for restricting
-its scored targets to other loaded NPCs, then queues the winning prevalidated interaction
-through the native executor. Filterable
+The action bridge now leaves the game's full-autonomy request and native object discovery
+unchanged, accepts only winning interactions targeting another loaded NPC, then queues the
+prevalidated interaction through the native executor. This avoids the current game build's
+tuple-motive desync when a mod injects a restricted object list. Filterable
 `ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game protocol in
@@ -158,5 +159,6 @@ run completed on baseline hardware with 20 provider calls and 20 fixed-CLOD deci
 It measured 87.37 ms p50 Sims frame time, 18,821 ms p50 provider latency, and 5,918 MiB
 peak VRAM use, demonstrating severe resource pressure rather than acceptable performance.
 Identity continuity now reports retained expected agent IDs, while contradiction rate
-reports agent-subject groups containing multiple distinct values. The next task is the
-blinded believability evaluation.
+reports agent-subject groups containing multiple distinct values. A 30-sim-minute Stage 2.6
+regression run completed one NPC social and its ordered consequence with zero pending
+proposals and no new desync. The next task is the blinded believability evaluation.

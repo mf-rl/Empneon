@@ -253,7 +253,9 @@ The exit gate passed across a game restart using `stage2-5-config.json`: 20 pers
 Core agents all participated in automatic events, 15 actions succeeded, one failed safely
 with `FinishingType.DISPLACED`, zero proposals remained pending, and Core stored 16
 ordered consequences. The separate POC profile, relationship, and memory counts remained
-zero for this autonomous path.
+zero for this autonomous path. A later 30-sim-minute regression run using
+`stage2-6-config.json` completed one automatic NPC social, persisted one ordered
+consequence, and left zero pending proposals without producing a new desync.
 
 ## Troubleshooting
 
@@ -267,3 +269,7 @@ zero for this autonomous path.
 - Social enqueue failure: run `ai.socialtunings friendly` on an active lot and inspect
   `ai_sims_agent_loaded.txt`. The optional final word filters loaded tuning names, and all
   matches are written to the marker file even though console output is capped at 100.
+- `_weakrefset.py:121` reports `frozenset` and `tuple`: reinstall the current mod and clear
+  `localthumbcache.package`. The adapter must leave the full-autonomy request's
+  `object_list` unset because current game builds use tuple motives on native object
+  discovery but require set-compatible motives when a restricted list is injected.
