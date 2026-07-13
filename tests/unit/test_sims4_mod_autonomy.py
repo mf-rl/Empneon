@@ -24,9 +24,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             "__init__": lambda self, *args, **kwargs: contexts.append((args, kwargs)),
         },
     )
-    context_module.QueueInsertStrategy = SimpleNamespace(LAST="last")
+    context_module.QueueInsertStrategy = SimpleNamespace(NEXT="next")
     priority_module = ModuleType("interactions.priority")
-    priority_module.Priority = SimpleNamespace(Low="low")
+    priority_module.Priority = SimpleNamespace(High="high")
     interactions = ModuleType("interactions")
     commands = ModuleType("sims4.commands")
     commands.CommandType = SimpleNamespace(Live="live")
@@ -143,6 +143,8 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent.process_autonomy_responses(None)
 
     assert contexts[0][0][1] == "autonomy"
+    assert contexts[0][0][2] == "high"
+    assert contexts[0][1]["insert_strategy"] == "next"
     assert pushed[0][0:2] == (sim_chat, target)
     assert payloads[1] == (
         "/action-result",

@@ -285,8 +285,8 @@ def execute_sims_action(payload, data):
         context = InteractionContext(
             actor,
             InteractionContext.SOURCE_AUTONOMY,
-            Priority.Low,
-            insert_strategy=QueueInsertStrategy.LAST,
+            Priority.High,
+            insert_strategy=QueueInsertStrategy.NEXT,
         )
         affordance = find_action_affordance(action)
         if affordance is None:

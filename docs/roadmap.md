@@ -140,9 +140,9 @@ pairs without a player command. The confirmation path now persists observed Core
 identities, stores pending proposals separately, attempts the base-game social interaction,
 and finalizes results and observed relationship deltas from the game's finishing callback.
 The action bridge now queues the base-game `sim_Chat` conversation
-at low priority and at the end of the Sim's queue under the game's autonomy context,
-allowing the game to wait for a compatible state and create the required social group and
-mixers. Filterable
+at high priority and next in the Sim's queue under the game's autonomy context, preventing
+competing autonomous work from invalidating it before the game creates the required social
+group and mixers. Filterable
 `ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game
