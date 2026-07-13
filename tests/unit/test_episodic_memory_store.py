@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 
 from empneon.core.identity.models import Agent
+from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.memory.episodic import (
     Belief,
@@ -342,3 +343,60 @@ def test_belief_revision_is_single_and_atomic() -> None:
 
     assert beliefs.get_revision(original.id) == first
     assert beliefs.get(rejected.id) is None
+
+
+def test_trust_weighted_propagation_is_bounded_and_traceable() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    relationships = RelationshipStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent("alice", "Alice"))
+    bob = agents.create(Agent("bob", "Bob"))
+    carol = agents.create(Agent("carol", "Carol"))
+    dave = agents.create(Agent("dave", "Dave"))
+    erin = agents.create(Agent("erin", "Erin"))
+    relationships.set(Relationship(bob.id, alice.id, "friend", trust=0.8))
+    relationships.set(Relationship(carol.id, bob.id, "friend", trust=0.5))
+    relationships.set(Relationship(dave.id, carol.id, "friend", trust=0.9))
+    relationships.set(Relationship(erin.id, alice.id, "friend", trust=0.1))
+    relationships.set(Relationship(alice.id, carol.id, "friend", trust=1.0))
+    event = events.create(Event("Alice found a blue key", [alice.id]))
+    observation = observations.create(Observation(event.id, alice.id, "The key was blue"))
+    source = beliefs.create(
+        Belief(alice.id, "The key is blue", "observation", observation.id, 1.0, "Direct sight")
+    )
+
+    propagated = beliefs.propagate(
+        source.id, max_hops=2, max_recipients=10, min_confidence=0.1, decay=0.5
+    )
+
+    assert [belief.agent_id for belief in propagated] == [bob.id, carol.id]
+    assert propagated[0].confidence == pytest.approx(0.4)
+    assert propagated[1].confidence == pytest.approx(0.1)
+    assert propagated[1].lineage == (source.id, propagated[0].id)
+    assert beliefs.get(propagated[1].id) == propagated[1]
+
+
+def test_propagation_respects_total_recipient_bound() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    relationships = RelationshipStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent("alice", "Alice"))
+    bob = agents.create(Agent("bob", "Bob"))
+    carol = agents.create(Agent("carol", "Carol"))
+    relationships.set(Relationship(bob.id, alice.id, "friend", trust=1.0))
+    relationships.set(Relationship(carol.id, alice.id, "friend", trust=1.0))
+    event = events.create(Event("Alice found a key", [alice.id]))
+    observation = observations.create(Observation(event.id, alice.id, "Alice saw the key"))
+    source = beliefs.create(
+        Belief(alice.id, "The key exists", "observation", observation.id, 1.0, "Direct sight")
+    )
+
+    propagated = beliefs.propagate(source.id, max_recipients=1)
+
+    assert [belief.agent_id for belief in propagated] == [bob.id]

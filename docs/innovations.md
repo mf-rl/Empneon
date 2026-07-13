@@ -72,6 +72,10 @@ The research contribution is adaptive selection under budget, not LOD itself.
 Trust, fidelity, decay, and bounded mutation can propagate beliefs cheaply. Complexity
 and fidelity depend on topology and implementation and must be measured.
 
+The current Stage 4 baseline uses deterministic breadth-first relay with multiplicative
+trust and decay plus hard hop, recipient, confidence, and cycle bounds. It preserves the
+statement exactly and makes no model call; distortion remains scenario work, not a claim.
+
 ### Dynamic Emotional State
 
 Value, velocity, acceleration, impulses, decay, and thresholds are candidate state

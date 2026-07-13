@@ -99,7 +99,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 141 tests and Ruff pass. Strict mypy passes for the changed memory,
+Current verification: 143 tests and Ruff pass. Strict mypy passes for the changed memory,
 schema, and test files; the full test tree still has pre-existing annotation failures. No product
 performance benchmark has been published yet.
 
@@ -141,9 +141,14 @@ Schema migration 9 stores symmetric contradiction and directional revision relat
 The store restricts contradictions and revisions to one agent, writes revisions atomically,
 retains superseded beliefs as history, and exposes unrevised beliefs as current.
 
+Belief propagation is deterministic and provider-free. It follows incoming directed trust
+edges (`recipient -> source`), multiplies confidence by trust and per-hop decay, preserves
+statements, extends lineage through ordinary belief creation, and enforces hop, recipient,
+minimum-confidence, and cycle bounds.
+
 ## Current Work Order
 
-1. Implement bounded trust-weighted propagation without mandatory LLM calls.
+1. Add secret, rumor, testimony, and correction scenarios.
 2. Continue Stage 4 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

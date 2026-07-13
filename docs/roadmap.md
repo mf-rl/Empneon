@@ -64,7 +64,7 @@ social consequences across save/reload cycles.
 - [x] Store canonical events separately from agent observations and beliefs
 - [x] Record belief source, confidence, interpretation, and lineage
 - [x] Implement contradiction and revision
-- [ ] Implement bounded trust-weighted propagation without mandatory LLM calls
+- [x] Implement bounded trust-weighted propagation without mandatory LLM calls
 - [ ] Add secret, rumor, testimony, and correction scenarios
 - [ ] Add developer-facing causal trace output
 
@@ -172,5 +172,7 @@ interpretation, and ordered transmission lineage. The belief store validates dir
 observations and derives lineage from transmitted beliefs; referenced evidence cannot be
 deleted while a belief depends on it. Schema migration 9 adds explicit same-agent
 contradiction links and directional revision links. Revisions atomically preserve the prior
-belief as history while current-belief queries return its replacement. The next task is
-bounded trust-weighted propagation without mandatory LLM calls.
+belief as history while current-belief queries return its replacement. Propagation is now a
+provider-free deterministic relay: recipient-to-source trust and per-hop decay
+attenuate confidence, while hop, recipient, confidence, and cycle bounds stop propagation.
+The next task is adding secret, rumor, testimony, and correction scenarios.

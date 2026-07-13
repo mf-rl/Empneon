@@ -140,6 +140,7 @@ Version **0.2.0** is an early framework release.
 - [x] Separate canonical event, agent-observation, and agent-belief storage
 - [x] Belief source, confidence, interpretation, and transmission lineage
 - [x] Persistent belief contradiction and revision history
+- [x] Bounded provider-free trust-weighted belief propagation
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -186,9 +187,11 @@ Stage 4 now has separate canonical-event, observation, and belief storage plus s
 belief provenance. Direct beliefs reference their agent's observation; transmitted beliefs
 reference their source belief and inherit an ordered lineage. Confidence is bounded, source
 evidence is protected by foreign keys, and contradictions can be recorded symmetrically
-between one agent's beliefs. Atomic
-revisions retain the original belief for audit while current-belief queries expose its single
-replacement. Trust-weighted propagation remains pending.
+between one agent's beliefs. Atomic revisions retain the original belief for audit while
+current-belief queries expose its single replacement.
+Beliefs now propagate without model calls through directed relationship trust. Confidence
+decays multiplicatively, statements remain unchanged, and hard hop, recipient, minimum-
+confidence, and cycle bounds prevent unbounded relay. Scenario validation is next.
 
 ## Documentation
 

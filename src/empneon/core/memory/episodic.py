@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -281,6 +282,69 @@ class BeliefStore:
             (belief_id,),
         ).fetchone()
         return None if row is None else _row_to_belief(row)
+
+    def propagate(
+        self,
+        belief_id: str,
+        *,
+        max_hops: int = 3,
+        max_recipients: int = 20,
+        min_confidence: float = 0.1,
+        decay: float = 0.9,
+    ) -> list[Belief]:
+        if max_hops <= 0 or max_recipients <= 0:
+            raise ValueError("propagation bounds must be positive")
+        if not 0.0 <= min_confidence <= 1.0 or not 0.0 <= decay <= 1.0:
+            raise ValueError("propagation confidence settings must be between 0 and 1")
+        source = self.get(belief_id)
+        if source is None:
+            raise ValueError("source belief does not exist")
+        if self.get_revision(belief_id) is not None:
+            return []
+
+        visited = {source.agent_id}
+        if source.lineage:
+            placeholders = ",".join("?" * len(source.lineage))
+            rows = self._conn.execute(
+                f"SELECT agent_id FROM beliefs WHERE id IN ({placeholders})", source.lineage
+            ).fetchall()
+            visited.update(row["agent_id"] for row in rows)
+
+        queue = deque([(source, 0)])
+        propagated: list[Belief] = []
+        # ponytail: first BFS path wins; rank competing paths if fidelity tests need it.
+        with self._conn:
+            while queue and len(propagated) < max_recipients:
+                current, hops = queue.popleft()
+                if hops >= max_hops:
+                    continue
+                relationships = self._conn.execute(
+                    "SELECT agent_id, trust FROM relationships"
+                    " WHERE target_agent_id=? ORDER BY agent_id",
+                    (current.agent_id,),
+                ).fetchall()
+                for relationship in relationships:
+                    recipient_id = relationship["agent_id"]
+                    if recipient_id in visited:
+                        continue
+                    confidence = current.confidence * relationship["trust"] * decay
+                    if confidence < min_confidence:
+                        continue
+                    transmitted = Belief(
+                        recipient_id,
+                        current.statement,
+                        "belief",
+                        current.id,
+                        confidence,
+                        f"Relayed from {current.agent_id} with trust {relationship['trust']:.2f}",
+                    )
+                    self._insert(transmitted)
+                    visited.add(recipient_id)
+                    propagated.append(transmitted)
+                    queue.append((transmitted, hops + 1))
+                    if len(propagated) >= max_recipients:
+                        break
+        return propagated
 
 
 def _row_to_event(row: sqlite3.Row, participant_ids: list[str]) -> Event:
