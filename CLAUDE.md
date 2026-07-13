@@ -86,6 +86,7 @@ performance numbers until measured in-game.
 - Archetype approximation gate deferred for lack of benchmark justification
 - Passing differentiated adaptive cost, consistency, and blinded-preference validation
 - Godot 4 selected as the materially different Stage 6 environment
+- Minimal Godot 4 adapter round trip through unchanged Core contracts
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -106,8 +107,8 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 158 tests and Ruff pass. Strict mypy passes for the changed adaptive
-comparison path and its source dependencies; the full test tree still has pre-existing
+Current verification: 159 tests and Ruff pass. Strict mypy passes for the Godot adapter
+boundary and its focused test; the full test tree still has pre-existing
 annotation failures. Published evidence supports no scalability or player-quality claim.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
@@ -208,8 +209,15 @@ minimum, 100% identity continuity, and 0% one-target-per-agent contradictions. I
 single synthetic run with one assistant evaluator and no new in-game frame timing. Stage 5
 is complete.
 
+The minimal Godot 4 adapter uses a two-agent GDScript scene and a localhost-only Python
+standard-library bridge. Godot translates one deterministic encounter into the existing
+`WorldEvent` shape, receives an unchanged provider-free `Decision`, owns the resulting world
+mutation, and confirms it as an `ActionResult`. Godot 4.7 completed the headless round trip
+with `EMPNEON_GODOT_OK` and exit code 0. No Godot concept or import was added to Core. Shared
+adapter contract tests and the development guide remain pending, so Stage 6 is not complete.
+
 ## Current Work Order
 
-1. Build the minimal Godot 4 adapter without adding game concepts to Core.
+1. Publish adapter contract tests and the development guide.
 
 See `docs/roadmap.md` for evidence gates.

@@ -66,7 +66,7 @@ See [docs/innovations.md](docs/innovations.md) for hypotheses and validation gat
 ```text
 Games
 ├── Sims 4 reference adapter
-├── second portability adapter
+├── Godot 4 portability adapter
 └── community adapters (Roblox, Unity, Unreal, custom engines, ...)
             │
             ▼
@@ -149,7 +149,8 @@ Version **0.2.0** is an early framework release.
 - [x] Capability-gated shared-prefix batching and cache preparation
 - [x] Archetype approximation gate (not justified; not implemented)
 - [x] Initial adaptive-policy comparison against Stage 3 baselines
-- [ ] Second adapter proving portability
+- [x] Minimal Godot 4 second adapter
+- [ ] Cross-adapter portability exit gate
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -252,11 +253,14 @@ the one-target-per-agent consistency check found no contradictions. This remains
 synthetic workload and one assistant evaluator; The Sims was not running, so no new frame
 timing was measured. Stage 5 is complete and Stage 6 is next.
 
-Stage 6 will use a minimal Godot 4 project as the second environment. GDScript, a separate
+Stage 6 uses a minimal Godot 4 project as the second environment. GDScript, a separate
 engine process, and a deliberately different two-agent world provide a stronger portability
-boundary than another Python simulation. The adapter will exchange the existing event,
-decision, and action-result shapes through a thin local bridge; Godot concepts remain outside
-Core. The environment is selected, but the adapter is not yet implemented.
+boundary than another Python simulation. The implemented adapter sends one deterministic
+encounter through a localhost-only standard-library bridge using the existing `WorldEvent`,
+`Decision`, and `ActionResult` shapes. Godot applies the generic `acknowledge` intent to its
+own agent state and reports the result; no Godot concepts were added to Core. A Godot 4.7
+headless run completed with `EMPNEON_GODOT_OK` and exit code 0. The shared adapter contract
+suite, development guide, effort measurement, and cross-adapter exit gate remain pending.
 
 ## Documentation
 

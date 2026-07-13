@@ -88,7 +88,7 @@ predefined believability and consistency threshold.
 ## Stage 6: Portability Proof
 
 - [x] Choose one materially different second environment: Godot 4
-- [ ] Build a minimal second adapter without adding game concepts to the core
+- [x] Build a minimal second adapter without adding game concepts to the core
 - [ ] Publish adapter contract tests and development guide
 - [ ] Measure adapter implementation effort
 
@@ -101,10 +101,12 @@ world model, while remaining small enough to run headlessly in CI. Godot provide
 adapter dependency, and its
 [MIT license](https://godotengine.org/license/) fits the repository's Apache-licensed work.
 
-The proof will contain only two agents and one deterministic encounter. GDScript will
-translate that encounter to the existing `WorldEvent` wire shape, submit it to a thin local
-bridge, receive an unchanged Core `Decision`, map one generic intent to a Godot state change,
-and return an `ActionResult`. No Godot types or concepts may enter `empneon.core`. A standalone
+The proof contains only two agents and one deterministic encounter. GDScript translates
+that encounter to the existing `WorldEvent` wire shape, submits it to a localhost-only
+standard-library bridge, receives an unchanged Core `Decision`, maps the generic
+`acknowledge` intent to a Godot state change, and returns an `ActionResult`. A Godot 4.7
+headless run completed this round trip with `EMPNEON_GODOT_OK` and exit code 0. The change
+adds no Godot types, imports, or concepts to `empneon.core`. A standalone
 Python simulation was rejected as too close to Core to prove portability; Unity and Roblox
 were deferred because their additional editor, account, or platform workflow is unnecessary
 for this minimal contract proof.
@@ -241,3 +243,9 @@ minimum. Identity continuity was 100% and the one-target-per-agent consistency c
 0% contradictions, meeting its 100%/0% thresholds. Stage 5 therefore passes its exit gate.
 The run used synthetic events and one assistant evaluator, and no new in-game frame timing;
 those limits prevent a broader player-quality or hardware-performance claim.
+
+The minimal Godot 4 adapter is now runnable. Its two-agent GDScript scene owns world mutation,
+while a localhost JSON bridge translates only the existing generic contracts and invokes the
+provider-free CLOD 1 resolver. The engine confirmed one deterministic encounter and returned
+a successful applied state delta in a Godot 4.7 headless run. Shared contract tests and the
+adapter development guide are the next Stage 6 task; the portability exit gate has not passed.
