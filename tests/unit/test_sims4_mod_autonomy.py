@@ -100,27 +100,20 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
-    actor = SimpleNamespace()
-    social_super_base = type("SocialSuperInteraction", (), {})
+    pushed = []
+    actor = SimpleNamespace(
+        push_super_affordance=lambda *args: pushed.append(args)
+        or SimpleNamespace(interaction=interaction)
+    )
+    sim_chat = type("sim_Chat", (), {})
+    generic_social = type("socials_SuperInteraction", (), {})
     social_mixer_base = type("SocialMixerInteraction", (), {})
-    generic_social = type("socials_SuperInteraction", (social_super_base,), {})
-    toddler_social = type("Toddler_AskWhy", (social_super_base,), {})
     mixer = type(
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
         (social_mixer_base,),
         {},
     )
-    executed_contexts = []
-    aop = SimpleNamespace(
-        affordance=generic_social,
-        test_and_execute=lambda context: executed_contexts.append(context)
-        or SimpleNamespace(interaction=interaction),
-    )
-    mixer_aop = SimpleNamespace(affordance=mixer)
-    toddler_aop = SimpleNamespace(affordance=toddler_social)
-    target = SimpleNamespace(
-        potential_interactions=lambda _context: [toddler_aop, mixer_aop, aop]
-    )
+    target = SimpleNamespace()
     infos = {
         "bella": SimpleNamespace(get_sim_instance=lambda: actor),
         "mortimer": SimpleNamespace(get_sim_instance=lambda: target),
@@ -130,13 +123,19 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     custom_social = type("BC:Slap Child Social SuperInteraction", (), {})
     manager = SimpleNamespace(
         get=lambda _key: None,
-        types={1: unrelated_social, 2: generic_social, 3: custom_social, 4: mixer},
+        types={
+            1: unrelated_social,
+            2: generic_social,
+            3: custom_social,
+            4: mixer,
+            5: sim_chat,
+        },
     )
     monkeypatch.setattr(
         agent.services, "get_instance_manager", lambda _type: manager, raising=False
     )
 
-    assert agent.find_action_aops(target, object(), "friendly_chat") == (aop,)
+    assert agent.find_action_affordance("friendly_chat") is sim_chat
     assert agent.social_tuning_names("askaboutday") == [
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]
@@ -144,7 +143,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent.process_autonomy_responses(None)
 
     assert contexts[0][0][1] == "autonomy"
-    assert len(executed_contexts) == 1
+    assert pushed[0][0:2] == (sim_chat, target)
     assert payloads[1] == (
         "/action-result",
         {

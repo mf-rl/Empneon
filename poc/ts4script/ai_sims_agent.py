@@ -288,20 +288,13 @@ def execute_sims_action(payload, data):
             Priority.Low,
             insert_strategy=QueueInsertStrategy.LAST,
         )
-        aops = find_action_aops(target, context, action)
-        if not aops:
-            raise RuntimeError("no available social super interaction")
-        interaction = None
-        rejected = []
-        for aop in aops:
-            affordance = getattr(aop, "affordance", None)
-            enqueue_result = aop.test_and_execute(context)
-            interaction = getattr(enqueue_result, "interaction", None)
-            if enqueue_result and interaction is not None:
-                break
-            rejected.append(str(getattr(affordance, "__name__", affordance)))
-        if interaction is None:
-            raise RuntimeError("game rejected friendly interactions: " + ", ".join(rejected))
+        affordance = find_action_affordance(action)
+        if affordance is None:
+            raise RuntimeError("no loaded tuning for " + action)
+        enqueue_result = actor.push_super_affordance(affordance, target, context)
+        interaction = getattr(enqueue_result, "interaction", None)
+        if not enqueue_result or interaction is None:
+            raise RuntimeError("game rejected interaction enqueue: sim_Chat")
         callback = getattr(interaction, "register_on_finishing_callback", None)
         if not callable(callback):
             raise RuntimeError("game interaction has no completion callback")
@@ -373,20 +366,16 @@ def find_sim_info_by_id(sim_id):
     return None
 
 
-def find_action_aops(target, context, action):
-    if action != "friendly_chat":
-        return ()
-    candidates = []
-    for aop in target.potential_interactions(context):
-        affordance = getattr(aop, "affordance", None)
-        name = str(getattr(affordance, "__name__", ""))
-        bases = {base.__name__ for base in getattr(affordance, "__mro__", ())}
-        friendly = name == "socials_SuperInteraction" or any(
-            word in name.lower() for word in ("friendly", "chat")
-        )
-        if friendly and "SocialSuperInteraction" in bases and "SocialMixerInteraction" not in bases:
-            candidates.append((name != "socials_SuperInteraction", len(name), name, aop))
-    return tuple(candidate[3] for candidate in sorted(candidates))
+def find_action_affordance(action):
+    tuning_name = {"friendly_chat": "sim_Chat"}.get(action)
+    return next(
+        (
+            tuning
+            for tuning in loaded_interaction_tunings()
+            if getattr(tuning, "__name__", "") == tuning_name
+        ),
+        None,
+    )
 
 
 def loaded_interaction_tunings(manager=None):
