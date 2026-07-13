@@ -97,12 +97,20 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
     actor = object()
-    generic_social = type("mixer_social_AskAboutDay_targeted_Friendly_alwaysOn", (), {})
+    social_super_base = type("SocialSuperInteraction", (), {})
+    social_mixer_base = type("SocialMixerInteraction", (), {})
+    generic_social = type("socials_SuperInteraction", (social_super_base,), {})
+    mixer = type(
+        "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+        (social_mixer_base,),
+        {},
+    )
     aop = SimpleNamespace(
         affordance=generic_social,
         test_and_execute=lambda _context: SimpleNamespace(interaction=interaction),
     )
-    target = SimpleNamespace(potential_interactions=lambda _context: [aop])
+    mixer_aop = SimpleNamespace(affordance=mixer)
+    target = SimpleNamespace(potential_interactions=lambda _context: [mixer_aop, aop])
     infos = {
         "bella": SimpleNamespace(get_sim_instance=lambda: actor),
         "mortimer": SimpleNamespace(get_sim_instance=lambda: target),
@@ -112,13 +120,13 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     custom_social = type("BC:Slap Child Social SuperInteraction", (), {})
     manager = SimpleNamespace(
         get=lambda _key: None,
-        types={1: unrelated_social, 2: generic_social, 3: custom_social},
+        types={1: unrelated_social, 2: generic_social, 3: custom_social, 4: mixer},
     )
     monkeypatch.setattr(
         agent.services, "get_instance_manager", lambda _type: manager, raising=False
     )
 
-    assert agent.find_action_affordance("friendly_chat") is generic_social
+    assert agent.find_action_aop(target, object(), "friendly_chat") is aop
     assert agent.social_tuning_names("askaboutday") == [
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]

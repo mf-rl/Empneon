@@ -279,10 +279,6 @@ def execute_sims_action(payload, data):
         target = target_info.get_sim_instance() if target_info is not None else None
         if actor is None or target is None:
             raise RuntimeError("actor or target left the active zone")
-        affordance = find_action_affordance(action)
-        if affordance is None:
-            raise RuntimeError("no loaded tuning for {}".format(action))
-
         from interactions.context import InteractionContext, QueueInsertStrategy
         from interactions.priority import Priority
 
@@ -292,11 +288,11 @@ def execute_sims_action(payload, data):
             Priority.High,
             insert_strategy=QueueInsertStrategy.NEXT,
         )
-        enqueue_result = None
-        for aop in target.potential_interactions(context):
-            if getattr(aop, "affordance", None) is affordance:
-                enqueue_result = aop.test_and_execute(context)
-                break
+        aop = find_action_aop(target, context, action)
+        if aop is None:
+            raise RuntimeError("no available social super interaction")
+        affordance = getattr(aop, "affordance", None)
+        enqueue_result = aop.test_and_execute(context)
         interaction = getattr(enqueue_result, "interaction", None)
         if not enqueue_result or interaction is None:
             raise RuntimeError(
@@ -375,17 +371,17 @@ def find_sim_info_by_id(sim_id):
     return None
 
 
-def find_action_affordance(action):
+def find_action_aop(target, context, action):
     if action != "friendly_chat":
         return None
-    import sims4.resources
-
-    manager = services.get_instance_manager(sims4.resources.Types.INTERACTION)
-    for affordance in loaded_interaction_tunings(manager):
+    candidates = []
+    for aop in target.potential_interactions(context):
+        affordance = getattr(aop, "affordance", None)
         name = str(getattr(affordance, "__name__", ""))
-        if name == "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn":
-            return affordance
-    return None
+        bases = {base.__name__ for base in getattr(affordance, "__mro__", ())}
+        if "SocialSuperInteraction" in bases and "SocialMixerInteraction" not in bases:
+            candidates.append((name != "socials_SuperInteraction", len(name), name, aop))
+    return min(candidates, default=(False, 0, "", None))[3]
 
 
 def loaded_interaction_tunings(manager=None):

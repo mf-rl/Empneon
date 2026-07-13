@@ -145,9 +145,9 @@ release reserved resources. Installation, configuration, privacy, conservative h
 profiles, and the in-game exit-gate procedure are documented. The current automatic path
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
-uses the loaded vanilla `Ask About Day` friendly tuning identified by the filterable
-`ai.socialtunings friendly` diagnostic and executes its game-tested potential-interaction
-pair rather than pushing the mixer as a standalone super interaction. It still requires
+executes a currently available, game-tested social super-interaction so the game creates
+and owns the social group and its mixers. Filterable `ai.socialtunings friendly`
+diagnostics remain available for game-version investigation. It still requires
 in-game validation before the two remaining Stage 2 items can be checked.
 
 ## Documentation
