@@ -73,6 +73,7 @@ performance numbers until measured in-game.
 - Deterministic timeout and out-of-memory fallback with resource release
 - Game-confirmed Sims action results and ordered consequences through Core
 - Deterministic SocietyBench 20-agent social-ring and reciprocal-pair scenarios
+- One-call-per-agent and provider-free fixed-CLOD baseline execution
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -93,16 +94,17 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 127 tests pass. Ruff and strict mypy pass for Core and tests. No
+Current verification: 128 tests pass. Ruff and strict mypy pass for Core and tests. No
 product performance benchmark has been published yet.
 
-Stage 3 has begun with deterministic 20-agent social-ring and reciprocal-pair workload
-definitions. They use synthetic stable IDs and do not depend on personal Sims save data.
+Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
+one-call-per-agent and provider-free fixed-CLOD 1 baseline execution. The workloads use
+synthetic stable IDs and do not depend on personal Sims save data.
 
 ## Current Work Order
 
-1. Measure one-call-per-agent and fixed-CLOD baselines.
-2. Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency.
+1. Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency.
+2. Run The Sims 4 concurrently on baseline hardware.
 3. Continue Stage 3 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

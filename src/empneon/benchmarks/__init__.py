@@ -1,3 +1,13 @@
-from empneon.benchmarks.societybench import BenchmarkScenario, build_20_agent_scenarios
+from empneon.benchmarks.societybench import (
+    BaselineResult,
+    BenchmarkScenario,
+    build_20_agent_scenarios,
+    measure_baselines,
+)
 
-__all__ = ["BenchmarkScenario", "build_20_agent_scenarios"]
+__all__ = [
+    "BaselineResult",
+    "BenchmarkScenario",
+    "build_20_agent_scenarios",
+    "measure_baselines",
+]

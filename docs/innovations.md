@@ -111,5 +111,6 @@ Every research item uses one label:
 - **Validated:** independently repeatable and improves the target outcome
 
 Current status: all four primary contributions remain hypotheses. Generic contracts, an
-initial resource governor, and deterministic 20-agent SocietyBench workload definitions
-are implementation foundations, not benchmarked or validated research results.
+initial resource governor, deterministic 20-agent SocietyBench workloads, and comparable
+one-call-per-agent and fixed-CLOD execution are implementation foundations, not hardware-
+benchmarked or validated research results.

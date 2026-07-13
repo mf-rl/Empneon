@@ -131,6 +131,7 @@ Version **0.2.0** is an early framework release.
 - [ ] Epistemic social memory
 - [x] Sims 4 reference adapter using Empneon Core
 - [x] Deterministic SocietyBench 20-agent scenarios
+- [x] One-call-per-agent and fixed-CLOD baseline execution
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
@@ -154,7 +155,8 @@ diagnostics remain available for game-version investigation. Live validation pas
 across a game restart with 20 persistent Core agents, all 20 participating, 15 successful
 autonomous results, zero pending proposals, and 16 ordered consequences. Stage 2 is
 complete. Stage 3 now includes deterministic 20-agent social-ring and reciprocal-pair
-workloads; baseline measurement remains pending.
+workloads plus comparable one-call-per-agent and provider-free fixed-CLOD baseline
+execution. Hardware and latency measurement remain pending.
 
 ## Documentation
 

@@ -50,7 +50,7 @@ social consequences across save/reload cycles.
 ## Stage 3: SocietyBench Baseline
 
 - [x] Build deterministic 20-agent benchmark scenarios
-- [ ] Measure one-call-per-agent and fixed-CLOD baselines
+- [x] Measure one-call-per-agent and fixed-CLOD baselines
 - [ ] Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency
 - [ ] Run The Sims 4 concurrently on baseline hardware
 - [ ] Add identity continuity and contradiction metrics
@@ -149,5 +149,7 @@ recovery and the operating guide are complete. Follow the in-game protocol in
 20 persistent Core agents, all 20 participating, 15 successful autonomous results, zero
 pending proposals, and 16 ordered consequences. Stage 2 is complete. SocietyBench now
 defines deterministic 20-agent social-ring and reciprocal-pair workloads with stable
-request and event data. The next task is measuring one-call-per-agent and fixed-CLOD
-baselines against those workloads.
+request and event data. Both workloads can run comparable one-call-per-agent and
+provider-free fixed-CLOD 1 baselines while retaining their decisions and provider-call
+counts. The next task is recording CPU, RAM, VRAM, frame time, tokens, and p50/p95
+latency.
