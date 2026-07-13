@@ -284,7 +284,7 @@ def execute_sims_action(payload, data):
 
         context = InteractionContext(
             actor,
-            InteractionContext.SOURCE_SCRIPT,
+            InteractionContext.SOURCE_AUTONOMY,
             Priority.Low,
             insert_strategy=QueueInsertStrategy.LAST,
         )

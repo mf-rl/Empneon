@@ -146,7 +146,8 @@ profiles, and the in-game exit-gate procedure are documented. The current automa
 persists observed identities, stores a pending proposal, attempts the validated Sims
 interaction, and finalizes the result only from the game's completion callback. This path
 queues a currently available, game-tested social super-interaction at low priority so the
-game can wait for a compatible state, then create and own the social group and its mixers.
+game can wait for a compatible state, using the game's autonomy interaction context so it
+can create and own the social group and its mixers.
 Filterable `ai.socialtunings friendly`
 diagnostics remain available for game-version investigation. It still requires
 in-game validation before the two remaining Stage 2 items can be checked.

@@ -15,10 +15,14 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     clock.interval_in_sim_minutes = lambda minutes: minutes
     services = ModuleType("services")
     context_module = ModuleType("interactions.context")
+    contexts = []
     context_module.InteractionContext = type(
         "InteractionContext",
         (),
-        {"SOURCE_SCRIPT": "script", "__init__": lambda self, *_args, **_kwargs: None},
+        {
+            "SOURCE_AUTONOMY": "autonomy",
+            "__init__": lambda self, *args, **kwargs: contexts.append((args, kwargs)),
+        },
     )
     context_module.QueueInsertStrategy = SimpleNamespace(LAST="last")
     priority_module = ModuleType("interactions.priority")
@@ -134,6 +138,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     agent.process_autonomy_responses(None)
 
+    assert contexts[0][0][1] == "autonomy"
     assert payloads[1] == (
         "/action-result",
         {
