@@ -106,9 +106,10 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     monkeypatch.setattr(agent, "find_sim_info_by_id", infos.get)
     generic_social = type("socials_Base_SuperInteraction", (), {})
     expansion_social = type("socials_Expansion_Specific_SuperInteraction", (), {})
+    custom_social = type("BC:Slap Child Social SuperInteraction", (), {})
     manager = SimpleNamespace(
         get=lambda _key: None,
-        types={1: expansion_social, 2: generic_social},
+        types={1: expansion_social, 2: generic_social, 3: custom_social},
     )
     monkeypatch.setattr(
         agent.services, "get_instance_manager", lambda _type: manager, raising=False

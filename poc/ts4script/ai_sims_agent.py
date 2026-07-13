@@ -295,7 +295,11 @@ def execute_sims_action(payload, data):
         enqueue_result = actor.push_super_affordance(affordance, target, context)
         interaction = getattr(enqueue_result, "interaction", None)
         if not enqueue_result or interaction is None:
-            raise RuntimeError("game rejected interaction enqueue")
+            raise RuntimeError(
+                "game rejected interaction enqueue: {}".format(
+                    getattr(affordance, "__name__", affordance)
+                )
+            )
         callback = getattr(interaction, "register_on_finishing_callback", None)
         if not callable(callback):
             raise RuntimeError("game interaction has no completion callback")
@@ -382,6 +386,8 @@ def find_action_affordance(action):
     candidates = []
     for affordance in loaded_interaction_tunings(manager):
         name = str(getattr(affordance, "__name__", ""))
+        if ":" in name:
+            continue
         normalized = "".join(character for character in name.lower() if character.isalnum())
         if "social" in normalized and "superinteraction" in normalized:
             candidates.append((len(name), name, affordance))
@@ -404,7 +410,8 @@ def social_tuning_names():
         str(getattr(affordance, "__name__", ""))
         for affordance in loaded_interaction_tunings()
     }
-    return sorted(name for name in names if "social" in name.lower() or "chat" in name.lower())
+    filtered = [name for name in names if "social" in name.lower() or "chat" in name.lower()]
+    return sorted(filtered, key=lambda name: (":" in name, name.lower()))
 
 
 def start_autonomy(zone_instance):
