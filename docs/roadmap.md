@@ -78,7 +78,9 @@ the system remains coherent after restart.
 - [x] Select CLOD, provider, context, and token budget dynamically
 - [x] Add optional shared-prefix batching and cache preparation by capability
 - [x] Evaluate archetype approximation; do not add without benchmark justification
-- [ ] Compare against Stage 3 baselines
+- [x] Compare against Stage 3 baselines
+- [ ] Build a differentiated adaptive workload with predeclared urgency and value features
+- [ ] Re-run cost, consistency, and blinded-believability comparison
 
 **Exit gate:** Adaptive scheduling reduces measured cost or latency while preserving a
 predefined believability and consistency threshold.
@@ -205,4 +207,12 @@ optimization, but not for this approximation specifically; the `+0.90` deeper-re
 preference increases the cost of guessing. Archetype code is therefore intentionally absent.
 Reopen the gate only after a controlled SocietyBench comparison shows a resource or latency
 benefit while meeting predefined identity-continuity, contradiction, and believability
-thresholds. The next task is comparing the adaptive scheduler against Stage 3 baselines.
+thresholds. The initial replay used the published global value `0.90`, uniform request
+urgency `0.50`, and the predeclared selection threshold `0.50`. Every score was `0.45`, so
+all 20 requests chose CLOD 1. Provider calls fell from 20 to 0, but adaptive blinded
+preference was 5% versus the
+one-call baseline's 95%: only 5.26% retention against the predefined 90% threshold.
+Consistency was not re-evaluated. The comparison task is complete, but the Stage 5 exit gate
+failed and Stage 5 remains open. The next task is a differentiated workload with urgency and
+value features declared before observing outcomes; then cost, consistency, and blinded
+believability must be re-run without label leakage.

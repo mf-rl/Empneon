@@ -148,6 +148,7 @@ Version **0.2.0** is an early framework release.
 - [x] Dynamic CLOD, provider, context, and completion-token selection
 - [x] Capability-gated shared-prefix batching and cache preparation
 - [x] Archetype approximation gate (not justified; not implemented)
+- [x] Initial adaptive-policy comparison against Stage 3 baselines
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -230,7 +231,13 @@ The archetype approximation gate found no supporting comparison in the published
 Stage 3 measured individual one-call and fixed-CLOD paths, not pooled policies; it contains no
 archetype resource delta, quality-loss score, or promotion criterion. The `+0.90` preference
 for deeper individual reasoning also makes unmeasured approximation a quality risk. No
-archetype code was added. The next task compares the adaptive path against Stage 3 baselines.
+archetype code was added. The adaptive replay reduced provider calls from 20 to 0, but
+retained only 5.26% of the one-call baseline's blinded preference rate: 5% adaptive versus
+95% one-call, below the predefined 90% retention threshold. Consistency was not re-evaluated,
+so the Stage 5 exit gate failed. The
+uniform Stage 3 urgency made every request choose CLOD 1, exposing that the first policy is too
+coarse rather than validating it. Stage 5 now requires a differentiated, predeclared workload
+and a new comparison before Stage 6.
 
 ## Documentation
 

@@ -83,3 +83,28 @@ The `+0.90` deeper-reasoning preference is evidence that decision quality can be
 evidence that agents can safely share an approximation. Reconsideration requires a controlled
 SocietyBench arm showing lower cost or latency while meeting predefined identity-continuity,
 contradiction, and believability thresholds.
+
+## Stage 5 adaptive replay against Stage 3: 2026-07-13
+
+The first adaptive policy was replayed over the published 20-sample social-ring evidence. The
+comparison fixed the minimum preference-retention threshold at 90% before scoring. With global
+deeper-reasoning value `0.90` and uniform Stage 3 urgency `0.50`, every selection score was
+`0.45`, below the policy threshold `0.50`; all requests therefore selected CLOD 1.
+
+| Measurement | Result |
+|---|---:|
+| One-call baseline provider calls / preference | 20 / 95% |
+| Fixed-CLOD 1 provider calls / preference | 0 / 5% |
+| Adaptive provider calls / reduction | 0 / 100% |
+| Adaptive preference | 5% |
+| Preference retention versus one-call | 5.26% |
+| Required preference retention | 90% |
+| Consistency re-evaluated | No |
+| Stage 5 exit gate | Failed |
+
+The result exposes a cost-quality failure, not a scheduler win. Uniform urgency gives this
+policy no basis for mixed routing: it can select all provider cognition or all deterministic
+cognition, but cannot preserve expensive reasoning where it matters. The replay used existing
+synthetic decisions and single-evaluator ratings; it did not perform another provider or
+in-game hardware run. See the
+[comparison artifact](../output/stage5-adaptive-comparison-20260713.json).

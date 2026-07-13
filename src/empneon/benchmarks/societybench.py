@@ -140,6 +140,29 @@ class BelievabilityMetrics:
     deeper_reasoning_net_preference: float
 
 
+@dataclass(frozen=True)
+class AdaptiveSelection:
+    sample_id: str
+    strategy: Literal["one-call-per-agent", "fixed-clod-1"]
+
+    def __post_init__(self) -> None:
+        if not self.sample_id.strip():
+            raise ValueError("adaptive selection sample id must not be empty")
+
+
+@dataclass(frozen=True)
+class AdaptiveComparisonMetrics:
+    evaluated_samples: int
+    adaptive_provider_calls: int
+    provider_call_reduction: float
+    adaptive_preferred_selections: int
+    adaptive_preference_rate: float
+    one_call_preference_rate: float
+    preference_retention: float
+    minimum_preference_retention: float
+    meets_believability_threshold: bool
+
+
 def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
     """Return stable social topologies for comparing later benchmark strategies."""
     agent_ids = tuple(f"agent-{index:02d}" for index in range(AGENT_COUNT))
@@ -316,6 +339,58 @@ def measure_believability(
         one_call_wins / evaluated,
         fixed_clod_wins / evaluated,
         (one_call_wins - fixed_clod_wins) / evaluated,
+    )
+
+
+def compare_adaptive_to_baselines(
+    selections: tuple[AdaptiveSelection, ...],
+    ratings: tuple[BelievabilityRating, ...],
+    keys: tuple[BelievabilityKey, ...],
+    minimum_preference_retention: float = 0.9,
+) -> AdaptiveComparisonMetrics:
+    """Compare adaptive provider use and blinded preference with Stage 3 baselines."""
+    if not 0 <= minimum_preference_retention <= 1:
+        raise ValueError("minimum preference retention must be between 0 and 1")
+    selected_by_id = {selection.sample_id: selection for selection in selections}
+    key_by_id = {key.sample_id: key for key in keys}
+    rating_ids = {rating.sample_id for rating in ratings}
+    if (
+        not ratings
+        or len(selected_by_id) != len(selections)
+        or rating_ids != set(selected_by_id)
+        or rating_ids != set(key_by_id)
+    ):
+        raise ValueError("selections, ratings, and keys must cover the same unique samples")
+
+    baseline = measure_believability(ratings, keys)
+    preferred = 0
+    for rating in ratings:
+        if rating.preferred == "tie":
+            preferred += 1
+            continue
+        key = key_by_id[rating.sample_id]
+        preferred_strategy = getattr(
+            key, f"option_{rating.preferred.lower()}_strategy"
+        )
+        preferred += selected_by_id[rating.sample_id].strategy == preferred_strategy
+
+    evaluated = len(ratings)
+    provider_calls = sum(
+        selection.strategy == "one-call-per-agent" for selection in selections
+    )
+    adaptive_rate = preferred / evaluated
+    one_call_rate = (baseline.one_call_wins + baseline.ties) / evaluated
+    retention = adaptive_rate / one_call_rate if one_call_rate else 1.0
+    return AdaptiveComparisonMetrics(
+        evaluated,
+        provider_calls,
+        1 - provider_calls / evaluated,
+        preferred,
+        adaptive_rate,
+        one_call_rate,
+        retention,
+        minimum_preference_retention,
+        retention >= minimum_preference_retention,
     )
 
 

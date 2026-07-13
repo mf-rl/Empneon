@@ -34,6 +34,12 @@ declared context window and resource estimate clamp context and completion token
 atomic admission. This is an implemented deterministic policy, not evidence that it beats
 the Stage 3 baselines.
 
+The first Stage 3 replay did not beat both baselines. Uniform urgency made all 20 requests
+select CLOD 1, eliminating provider calls but retaining only 5.26% of the one-call baseline's
+blinded preference rate, far below the predeclared 90% threshold. A differentiated workload
+must declare urgency and value features before outcomes are observed, then repeat cost,
+consistency, and blinded-believability evaluation without label leakage.
+
 ### 2. Epistemic Social Memory
 
 **Question:** Can provenance-aware beliefs create coherent social consequences without

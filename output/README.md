@@ -1,7 +1,8 @@
-# Published Stage 3 Evidence
+# Published Benchmark Evidence
 
-These files support the preliminary SocietyBench results recorded on 2026-07-13. They use
-synthetic agent IDs and contain no credentials, user paths, save data, or real Sim identities.
+These files support the preliminary Stage 3 and Stage 5 SocietyBench results recorded on
+2026-07-13. They use synthetic agent IDs and contain no credentials, user paths, save data,
+or real Sim identities.
 
 ## Configuration
 
@@ -49,6 +50,7 @@ py -3.12 -m empneon.benchmarks.believability score `
 | `stage3-believability-blind-20260713.json` | Rated 20-pair blind packet | `f4f02b4e9409d781f091d72a856264c38c40f477c5ee379001f958daa013f4ac` |
 | `stage3-believability-key-20260713.json` | Post-evaluation strategy key | `b7bc85f64a2e4877d87ea51efdd4ac238c5ed3c8814a148502a8db58d6492497` |
 | `stage3-believability-result-20260713.json` | Revealed score and net preference | `4bbcef23962cf3154d877edd2d1e2219a73eee6133f6f6be511ea7fde6910cd9` |
+| `stage5-adaptive-comparison-20260713.json` | Adaptive replay and failed exit gate | `d2dfedd9e9f10f3bda932301f1b0cecdfdd4ddc609f5a68df6d193dcf7e04ad2` |
 
 ## Limitations
 
@@ -67,3 +69,4 @@ py -3.12 -m empneon.benchmarks.believability score `
 - Several model candidates violated the requested plain two-to-six-word format with emoji
   or numbering.
 - These artifacts support no scalability, acceptable-performance, or player-quality claim.
+- The Stage 5 comparison replays existing decisions and ratings; it is not a new hardware run.

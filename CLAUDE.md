@@ -84,6 +84,7 @@ performance numbers until measured in-game.
 - Dynamic CLOD, provider, context, and completion-token route selection
 - Capability-gated shared-prefix batching and cache preparation
 - Archetype approximation gate deferred for lack of benchmark justification
+- Adaptive replay against Stage 3 baselines with a failed quality gate
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -104,8 +105,8 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 155 tests and Ruff pass. Strict mypy passes for the changed provider
-preparation path and its source dependencies; the full test tree still has pre-existing
+Current verification: 156 tests and Ruff pass. Strict mypy passes for the changed adaptive
+comparison path and its source dependencies; the full test tree still has pre-existing
 annotation failures. No product performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
@@ -188,9 +189,15 @@ the solution, and the `+0.90` deeper-reasoning preference makes speculative pool
 Reopen only after a controlled SocietyBench comparison meets predefined consistency and
 believability thresholds while reducing cost or latency.
 
+The initial adaptive replay fixed preference retention at 90% before scoring. Global value
+`0.90` times uniform urgency `0.50` produced `0.45`, below the `0.50` selection threshold, so
+all 20 requests chose CLOD 1. Provider calls fell 100%, but adaptive preference was 5% versus
+the one-call baseline's 95%, retaining only 5.26%; consistency was not re-evaluated. The
+comparison checklist item is complete, but Stage 5 failed its exit gate and remains open.
+
 ## Current Work Order
 
-1. Compare the adaptive scheduler against Stage 3 baselines.
-2. Continue Stage 5 strictly in roadmap order.
+1. Build a differentiated adaptive workload with predeclared urgency and value features.
+2. Re-run cost, consistency, and blinded-believability comparison.
 
 See `docs/roadmap.md` for evidence gates.

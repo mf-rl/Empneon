@@ -1,4 +1,6 @@
 from empneon.benchmarks.societybench import (
+    AdaptiveComparisonMetrics,
+    AdaptiveSelection,
     BaselineResult,
     BelievabilityKey,
     BelievabilityMetrics,
@@ -13,6 +15,7 @@ from empneon.benchmarks.societybench import (
     build_20_agent_scenarios,
     build_blinded_believability_evaluation,
     collect_cognition_comparisons,
+    compare_adaptive_to_baselines,
     measure_baselines,
     measure_believability,
     measure_consistency,
@@ -20,6 +23,8 @@ from empneon.benchmarks.societybench import (
 )
 
 __all__ = [
+    "AdaptiveComparisonMetrics",
+    "AdaptiveSelection",
     "BaselineResult",
     "BelievabilityKey",
     "BelievabilityMetrics",
@@ -34,6 +39,7 @@ __all__ = [
     "build_20_agent_scenarios",
     "build_blinded_believability_evaluation",
     "collect_cognition_comparisons",
+    "compare_adaptive_to_baselines",
     "measure_baselines",
     "measure_believability",
     "measure_consistency",

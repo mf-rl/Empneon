@@ -1,8 +1,10 @@
 import asyncio
+from typing import Literal
 
 import pytest
 
 from empneon.benchmarks import (
+    AdaptiveSelection,
     BaselineResult,
     BelievabilityRating,
     BenchmarkClaim,
@@ -10,6 +12,7 @@ from empneon.benchmarks import (
     build_20_agent_scenarios,
     build_blinded_believability_evaluation,
     collect_cognition_comparisons,
+    compare_adaptive_to_baselines,
     measure_baselines,
     measure_believability,
     measure_consistency,
@@ -191,3 +194,40 @@ def test_believability_evaluation_blinds_and_reveals_baseline_preferences() -> N
     )
     assert metrics.one_call_win_rate == 0.95
     assert metrics.deeper_reasoning_net_preference == 0.95
+
+
+def test_adaptive_comparison_exposes_cost_quality_tradeoff() -> None:
+    scenario = build_20_agent_scenarios()[0]
+    one_call = BaselineResult(
+        "one-call-per-agent",
+        tuple(Decision(agent, "consider context") for agent in scenario.agent_ids),
+        20,
+    )
+    fixed_clod = BaselineResult(
+        "fixed-clod-1",
+        tuple(Decision(agent, "acknowledge") for agent in scenario.agent_ids),
+        0,
+    )
+    samples, keys = build_blinded_believability_evaluation(
+        scenario, (one_call, fixed_clod), seed=20260713
+    )
+    ratings = []
+    for index, (sample, key) in enumerate(zip(samples, keys, strict=True)):
+        preferred_strategy = "one-call-per-agent" if index < 19 else "fixed-clod-1"
+        preferred: Literal["A", "B"] = (
+            "A" if key.option_a_strategy == preferred_strategy else "B"
+        )
+        ratings.append(BelievabilityRating(sample.sample_id, preferred))
+    selections = tuple(
+        AdaptiveSelection(sample.sample_id, "fixed-clod-1") for sample in samples
+    )
+
+    metrics = compare_adaptive_to_baselines(selections, tuple(ratings), keys)
+
+    assert metrics.adaptive_provider_calls == 0
+    assert metrics.provider_call_reduction == 1
+    assert metrics.adaptive_preferred_selections == 1
+    assert metrics.adaptive_preference_rate == 0.05
+    assert metrics.one_call_preference_rate == 0.95
+    assert metrics.preference_retention == pytest.approx(1 / 19)
+    assert metrics.meets_believability_threshold is False

@@ -1,0 +1,38 @@
+{
+  "scenario": "social-ring",
+  "comparison": "adaptive policy replay against Stage 3 baselines",
+  "policy": {
+    "deeper_reasoning_value": 0.9,
+    "request_urgency": 0.5,
+    "selection_score": 0.45,
+    "minimum_value": 0.5,
+    "selected_clod_counts": {
+      "1": 20
+    }
+  },
+  "one_call_baseline": {
+    "provider_calls": 20,
+    "preference_rate": 0.95
+  },
+  "fixed_clod_1_baseline": {
+    "provider_calls": 0,
+    "preference_rate": 0.05
+  },
+  "adaptive": {
+    "provider_calls": 0,
+    "provider_call_reduction": 1.0,
+    "preferred_selections": 1,
+    "preference_rate": 0.05,
+    "preference_retention": 0.05263157894736842,
+    "minimum_preference_retention": 0.9,
+    "meets_believability_threshold": false,
+    "consistency_evaluated": false
+  },
+  "stage5_exit_gate_passed": false,
+  "limitations": [
+    "Replay uses the published Stage 3 synthetic decisions and single-evaluator ratings.",
+    "No new provider, frame-time, or game-session measurement was performed.",
+    "The uniform Stage 3 urgency produces no mixed adaptive routing decisions.",
+    "Consistency was not re-evaluated for the adaptive selection."
+  ]
+}
