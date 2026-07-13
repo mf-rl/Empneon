@@ -20,9 +20,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         (),
         {"SOURCE_SCRIPT": "script", "__init__": lambda self, *_args, **_kwargs: None},
     )
-    context_module.QueueInsertStrategy = SimpleNamespace(NEXT="next")
+    context_module.QueueInsertStrategy = SimpleNamespace(LAST="last")
     priority_module = ModuleType("interactions.priority")
-    priority_module.Priority = SimpleNamespace(High="high")
+    priority_module.Priority = SimpleNamespace(Low="low")
     interactions = ModuleType("interactions")
     commands = ModuleType("sims4.commands")
     commands.CommandType = SimpleNamespace(Live="live")
@@ -96,7 +96,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     interaction = SimpleNamespace(finishing_type="FinishingType.NATURAL")
     interaction.register_on_finishing_callback = lambda callback: callback(interaction)
-    actor = object()
+    actor = SimpleNamespace(
+        push_super_affordance=lambda *_args: SimpleNamespace(interaction=interaction)
+    )
     social_super_base = type("SocialSuperInteraction", (), {})
     social_mixer_base = type("SocialMixerInteraction", (), {})
     generic_social = type("socials_SuperInteraction", (social_super_base,), {})
@@ -107,7 +109,6 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     )
     aop = SimpleNamespace(
         affordance=generic_social,
-        test_and_execute=lambda _context: SimpleNamespace(interaction=interaction),
     )
     mixer_aop = SimpleNamespace(affordance=mixer)
     target = SimpleNamespace(potential_interactions=lambda _context: [mixer_aop, aop])

@@ -139,9 +139,10 @@ adapter-returned results and ordered consequences, and a bounded zone alarm subm
 pairs without a player command. The confirmation path now persists observed Core
 identities, stores pending proposals separately, attempts the base-game social interaction,
 and finalizes results and observed relationship deltas from the game's finishing callback.
-The action bridge now executes a currently available, game-tested social super-interaction,
-allowing the game to create and own the required social group and mixers rather than
-queuing a bare mixer. Filterable `ai.socialtunings` diagnostics remain available.
+The action bridge now queues a currently available, game-tested social super-interaction
+at low priority and at the end of the Sim's queue, allowing the game to wait for a
+compatible state and create the required social group and mixers. Filterable
+`ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game
 protocol in `docs/sims4-setup.md`; keep the two action items unchecked until the game path
