@@ -5,12 +5,14 @@ import pytest
 
 from empneon.benchmarks import (
     AdaptiveSelection,
+    AdaptiveValueFeatures,
     BaselineResult,
     BelievabilityRating,
     BenchmarkClaim,
     BenchmarkObservation,
     build_20_agent_scenarios,
     build_blinded_believability_evaluation,
+    build_differentiated_adaptive_workload,
     collect_cognition_comparisons,
     compare_adaptive_to_baselines,
     measure_baselines,
@@ -59,6 +61,30 @@ def test_baselines_measure_one_call_per_agent_against_fixed_clod() -> None:
     assert fixed_clod.strategy == "fixed-clod-1"
     assert len(fixed_clod.decisions) == 20
     assert fixed_clod.provider_calls == 0
+
+
+def test_adaptive_workload_predeclares_differentiated_routing_features() -> None:
+    workload = build_differentiated_adaptive_workload()
+
+    assert workload == build_differentiated_adaptive_workload()
+    assert len(workload) == len({case.request.agent_id for case in workload}) == 20
+    assert [case.features.tier for case in workload].count("low") == 8
+    assert [case.features.tier for case in workload].count("medium") == 6
+    assert [case.features.tier for case in workload].count("high") == 6
+    assert all(
+        case.request.event.facts
+        == {
+            "value_tier": case.features.tier,
+            "consequence": case.features.consequence,
+            "novelty": case.features.novelty,
+            "social_complexity": case.features.social_complexity,
+        }
+        for case in workload
+    )
+    assert sum(case.selection_score < 0.5 for case in workload) == 8
+    assert sum(case.selection_score >= 0.5 for case in workload) == 12
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        AdaptiveValueFeatures("low", -0.1, 0, 0)
 
 
 def test_metrics_retain_raw_samples_and_compute_totals_and_percentiles() -> None:

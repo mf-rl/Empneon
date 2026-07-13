@@ -105,7 +105,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 156 tests and Ruff pass. Strict mypy passes for the changed adaptive
+Current verification: 157 tests and Ruff pass. Strict mypy passes for the changed adaptive
 comparison path and its source dependencies; the full test tree still has pre-existing
 annotation failures. No product performance benchmark has been published yet.
 
@@ -195,9 +195,14 @@ all 20 requests chose CLOD 1. Provider calls fell 100%, but adaptive preference 
 the one-call baseline's 95%, retaining only 5.26%; consistency was not re-evaluated. The
 comparison checklist item is complete, but Stage 5 failed its exit gate and remains open.
 
+The remediation workload declares 20 deterministic event-semantic requests before provider
+output or rating: 8 low-, 6 medium-, and 6 high-value cases. Urgency and bounded consequence,
+novelty, and social-complexity features determine each selection score. Their declared split
+at the existing threshold is 8 CLOD 1 and 12 provider routes; this is workload design, not an
+exit-gate result.
+
 ## Current Work Order
 
-1. Build a differentiated adaptive workload with predeclared urgency and value features.
-2. Re-run cost, consistency, and blinded-believability comparison.
+1. Re-run cost, consistency, and blinded-believability comparison.
 
 See `docs/roadmap.md` for evidence gates.

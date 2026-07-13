@@ -163,6 +163,33 @@ class AdaptiveComparisonMetrics:
     meets_believability_threshold: bool
 
 
+@dataclass(frozen=True)
+class AdaptiveValueFeatures:
+    tier: Literal["low", "medium", "high"]
+    consequence: float
+    novelty: float
+    social_complexity: float
+
+    def __post_init__(self) -> None:
+        values = (self.consequence, self.novelty, self.social_complexity)
+        if any(not isfinite(value) or not 0 <= value <= 1 for value in values):
+            raise ValueError("adaptive value features must be finite and between 0 and 1")
+
+    @property
+    def expected_value(self) -> float:
+        return (self.consequence + self.novelty + self.social_complexity) / 3
+
+
+@dataclass(frozen=True)
+class AdaptiveBenchmarkCase:
+    request: CognitiveRequest
+    features: AdaptiveValueFeatures
+
+    @property
+    def selection_score(self) -> float:
+        return self.request.urgency * self.features.expected_value
+
+
 def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
     """Return stable social topologies for comparing later benchmark strategies."""
     agent_ids = tuple(f"agent-{index:02d}" for index in range(AGENT_COUNT))
@@ -178,6 +205,72 @@ def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
             tuple(index + 1 if index % 2 == 0 else index - 1 for index in range(AGENT_COUNT)),
         ),
     )
+
+
+def build_differentiated_adaptive_workload() -> tuple[AdaptiveBenchmarkCase, ...]:
+    """Declare a stable workload whose routing features precede any generated output."""
+    event_tiers: tuple[tuple[str, Literal["low", "medium", "high"]], ...] = (
+        ("routine_presence", "low"),
+        ("shared_space_idle", "low"),
+        ("passing_encounter", "low"),
+        ("routine_arrival", "low"),
+        ("ambient_smalltalk", "low"),
+        ("familiar_greeting", "low"),
+        ("parallel_activity", "low"),
+        ("ordinary_departure", "low"),
+        ("social_request", "medium"),
+        ("minor_disagreement", "medium"),
+        ("new_acquaintance", "medium"),
+        ("relationship_check_in", "medium"),
+        ("group_invitation", "medium"),
+        ("unexpected_reunion", "medium"),
+        ("betrayal_confrontation", "high"),
+        ("secret_disclosure", "high"),
+        ("conflicting_testimony", "high"),
+        ("relationship_repair", "high"),
+        ("urgent_goal_conflict", "high"),
+        ("public_accusation", "high"),
+    )
+    tier_values = {
+        "low": (0.25, 0.2),
+        "medium": (0.75, 0.7),
+        "high": (0.95, 0.9),
+    }
+    agent_ids = tuple(f"agent-{index:02d}" for index in range(AGENT_COUNT))
+    cases = []
+    for index, ((event_type, tier), agent_id) in enumerate(
+        zip(event_tiers, agent_ids, strict=True)
+    ):
+        urgency, value = tier_values[tier]
+        features = AdaptiveValueFeatures(tier, value, value, value)
+        facts: dict[str, object] = {
+            "value_tier": tier,
+            "consequence": features.consequence,
+            "novelty": features.novelty,
+            "social_complexity": features.social_complexity,
+        }
+        cases.append(
+            AdaptiveBenchmarkCase(
+                CognitiveRequest(
+                    id=f"adaptive-request-{index:02d}",
+                    agent_id=agent_id,
+                    preferred_clod=3,
+                    urgency=urgency,
+                    max_tokens=16,
+                    deadline_ms=60_000,
+                    event=WorldEvent(
+                        id=f"adaptive-event-{index:02d}",
+                        type=event_type,
+                        actor_ids=(agent_id, agent_ids[(index + 1) % AGENT_COUNT]),
+                        location="societybench",
+                        facts=facts,
+                        happened_at=index,
+                    ),
+                ),
+                features,
+            )
+        )
+    return tuple(cases)
 
 
 async def measure_baselines(

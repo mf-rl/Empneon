@@ -79,7 +79,7 @@ the system remains coherent after restart.
 - [x] Add optional shared-prefix batching and cache preparation by capability
 - [x] Evaluate archetype approximation; do not add without benchmark justification
 - [x] Compare against Stage 3 baselines
-- [ ] Build a differentiated adaptive workload with predeclared urgency and value features
+- [x] Build a differentiated adaptive workload with predeclared urgency and value features
 - [ ] Re-run cost, consistency, and blinded-believability comparison
 
 **Exit gate:** Adaptive scheduling reduces measured cost or latency while preserving a
@@ -213,6 +213,9 @@ all 20 requests chose CLOD 1. Provider calls fell from 20 to 0, but adaptive bli
 preference was 5% versus the
 one-call baseline's 95%: only 5.26% retention against the predefined 90% threshold.
 Consistency was not re-evaluated. The comparison task is complete, but the Stage 5 exit gate
-failed and Stage 5 remains open. The next task is a differentiated workload with urgency and
-value features declared before observing outcomes; then cost, consistency, and blinded
-believability must be re-run without label leakage.
+failed and Stage 5 remains open. The remediation workload now declares 20 event-semantic
+cases before observing outcomes: 8 low, 6 medium, and 6 high. Each records urgency,
+consequence, novelty, and social complexity; expected value is their unweighted mean. At the
+existing `0.50` threshold, the declared scores plan 8 CLOD 1 and 12 provider selections. This
+split is not an exit-gate result. Cost, consistency, and blinded believability must now be
+re-run without label leakage.

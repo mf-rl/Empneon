@@ -40,6 +40,13 @@ blinded preference rate, far below the predeclared 90% threshold. A differentiat
 must declare urgency and value features before outcomes are observed, then repeat cost,
 consistency, and blinded-believability evaluation without label leakage.
 
+The remediation workload now fixes those inputs independently of generated decisions and
+ratings. Twenty event-semantic cases are divided into 8 low-, 6 medium-, and 6 high-value
+tiers. Each declares urgency plus bounded consequence, novelty, and social-complexity values;
+the scheduler input is their unweighted mean. At the existing `0.50` gate this design yields
+8 cheap and 12 provider routes. The tier rubric is hand-authored and deliberately simple,
+not a learned value model or evidence that the resulting routing preserves quality.
+
 ### 2. Epistemic Social Memory
 
 **Question:** Can provenance-aware beliefs create coherent social consequences without

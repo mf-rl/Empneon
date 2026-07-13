@@ -108,3 +108,22 @@ cognition, but cannot preserve expensive reasoning where it matters. The replay 
 synthetic decisions and single-evaluator ratings; it did not perform another provider or
 in-game hardware run. See the
 [comparison artifact](../output/stage5-adaptive-comparison-20260713.json).
+
+## Stage 5 differentiated workload design: 2026-07-13
+
+The remediation workload contains 20 deterministic agent requests whose routing inputs are
+fixed before generation or evaluation. Event semantics are divided into 8 low-value routine
+events, 6 medium-value social events, and 6 high-value conflict or disclosure events. Each
+request declares urgency, consequence, novelty, and social complexity. Expected value is the
+unweighted mean of the three value features, and the selection score remains urgency times
+expected value.
+
+| Declared tier | Cases | Urgency | Expected value | Selection score | Planned route |
+|---|---:|---:|---:|---:|---|
+| Low | 8 | 0.25 | 0.20 | 0.05 | CLOD 1 |
+| Medium | 6 | 0.75 | 0.70 | 0.525 | Provider |
+| High | 6 | 0.95 | 0.90 | 0.855 | Provider |
+
+The existing threshold is `0.50`, so the design plans 8 cheap and 12 provider selections.
+These are workload properties only. No provider cost, consistency, or blinded-believability
+result is claimed until the next comparison is executed and scored.

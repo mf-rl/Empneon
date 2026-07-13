@@ -237,7 +237,12 @@ retained only 5.26% of the one-call baseline's blinded preference rate: 5% adapt
 so the Stage 5 exit gate failed. The
 uniform Stage 3 urgency made every request choose CLOD 1, exposing that the first policy is too
 coarse rather than validating it. Stage 5 now requires a differentiated, predeclared workload
-and a new comparison before Stage 6.
+and a new comparison before Stage 6. That workload is now implemented as 20 deterministic
+events: 8 low-, 6 medium-, and 6 high-value cases. Each event declares urgency plus
+consequence, novelty, and social-complexity features before any cognition output or rating
+exists. Their unweighted mean supplies expected value, producing a planned split of 8 cheap
+and 12 provider routes at the existing `0.50` threshold. This is a test design, not a quality
+or cost result; the comparison still must be rerun.
 
 ## Documentation
 
