@@ -134,6 +134,7 @@ Version **0.2.0** is an early framework release.
 - [x] One-call-per-agent and fixed-CLOD baseline execution
 - [x] SocietyBench resource, frame-time, token, and latency metrics
 - [x] Concurrent Sims 4 run on baseline hardware
+- [x] SocietyBench identity-continuity and contradiction metrics
 - [ ] Second adapter proving portability
 - [ ] In-game performance and believability benchmarks
 
@@ -164,6 +165,9 @@ hardware run completed but showed severe pressure:
 87.37 ms p50 Sims frame time and 18.821 s p50 provider latency with 5,918 MiB peak VRAM
 use. These are preliminary measurements, not a performance claim. See
 [SocietyBench results](docs/benchmark-results.md).
+SocietyBench can also measure retained expected identities and contradictory values per
+agent subject; scenario-specific consistency evaluation remains separate from the raw
+hardware run.
 
 ## Documentation
 

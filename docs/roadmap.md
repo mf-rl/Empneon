@@ -53,7 +53,7 @@ social consequences across save/reload cycles.
 - [x] Measure one-call-per-agent and fixed-CLOD baselines
 - [x] Record CPU, RAM, VRAM, frame time, tokens, and p50/p95 latency
 - [x] Run The Sims 4 concurrently on baseline hardware
-- [ ] Add identity continuity and contradiction metrics
+- [x] Add identity continuity and contradiction metrics
 - [ ] Run blinded believability evaluation
 - [ ] Publish configuration, raw results, and limitations
 
@@ -157,3 +157,6 @@ adding identity continuity and contradiction metrics. The first foreground concu
 run completed on baseline hardware with 20 provider calls and 20 fixed-CLOD decisions.
 It measured 87.37 ms p50 Sims frame time, 18,821 ms p50 provider latency, and 5,918 MiB
 peak VRAM use, demonstrating severe resource pressure rather than acceptable performance.
+Identity continuity now reports retained expected agent IDs, while contradiction rate
+reports agent-subject groups containing multiple distinct values. The next task is the
+blinded believability evaluation.

@@ -76,6 +76,7 @@ performance numbers until measured in-game.
 - One-call-per-agent and provider-free fixed-CLOD baseline execution
 - Raw CPU, RAM, VRAM, frame-time, token, and latency benchmark metrics
 - Foreground Sims 4 baseline-hardware benchmark evidence
+- SocietyBench identity-continuity and contradiction metrics
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -96,7 +97,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 129 tests pass. Ruff and strict mypy pass for Core and tests. No
+Current verification: 130 tests pass. Ruff and strict mypy pass for Core and tests. No
 product performance benchmark has been published yet.
 
 Stage 3 includes deterministic 20-agent social-ring and reciprocal-pair workloads plus
@@ -110,10 +111,13 @@ Twenty provider calls and 20 fixed-CLOD decisions completed. Sims frame time was
 peak system RAM was 15,705.23 MiB and peak VRAM was 5,918 MiB. Treat these as evidence
 of severe pressure, not validated performance.
 
+Consistency measurement reports retained expected identities and contradictory
+agent-subject value groups without implementing the Stage 4 belief model early.
+
 ## Current Work Order
 
-1. Add identity continuity and contradiction metrics.
-2. Run blinded believability evaluation.
+1. Run blinded believability evaluation.
+2. Publish configuration, raw results, and limitations.
 3. Continue Stage 3 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

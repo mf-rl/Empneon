@@ -3,9 +3,11 @@ import asyncio
 import pytest
 
 from empneon.benchmarks import (
+    BenchmarkClaim,
     BenchmarkObservation,
     build_20_agent_scenarios,
     measure_baselines,
+    measure_consistency,
     summarize_metrics,
 )
 from empneon.core.clod import resolve_clod1
@@ -78,3 +80,23 @@ def test_metrics_retain_raw_samples_and_compute_totals_and_percentiles() -> None
     assert (metrics.latency_p50_ms, metrics.latency_p95_ms) == (25, 38.5)
     with pytest.raises(ValueError, match="finite and nonnegative"):
         BenchmarkObservation(-1, 0, 0, 0, 0, 0, 0)
+
+
+def test_consistency_measures_identity_continuity_and_contradictions() -> None:
+    agents = build_20_agent_scenarios()[0].agent_ids
+    metrics = measure_consistency(
+        agents,
+        agents[:18] + ("unexpected-agent",),
+        (
+            BenchmarkClaim("agent-00", "mood", "happy"),
+            BenchmarkClaim("agent-00", "mood", "happy"),
+            BenchmarkClaim("agent-01", "mood", "happy"),
+            BenchmarkClaim("agent-01", "mood", "angry"),
+            BenchmarkClaim("agent-02", "intent", "greet"),
+        ),
+    )
+
+    assert (metrics.retained_agents, metrics.expected_agents) == (18, 20)
+    assert metrics.identity_continuity_rate == 0.9
+    assert (metrics.contradictory_subjects, metrics.evaluated_subjects) == (1, 3)
+    assert metrics.contradiction_rate == pytest.approx(1 / 3)

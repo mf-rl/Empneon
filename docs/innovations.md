@@ -115,4 +115,6 @@ initial resource governor, deterministic 20-agent SocietyBench workloads, and co
 one-call-per-agent and fixed-CLOD execution with raw resource, frame-time, token, and
 latency recording are implementation foundations, not in-game benchmarked or validated
 research results. One foreground baseline-hardware run is measured and documents severe
-resource pressure; it is not sufficient to validate a research contribution.
+resource pressure; it is not sufficient to validate a research contribution. Identity
+continuity and generic agent-subject contradiction metrics are implemented for later
+scenario evaluation.

@@ -62,6 +62,27 @@ class BenchmarkMetrics:
     latency_p95_ms: float
 
 
+@dataclass(frozen=True)
+class BenchmarkClaim:
+    agent_id: str
+    subject: str
+    value: str
+
+    def __post_init__(self) -> None:
+        if not self.agent_id.strip() or not self.subject.strip() or not self.value.strip():
+            raise ValueError("benchmark claim fields must not be empty")
+
+
+@dataclass(frozen=True)
+class ConsistencyMetrics:
+    retained_agents: int
+    expected_agents: int
+    identity_continuity_rate: float
+    contradictory_subjects: int
+    evaluated_subjects: int
+    contradiction_rate: float
+
+
 def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
     """Return stable social topologies for comparing later benchmark strategies."""
     agent_ids = tuple(f"agent-{index:02d}" for index in range(AGENT_COUNT))
@@ -111,6 +132,31 @@ def summarize_metrics(
         sum(observation.completion_tokens for observation in observations),
         _percentile(latencies, 0.50),
         _percentile(latencies, 0.95),
+    )
+
+
+def measure_consistency(
+    expected_agent_ids: tuple[str, ...],
+    observed_agent_ids: tuple[str, ...],
+    claims: tuple[BenchmarkClaim, ...],
+) -> ConsistencyMetrics:
+    """Measure retained identities and conflicting values for each agent subject."""
+    expected = set(expected_agent_ids)
+    if not expected:
+        raise ValueError("expected agent ids are required")
+    retained = len(expected & set(observed_agent_ids))
+    values_by_subject: dict[tuple[str, str], set[str]] = {}
+    for claim in claims:
+        values_by_subject.setdefault((claim.agent_id, claim.subject), set()).add(claim.value)
+    contradictory = sum(len(values) > 1 for values in values_by_subject.values())
+    evaluated = len(values_by_subject)
+    return ConsistencyMetrics(
+        retained,
+        len(expected),
+        retained / len(expected),
+        contradictory,
+        evaluated,
+        contradictory / evaluated if evaluated else 0.0,
     )
 
 
