@@ -80,6 +80,7 @@ performance numbers until measured in-game.
 - Seeded blinded SocietyBench believability comparison and scoring
 - Published Stage 3 configuration, raw evidence, checksums, and limitations
 - Validated per-request cheap-versus-expensive cognition comparisons
+- Signed deeper-reasoning net-preference estimate from blinded ratings
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -158,12 +159,14 @@ scenario verifies this developer output after restart. Stage 4 is complete.
 Stage 5 comparison collection pairs each request with its provider-free fixed-CLOD 1
 decision and one-call provider decision. Strategy coverage, result counts, and decision-agent
 alignment are validated, and the blinded evaluator consumes the same records. The first
-collection reuses the 20 Stage 3 social-ring pairs and does not yet estimate player-visible
-value.
+collection reuses the 20 Stage 3 social-ring pairs. The existing 19-to-1 blinded result
+produces a `+0.90` signed net preference, where `+1` always favors deeper reasoning, `0` is
+neutral, and `-1` always favors cheap reasoning.
+This is a single synthetic evaluator's player-visible proxy, not measured player utility.
 
 ## Current Work Order
 
-1. Estimate player-visible value of deeper reasoning.
+1. Select CLOD, provider, context, and token budget dynamically.
 2. Continue Stage 5 strictly in roadmap order.
 
 See `docs/roadmap.md` for evidence gates.

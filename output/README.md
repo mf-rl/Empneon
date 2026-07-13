@@ -48,7 +48,7 @@ py -3.12 -m empneon.benchmarks.believability score `
 | `stage3-presentmon-foreground-20260713.csv` | 3,218 raw PresentMon rows; 3,216 positive display-change samples | `6c0aaec55a86e322963e4110958156de93f6c10ff4c64ad88c8e536ba9787369` |
 | `stage3-believability-blind-20260713.json` | Rated 20-pair blind packet | `f4f02b4e9409d781f091d72a856264c38c40f477c5ee379001f958daa013f4ac` |
 | `stage3-believability-key-20260713.json` | Post-evaluation strategy key | `b7bc85f64a2e4877d87ea51efdd4ac238c5ed3c8814a148502a8db58d6492497` |
-| `stage3-believability-result-20260713.json` | Revealed aggregate score | `67bc528492f98cf02a0855ce6086bb436cca466d06d5a5e1d91a18cd1d32a412` |
+| `stage3-believability-result-20260713.json` | Revealed score and net preference | `4bbcef23962cf3154d877edd2d1e2219a73eee6133f6f6be511ea7fde6910cd9` |
 
 ## Limitations
 

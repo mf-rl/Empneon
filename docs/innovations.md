@@ -22,7 +22,10 @@ baselines using tokens, latency, memory, contradictions, and blinded believabili
 Stage 5 comparison collection now pairs each request with its fixed-CLOD 1 and one-call
 decisions, preserving both labeled strategies and rejecting incomplete or agent-misaligned
 results. The first 20 records reuse the Stage 3 social-ring evidence. They are inputs for
-value estimation, not evidence that the adaptive policy is effective.
+value estimation, not evidence that the adaptive policy is effective. Blinded preferences
+produce a signed net estimate where `+1` always favors deeper reasoning, `0` is neutral, and
+`-1` always favors cheap reasoning. The first 19-to-1 result is `+0.90`; because it comes from
+one synthetic evaluator, it is a preliminary player-visible proxy rather than player data.
 
 ### 2. Epistemic Social Memory
 

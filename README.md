@@ -144,6 +144,7 @@ Version **0.2.0** is an early framework release.
 - [x] Persistent secret, rumor, testimony, and correction scenarios
 - [x] JSON-serializable developer-facing belief causal traces
 - [x] Validated cheap-versus-expensive cognition comparison collection
+- [x] Preliminary player-visible value proxy from blinded preferences
 - [ ] Second adapter proving portability
 - [ ] Validated in-game performance benchmarks
 
@@ -204,7 +205,11 @@ Stage 5 now begins from reusable comparison records that align each cognitive re
 its provider-free fixed-CLOD 1 decision and one-call provider decision. The collector
 validates strategy coverage, result counts, and agent alignment before the records feed the
 existing blinded evaluation. The initial evidence remains the 20 paired Stage 3 samples;
-estimating their player-visible value is the next task.
+the following estimate reuses those samples rather than claiming an independent run.
+The same blinded ratings now yield a signed net-preference estimate: deeper-reasoning
+wins minus cheap-reasoning wins, divided by evaluated pairs. The initial 19-to-1 result
+is `+0.90` on a `-1` to `+1` scale. This is a synthetic single-evaluator proxy, not
+measured player utility. Dynamic selection is the next Stage 5 task.
 
 ## Documentation
 

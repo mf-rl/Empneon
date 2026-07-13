@@ -190,3 +190,4 @@ def test_believability_evaluation_blinds_and_reveals_baseline_preferences() -> N
         1,
     )
     assert metrics.one_call_win_rate == 0.95
+    assert metrics.deeper_reasoning_net_preference == 0.95

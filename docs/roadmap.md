@@ -74,7 +74,7 @@ the system remains coherent after restart.
 ## Stage 5: Adaptive Value-of-Thought Scheduler
 
 - [x] Collect cheap-versus-expensive cognition comparisons
-- [ ] Estimate player-visible value of deeper reasoning
+- [x] Estimate player-visible value of deeper reasoning
 - [ ] Select CLOD, provider, context, and token budget dynamically
 - [ ] Add optional shared-prefix batching and cache preparation by capability
 - [ ] Add archetype approximation only if benchmarks justify it
@@ -185,5 +185,8 @@ complete. Stage 5 now has validated per-request comparison records pairing the p
 fixed-CLOD 1 decision with the one-call provider decision. Collection rejects missing,
 mis-sized, or agent-misaligned baseline results, and the existing blinded evaluator consumes
 the same records. The first evidence set is the 20 paired Stage 3 samples; it remains
-single-evaluator synthetic evidence, not a player study. The next task is estimating the
-player-visible value of deeper reasoning.
+single-evaluator synthetic evidence, not a player study. The blinded ratings now provide a
+signed net-preference estimate: `(deeper wins - cheap wins) / evaluated comparisons`. The
+initial 19-to-1 result is `+0.90` on a `-1` to `+1` scale. This is a preliminary proxy from one
+synthetic evaluator, not measured player utility. The next task is selecting CLOD, provider,
+context, and token budget dynamically.

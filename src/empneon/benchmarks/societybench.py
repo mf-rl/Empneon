@@ -137,6 +137,7 @@ class BelievabilityMetrics:
     ties: int
     one_call_win_rate: float
     fixed_clod_win_rate: float
+    deeper_reasoning_net_preference: float
 
 
 def build_20_agent_scenarios() -> tuple[BenchmarkScenario, ...]:
@@ -314,6 +315,7 @@ def measure_believability(
         ties,
         one_call_wins / evaluated,
         fixed_clod_wins / evaluated,
+        (one_call_wins - fixed_clod_wins) / evaluated,
     )
 
 

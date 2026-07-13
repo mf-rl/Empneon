@@ -38,6 +38,7 @@ The evaluator saw the event, actors, and A/B candidates but not the separate str
 | One-call-per-agent wins | 19 (95%) |
 | Fixed-CLOD 1 wins | 1 (5%) |
 | Ties | 0 |
+| Deeper-reasoning net preference | +0.90 |
 
 The evaluator favored concrete nods or greetings over the abstract `acknowledge` intent.
 Fixed CLOD 1 won when the model introduced an unsupported threat assessment into a neutral
@@ -58,5 +59,15 @@ the wrong agent are rejected. The blinded evaluator now consumes these records d
 
 The initial collection is the existing 20-pair social-ring run above. Reusing it avoids
 presenting another execution of the same workload as independent evidence. These records
-support the next value-estimation task; collection alone makes no claim about player-visible
+support the value estimate below; collection alone makes no claim about player-visible
 benefit or an adaptive scheduler.
+
+## Stage 5 preliminary value estimate: 2026-07-13
+
+The score now reports `(deeper-reasoning wins - cheap-reasoning wins) / evaluated pairs`.
+It ranges from `-1` when every comparison favors cheap reasoning to `+1` when every
+comparison favors deeper reasoning. The 19-to-1 blind result produces `+0.90`.
+
+This signed preference is a reproducible player-visible value proxy, not measured player
+utility. It captures contextual fit, social plausibility, and specificity under the published
+rubric, but it comes from one synthetic evaluator and one model run.

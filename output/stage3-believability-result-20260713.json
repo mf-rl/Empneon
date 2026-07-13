@@ -4,5 +4,6 @@
   "fixed_clod_wins": 1,
   "ties": 0,
   "one_call_win_rate": 0.95,
-  "fixed_clod_win_rate": 0.05
+  "fixed_clod_win_rate": 0.05,
+  "deeper_reasoning_net_preference": 0.9
 }
