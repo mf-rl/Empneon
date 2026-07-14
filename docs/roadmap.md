@@ -124,6 +124,27 @@ consumed the same file headlessly, printed `EMPNEON_GODOT_OK`, and exited 0. The
 the in-process reference adapter, not a live game run; this gate demonstrates contract
 portability rather than game performance or production readiness. Stage 6 is complete.
 
+## Stage 6.5: Playable Sims 4 Prototype
+
+- [ ] Add one player-triggered Empneon social interaction to the Sim pie menu
+- [ ] Display generated dialogue and action outcome through native in-game UI
+- [ ] Map a whitelist of three to five generic intents to base-game social interactions
+- [ ] Execute the selected native interaction and persist only its game-confirmed outcome
+- [ ] Let retained memory, relationship, or belief context alter a later interaction choice
+- [ ] Reflect at least one confirmed native relationship or mood consequence back into Core
+- [ ] Validate save/reload continuity and safe cancellation in a dedicated test save
+
+This stage turns the working reference adapter into a noticeable gameplay vertical slice before
+developer-product work begins. It must reuse base-game interactions and native UI where possible.
+Custom animations, voice, unrestricted autonomous control, a large interaction library, and an
+elaborate UI are outside this prototype.
+
+**Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
+generated dialogue and a native social action, and observes a game-confirmed relationship or
+mood consequence. A second interaction between the same Sims must make a demonstrably different
+choice because of retained context. The visible consequence and Core history must survive save,
+backend restart, and game reload; unavailable Sims and canceled interactions must fail safely.
+
 ## Stage 7: Developer Product
 
 - [ ] Agent, event, decision, and belief timeline
@@ -265,3 +286,8 @@ zero Core changes, and zero Python dependency changes. Publishing the contract s
 added 36m26s and 167 lines. These are reproducible repository-session measurements, not
 person-hours or production estimates. The canonical scenario subsequently passed through both
 adapter boundaries and the real headless Godot engine, completing Stage 6.
+
+Stage 6.5 is now the current focus. It requires a player-triggered pie-menu interaction first,
+then native UI feedback, a small base-game social whitelist, game-confirmed consequences,
+context-dependent follow-up behavior, and save/reload plus cancellation validation. Stage 7
+must not begin until this playable prototype passes its in-game exit gate.

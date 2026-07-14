@@ -235,8 +235,14 @@ game-specific results. Godot 4.7 independently consumed the same file headlessly
 `EMPNEON_GODOT_OK`, and exited 0. The Sims side was the in-process adapter, not a live game run;
 this proves contract portability, not game performance. Stage 6 is complete.
 
+Stage 6.5 is a bounded playable Sims 4 prototype required before Stage 7. Its checklist adds one
+pie-menu interaction, native in-game dialogue/outcome feedback, three to five whitelisted
+base-game socials, confirmed native relationship or mood consequences, one later choice altered
+by retained context, and save/reload plus cancellation validation. Custom animation, voice, broad
+autonomy, and elaborate UI remain deferred.
+
 ## Current Work Order
 
-1. Build the Stage 7 agent, event, decision, and belief timeline.
+1. Add one player-triggered Empneon social interaction to the Sim pie menu.
 
 See `docs/roadmap.md` for evidence gates.

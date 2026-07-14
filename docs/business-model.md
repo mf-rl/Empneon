@@ -82,7 +82,8 @@ Do not build billing or a broad cloud platform before:
 
 ### Prove
 
-- Ship the Sims 4 reference experience.
+- Ship a Sims 4 reference experience with a player-accessible interaction, visible native
+  consequence, and retained context that affects later behavior.
 - Publish SocietyBench results and raw hardware measurements.
 - Demonstrate provider replacement between local and hosted models.
 

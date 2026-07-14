@@ -33,6 +33,11 @@ contract invariants and the same canonical two-agent benchmark scenario. The rea
 also completed that scenario headlessly, so the Stage 6 portability gate passes. Roblox, Unity,
 Unreal, and other integrations remain future adapter candidates, not core dependencies.
 
+Before developer-product tooling, the Sims 4 reference adapter must become a playable vertical
+slice. A player-triggered in-game interaction, native action, visible dialogue and consequence,
+and a later context-dependent choice must work without cheat-console commands. This is a bounded
+reference experience, not an attempt to replace the game's full autonomy or interaction system.
+
 ### 2. The core is provider-agnostic
 
 Identity and memory never contain model references. Reasoning is requested through a

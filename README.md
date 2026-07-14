@@ -153,6 +153,7 @@ Version **0.2.0** is an early framework release.
 - [x] Published adapter contract tests and development guide
 - [x] Measured minimal adapter implementation effort
 - [x] Cross-adapter portability exit gate
+- [ ] Playable Sims 4 prototype with visible native consequences
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -277,6 +278,13 @@ adapter and Godot bridge produced the same deterministic Core decision
 successful game-specific results. Godot 4.7 then ran that file headlessly and exited 0 with
 `EMPNEON_GODOT_OK`. This validates adapter portability, not live Sims performance or production
 readiness. Stage 6 is complete.
+
+Stage 6.5 now precedes the developer-product stage. It will turn the Sims reference adapter into
+a bounded playable vertical slice: one pie-menu entry, native in-game dialogue/outcome feedback,
+three to five whitelisted base-game socials, game-confirmed relationship or mood consequences,
+and a later choice changed by retained context. Its exit gate requires save/reload continuity
+and safe cancellation without relying on cheat-console commands. Custom animation, voice, broad
+autonomy, and elaborate UI remain out of scope.
 
 ## Documentation
 
