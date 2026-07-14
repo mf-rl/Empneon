@@ -89,6 +89,7 @@ performance numbers until measured in-game.
 - Minimal Godot 4 adapter round trip through unchanged Core contracts
 - Published shared adapter contract tests and development guide
 - Reproducible minimal Godot adapter implementation-effort measurement
+- Passing canonical cross-adapter Stage 6 portability benchmark
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -109,7 +110,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 161 tests and Ruff pass. Strict mypy passes for Core, both adapter
+Current verification: 162 tests and Ruff pass. Strict mypy passes for Core, both adapter
 boundaries, and the published contract suite; the full test tree still has pre-existing
 annotation failures. Published evidence supports no scalability or player-quality claim.
 
@@ -218,7 +219,8 @@ mutation, and confirms it as an `ActionResult`. Godot 4.7 completed the headless
 with `EMPNEON_GODOT_OK` and exit code 0. No Godot concept or import was added to Core. The
 published parametrized contract suite checks both adapters against the same actor, evidence,
 decision-ID, and confirmed-outcome invariants. `docs/adapter-development.md` documents the
-in-process and external-engine paths. Stage 6 is not complete.
+in-process and external-engine paths. The canonical exit benchmark below subsequently completed
+Stage 6.
 
 Godot proof effort is measured from repository evidence: 29m42s from target selection to the
 first working adapter; 221 runtime lines across five files; 36 focused-test lines; zero Core
@@ -226,8 +228,15 @@ or Python dependency changes. Publishing the contract suite and guide added 36m2
 lines, for 1h06m08s from selection through publication. These commit windows are not
 person-hours or production estimates.
 
+Stage 6 uses `godot/portability/scenario.json` as one canonical two-agent benchmark. The Sims
+reference adapter and Godot bridge produced the same deterministic Core decision
+`abc780ba-3e2c-501a-95a5-85e289d2a7f5`, preserved its evidence and ID, and confirmed successful
+game-specific results. Godot 4.7 independently consumed the same file headlessly, printed
+`EMPNEON_GODOT_OK`, and exited 0. The Sims side was the in-process adapter, not a live game run;
+this proves contract portability, not game performance. Stage 6 is complete.
+
 ## Current Work Order
 
-1. Run the same benchmark scenario through both adapters and evaluate the Stage 6 exit gate.
+1. Build the Stage 7 agent, event, decision, and belief timeline.
 
 See `docs/roadmap.md` for evidence gates.

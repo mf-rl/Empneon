@@ -1,0 +1,13 @@
+{
+  "name": "portability-encounter",
+  "agent_id": "godot-a",
+  "preferred_clod": 1,
+  "event": {
+    "id": "godot-encounter-1",
+    "type": "encounter",
+    "actor_ids": ["godot-a", "godot-b"],
+    "location": "godot-square",
+    "facts": {"distance": 1},
+    "happened_at": 1
+  }
+}

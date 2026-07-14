@@ -91,7 +91,7 @@ predefined believability and consistency threshold.
 - [x] Build a minimal second adapter without adding game concepts to the core
 - [x] Publish adapter contract tests and development guide
 - [x] Measure adapter implementation effort
-- [ ] Run the same benchmark scenario through both adapters
+- [x] Run the same benchmark scenario through both adapters
 
 The selected environment is a minimal Godot 4 project written in GDScript. It is materially
 different from The Sims 4 adapter across engine, scripting language, process boundary, and
@@ -114,6 +114,15 @@ for this minimal contract proof.
 
 **Exit gate:** Both adapters run the same benchmark scenario through unchanged core
 contracts.
+
+**Passed 2026-07-13.** `godot/portability/scenario.json` defines the canonical two-agent
+encounter. The integration test constructed its `WorldEvent` and equivalent CLOD 1 requests,
+then used the provider-free Core path with the Sims reference adapter and the Godot bridge.
+Both paths produced decision `abc780ba-3e2c-501a-95a5-85e289d2a7f5`, preserved event evidence
+and decision identity, and returned successful game-specific results. Godot 4.7 independently
+consumed the same file headlessly, printed `EMPNEON_GODOT_OK`, and exited 0. The Sims side was
+the in-process reference adapter, not a live game run; this gate demonstrates contract
+portability rather than game performance or production readiness. Stage 6 is complete.
 
 ## Stage 7: Developer Product
 
@@ -254,5 +263,5 @@ confirmed-outcome invariants for the Sims 4 and Godot boundaries. The first work
 required a 29m42s commit window, 221 runtime lines across five files, 36 focused-test lines,
 zero Core changes, and zero Python dependency changes. Publishing the contract suite and guide
 added 36m26s and 167 lines. These are reproducible repository-session measurements, not
-person-hours or production estimates. The same benchmark scenario must still run through both
-adapters before the portability exit gate passes.
+person-hours or production estimates. The canonical scenario subsequently passed through both
+adapter boundaries and the real headless Godot engine, completing Stage 6.

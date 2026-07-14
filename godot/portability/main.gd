@@ -1,12 +1,9 @@
 extends Node
 
 const BRIDGE_URL := "http://127.0.0.1:8790"
+const SCENARIO_PATH := "res://scenario.json"
 
 var headers := PackedStringArray(["Content-Type: application/json"])
-var agents := {
-	"godot-a": {"state": "idle"},
-	"godot-b": {"state": "idle"},
-}
 
 
 func _ready() -> void:
@@ -14,15 +11,20 @@ func _ready() -> void:
 
 
 func _run_encounter() -> void:
-	var event := {
-		"id": "godot-encounter-1",
-		"type": "encounter",
-		"actor_ids": ["godot-a", "godot-b"],
-		"location": "godot-square",
-		"facts": {"distance": 1},
-		"happened_at": 1,
-	}
-	var decision := await _post("/decision", {"agent_id": "godot-a", "event": event})
+	var scenario = JSON.parse_string(FileAccess.get_file_as_string(SCENARIO_PATH))
+	if not scenario is Dictionary or not scenario.get("event") is Dictionary:
+		_fail("invalid benchmark scenario")
+		return
+	var event: Dictionary = scenario["event"]
+	var agents := {}
+	for actor_id in event.get("actor_ids", []):
+		agents[str(actor_id)] = {"state": "idle"}
+	if agents.size() != 2:
+		_fail("benchmark scenario requires two agents")
+		return
+	var decision := await _post(
+		"/decision", {"agent_id": scenario.get("agent_id", ""), "event": event}
+	)
 	if decision.is_empty() or decision.get("intent") != "acknowledge":
 		_fail("invalid decision")
 		return
@@ -39,7 +41,10 @@ func _run_encounter() -> void:
 	if not result.get("accepted", false):
 		_fail("result was not accepted")
 		return
-	print("EMPNEON_GODOT_OK decision=%s state=%s" % [decision["id"], agents["godot-a"]["state"]])
+	print(
+		"EMPNEON_GODOT_OK scenario=%s decision=%s state=%s"
+		% [scenario.get("name", ""), decision["id"], agents[decision["actor_id"]]["state"]]
+	)
 	get_tree().quit(0)
 
 

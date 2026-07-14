@@ -29,8 +29,8 @@ The Sims 4 is adapter number one and the first public demonstration. A deliberat
 different second adapter must prove that the core contracts are portable. The minimal Godot 4
 adapter now runs a two-agent encounter through the unchanged contracts; its GDScript world
 mutation and localhost bridge remain outside Core. Both adapters now pass the published shared
-contract invariants; the same benchmark scenario is still needed before the portability exit
-gate passes. Roblox, Unity,
+contract invariants and the same canonical two-agent benchmark scenario. The real Godot engine
+also completed that scenario headlessly, so the Stage 6 portability gate passes. Roblox, Unity,
 Unreal, and other integrations remain future adapter candidates, not core dependencies.
 
 ### 2. The core is provider-agnostic

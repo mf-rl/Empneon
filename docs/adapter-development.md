@@ -115,3 +115,27 @@ git show --format= --numstat b629df0 -- tests/contract/test_game_adapters.py doc
 The empty Core/dependency diff demonstrates architectural isolation for this proof. These
 numbers do not estimate production gameplay mapping, engine packaging, authentication, or
 long-term maintenance.
+
+## Portability Exit Benchmark
+
+`godot/portability/scenario.json` is the canonical Stage 6 scenario. The integration check
+loads that file once, builds one canonical event and equivalent CLOD 1 requests, and executes
+the resulting deterministic decision through both adapter boundaries:
+
+```powershell
+py -3.12 -m pytest tests/integration/test_portability_benchmark.py -q
+```
+
+The Sims adapter confirms its native `animation=idle` mapping. The Godot bridge confirms its
+native `awareness.godot-b=true` mapping. Both preserve decision
+`abc780ba-3e2c-501a-95a5-85e289d2a7f5`, its evidence, and successful status.
+
+The real Godot scene reads the same JSON file. With the bridge running, this command must print
+`EMPNEON_GODOT_OK` and exit 0:
+
+```powershell
+godot --headless --path godot/portability
+```
+
+This passed on Godot 4.7 on 2026-07-13. The Sims half uses the in-process reference adapter;
+use the separate Sims live-game protocol for game performance or release validation.

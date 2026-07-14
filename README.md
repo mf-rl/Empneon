@@ -152,7 +152,7 @@ Version **0.2.0** is an early framework release.
 - [x] Minimal Godot 4 second adapter
 - [x] Published adapter contract tests and development guide
 - [x] Measured minimal adapter implementation effort
-- [ ] Cross-adapter portability exit gate
+- [x] Cross-adapter portability exit gate
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -264,12 +264,19 @@ own agent state and reports the result; no Godot concepts were added to Core. A 
 headless run completed with `EMPNEON_GODOT_OK` and exit code 0. A published parametrized
 contract suite now applies the same actor, evidence, decision-ID, and confirmed-outcome
 invariants to both adapters, and the development guide documents in-process and external-engine
-integration. Only the cross-adapter exit gate remains pending.
+integration.
 The first working adapter took a 29m42s commit window and 221 runtime lines across five files,
 with 36 focused-test lines, no Core changes, and no Python dependency changes. Contract-suite
 and guide publication added 36m26s and 167 lines. These are repository-session measurements,
-not person-hours or production-integration estimates. The cross-adapter exit gate remains
-pending.
+not person-hours or production-integration estimates.
+
+The Stage 6 exit gate now passes. `godot/portability/scenario.json` is the single canonical
+two-agent encounter used by the integration test and the Godot scene. The Sims reference
+adapter and Godot bridge produced the same deterministic Core decision
+`abc780ba-3e2c-501a-95a5-85e289d2a7f5`, preserved its evidence and decision ID, and returned
+successful game-specific results. Godot 4.7 then ran that file headlessly and exited 0 with
+`EMPNEON_GODOT_OK`. This validates adapter portability, not live Sims performance or production
+readiness. Stage 6 is complete.
 
 ## Documentation
 
