@@ -110,7 +110,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 162 tests and Ruff pass. Strict mypy passes for Core, both adapter
+Current verification: 163 tests and Ruff pass. Strict mypy passes for Core, both adapter
 boundaries, and the published contract suite; the full test tree still has pre-existing
 annotation failures. Published evidence supports no scalability or player-quality claim.
 

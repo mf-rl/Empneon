@@ -28,7 +28,7 @@ code exists.
 - [x] Enforce context, token, latency, concurrency, RAM, and VRAM budgets
 - [x] Record request estimates and actual provider usage
 - [x] Add deterministic degradation and provider-failure fallback
-- [x] Move Sims POC persistence and cognition behind Empneon Core
+- [x] Route Sims POC cognition and action recording through Empneon Core
 
 **Exit gate:** One Sims event becomes a generic event, produces a validated decision,
 executes through the adapter, and persists its result without the POC duplicating core

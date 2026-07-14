@@ -23,8 +23,9 @@ Install Core first with `py -3.12 -m pip install -e .` from the repository root.
 ```
 
 5. In The Sims 4, enable custom content and script mods, then restart the game. Clicking another
-   Sim now shows **Empneon Social** in the pie menu. The current entry records the selected pair;
-   native message input and generated response feedback are the next prototype task.
+   Sim now shows **Empneon Social** in the pie menu. It opens native message input and displays
+   progress, generated dialogue, or errors. Successful live generation and safe cancellation
+   still require the Stage 6.5 validation documented in [the roadmap](../docs/roadmap.md).
 
    The existing diagnostic commands remain available through the cheat console:
 
