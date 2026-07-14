@@ -90,7 +90,8 @@ predefined believability and consistency threshold.
 - [x] Choose one materially different second environment: Godot 4
 - [x] Build a minimal second adapter without adding game concepts to the core
 - [x] Publish adapter contract tests and development guide
-- [ ] Measure adapter implementation effort
+- [x] Measure adapter implementation effort
+- [ ] Run the same benchmark scenario through both adapters
 
 The selected environment is a minimal Godot 4 project written in GDScript. It is materially
 different from The Sims 4 adapter across engine, scripting language, process boundary, and
@@ -249,5 +250,9 @@ while a localhost JSON bridge translates only the existing generic contracts and
 provider-free CLOD 1 resolver. The engine confirmed one deterministic encounter and returned
 a successful applied state delta in a Godot 4.7 headless run. Shared contract tests and the
 adapter development guide now document and verify the shared actor, evidence, decision-ID, and
-confirmed-outcome invariants for the Sims 4 and Godot boundaries. Adapter implementation-effort
-measurement is the next Stage 6 task; the portability exit gate has not passed.
+confirmed-outcome invariants for the Sims 4 and Godot boundaries. The first working adapter
+required a 29m42s commit window, 221 runtime lines across five files, 36 focused-test lines,
+zero Core changes, and zero Python dependency changes. Publishing the contract suite and guide
+added 36m26s and 167 lines. These are reproducible repository-session measurements, not
+person-hours or production estimates. The same benchmark scenario must still run through both
+adapters before the portability exit gate passes.

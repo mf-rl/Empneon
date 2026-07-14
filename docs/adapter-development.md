@@ -86,3 +86,32 @@ py -3.12 -m pytest tests/contract -q
 Add a small round-trip factory for a new adapter to that parametrized test. Use stable synthetic
 identities and no personal save data. Adapter-specific validation belongs in focused unit tests;
 cross-engine performance and believability belong in SocietyBench.
+
+## Measured Godot Proof Effort
+
+This measurement covers the minimal two-agent portability proof, not a production integration.
+Commit timestamps are elapsed repository-session windows, not person-hours.
+
+| Deliverable | Measured effort |
+|---|---|
+| First working adapter | 29m42s from target selection (`2e2302c`) to implementation (`6ccd507`) |
+| Runtime surface | 221 added lines across 5 files |
+| Runtime split | 128 Python bridge lines, 69 GDScript lines, 24 Godot scene/config lines |
+| Focused validation | 36 added test lines plus one successful Godot 4.7 headless run |
+| Core impact | 0 changed files and 0 changed lines under `src/empneon/core` |
+| Python dependency impact | 0 changes to `pyproject.toml` |
+| Contract suite and guide | 36m26s and 167 added lines (`6ccd507` to `b629df0`) |
+| Selection through published guide | 1h06m08s elapsed |
+
+Reproduce the line counts and timestamps with:
+
+```powershell
+git show -s --format="%h|%aI|%s" 2e2302c 6ccd507 b629df0
+git show --format= --numstat 6ccd507 -- godot/portability src/empneon/adapters/godot tests/unit/test_godot_bridge.py
+git diff --numstat 2e2302c 6ccd507 -- src/empneon/core pyproject.toml
+git show --format= --numstat b629df0 -- tests/contract/test_game_adapters.py docs/adapter-development.md
+```
+
+The empty Core/dependency diff demonstrates architectural isolation for this proof. These
+numbers do not estimate production gameplay mapping, engine packaging, authentication, or
+long-term maintenance.

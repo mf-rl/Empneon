@@ -151,6 +151,7 @@ Version **0.2.0** is an early framework release.
 - [x] Initial adaptive-policy comparison against Stage 3 baselines
 - [x] Minimal Godot 4 second adapter
 - [x] Published adapter contract tests and development guide
+- [x] Measured minimal adapter implementation effort
 - [ ] Cross-adapter portability exit gate
 - [ ] Validated in-game performance benchmarks
 
@@ -263,7 +264,12 @@ own agent state and reports the result; no Godot concepts were added to Core. A 
 headless run completed with `EMPNEON_GODOT_OK` and exit code 0. A published parametrized
 contract suite now applies the same actor, evidence, decision-ID, and confirmed-outcome
 invariants to both adapters, and the development guide documents in-process and external-engine
-integration. Effort measurement and the cross-adapter exit gate remain pending.
+integration. Only the cross-adapter exit gate remains pending.
+The first working adapter took a 29m42s commit window and 221 runtime lines across five files,
+with 36 focused-test lines, no Core changes, and no Python dependency changes. Contract-suite
+and guide publication added 36m26s and 167 lines. These are repository-session measurements,
+not person-hours or production-integration estimates. The cross-adapter exit gate remains
+pending.
 
 ## Documentation
 

@@ -88,6 +88,7 @@ performance numbers until measured in-game.
 - Godot 4 selected as the materially different Stage 6 environment
 - Minimal Godot 4 adapter round trip through unchanged Core contracts
 - Published shared adapter contract tests and development guide
+- Reproducible minimal Godot adapter implementation-effort measurement
 
 The POC `AgentManager` is a semaphore, not the target cognitive scheduler. A zone alarm
 submits one instantiated NPC pair every 30 simulated minutes, prevents overlapping
@@ -219,8 +220,14 @@ published parametrized contract suite checks both adapters against the same acto
 decision-ID, and confirmed-outcome invariants. `docs/adapter-development.md` documents the
 in-process and external-engine paths. Stage 6 is not complete.
 
+Godot proof effort is measured from repository evidence: 29m42s from target selection to the
+first working adapter; 221 runtime lines across five files; 36 focused-test lines; zero Core
+or Python dependency changes. Publishing the contract suite and guide added 36m26s and 167
+lines, for 1h06m08s from selection through publication. These commit windows are not
+person-hours or production estimates.
+
 ## Current Work Order
 
-1. Measure adapter implementation effort.
+1. Run the same benchmark scenario through both adapters and evaluate the Stage 6 exit gate.
 
 See `docs/roadmap.md` for evidence gates.
