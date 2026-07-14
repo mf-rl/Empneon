@@ -89,7 +89,7 @@ predefined believability and consistency threshold.
 
 - [x] Choose one materially different second environment: Godot 4
 - [x] Build a minimal second adapter without adding game concepts to the core
-- [ ] Publish adapter contract tests and development guide
+- [x] Publish adapter contract tests and development guide
 - [ ] Measure adapter implementation effort
 
 The selected environment is a minimal Godot 4 project written in GDScript. It is materially
@@ -248,4 +248,6 @@ The minimal Godot 4 adapter is now runnable. Its two-agent GDScript scene owns w
 while a localhost JSON bridge translates only the existing generic contracts and invokes the
 provider-free CLOD 1 resolver. The engine confirmed one deterministic encounter and returned
 a successful applied state delta in a Godot 4.7 headless run. Shared contract tests and the
-adapter development guide are the next Stage 6 task; the portability exit gate has not passed.
+adapter development guide now document and verify the shared actor, evidence, decision-ID, and
+confirmed-outcome invariants for the Sims 4 and Godot boundaries. Adapter implementation-effort
+measurement is the next Stage 6 task; the portability exit gate has not passed.

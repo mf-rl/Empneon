@@ -150,6 +150,7 @@ Version **0.2.0** is an early framework release.
 - [x] Archetype approximation gate (not justified; not implemented)
 - [x] Initial adaptive-policy comparison against Stage 3 baselines
 - [x] Minimal Godot 4 second adapter
+- [x] Published adapter contract tests and development guide
 - [ ] Cross-adapter portability exit gate
 - [ ] Validated in-game performance benchmarks
 
@@ -259,12 +260,15 @@ boundary than another Python simulation. The implemented adapter sends one deter
 encounter through a localhost-only standard-library bridge using the existing `WorldEvent`,
 `Decision`, and `ActionResult` shapes. Godot applies the generic `acknowledge` intent to its
 own agent state and reports the result; no Godot concepts were added to Core. A Godot 4.7
-headless run completed with `EMPNEON_GODOT_OK` and exit code 0. The shared adapter contract
-suite, development guide, effort measurement, and cross-adapter exit gate remain pending.
+headless run completed with `EMPNEON_GODOT_OK` and exit code 0. A published parametrized
+contract suite now applies the same actor, evidence, decision-ID, and confirmed-outcome
+invariants to both adapters, and the development guide documents in-process and external-engine
+integration. Effort measurement and the cross-adapter exit gate remain pending.
 
 ## Documentation
 
 - [Vision and architecture](docs/vision.md)
+- [Adapter development guide](docs/adapter-development.md)
 - [Research and innovation program](docs/innovations.md)
 - [SocietyBench results](docs/benchmark-results.md)
 - [Business model](docs/business-model.md)

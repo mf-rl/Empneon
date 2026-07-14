@@ -28,8 +28,9 @@ game adapter -> ActionResult -> Empneon Core
 The Sims 4 is adapter number one and the first public demonstration. A deliberately
 different second adapter must prove that the core contracts are portable. The minimal Godot 4
 adapter now runs a two-agent encounter through the unchanged contracts; its GDScript world
-mutation and localhost bridge remain outside Core. Shared conformance testing is still needed
-before the portability exit gate passes. Roblox, Unity,
+mutation and localhost bridge remain outside Core. Both adapters now pass the published shared
+contract invariants; the same benchmark scenario is still needed before the portability exit
+gate passes. Roblox, Unity,
 Unreal, and other integrations remain future adapter candidates, not core dependencies.
 
 ### 2. The core is provider-agnostic
