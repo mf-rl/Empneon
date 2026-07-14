@@ -9,9 +9,13 @@ import clock
 import services
 import sims4.commands
 import zone
+from interactions.base.immediate_interaction import ImmediateSuperInteraction
+from sims.sim import Sim
+from sims4.localization import LocalizationHelperTuning
 
 
 BACKEND_URL = "http://127.0.0.1:8765"
+EMPNEON_SOCIAL_INTERACTION_ID = 16906812068311597057
 AUTONOMY_INTERVAL_SIM_MINUTES = 30
 AVAILABLE_ACTIONS = [
     "friendly_chat",
@@ -47,6 +51,52 @@ def write_marker(text):
 
 
 write_marker("AI Sims Agent imported")
+
+
+class EmpneonSocialInteraction(ImmediateSuperInteraction):
+    @classmethod
+    def get_name(cls, target, context, **interaction_parameters):
+        return LocalizationHelperTuning.get_raw_text("Empneon Social")
+
+    def _run_interaction_gen(self, timeline):
+        actor = getattr(self, "sim", None)
+        target = getattr(self, "target", None)
+        write_marker(
+            "Empneon Social selected: {} -> {}".format(
+                sim_full_name(getattr(actor, "sim_info", actor)),
+                sim_full_name(getattr(target, "sim_info", target)),
+            )
+        )
+        if False:
+            yield None
+        return True
+
+
+def install_empneon_social(sim):
+    try:
+        affordance = services.affordance_manager().get(EMPNEON_SOCIAL_INTERACTION_ID)
+        if affordance is None:
+            write_marker("Empneon Social tuning not loaded")
+            return False
+        current = tuple(getattr(sim, "_super_affordances", ()))
+        if affordance not in current:
+            sim._super_affordances = current + (affordance,)
+        return True
+    except Exception:
+        write_marker(traceback.format_exc())
+        return False
+
+
+_ORIGINAL_SIM_ON_ADD = Sim.on_add
+
+
+def _on_sim_add(self, *args, **kwargs):
+    result = _ORIGINAL_SIM_ON_ADD(self, *args, **kwargs)
+    install_empneon_social(self)
+    return result
+
+
+Sim.on_add = _on_sim_add
 
 
 def command(name):

@@ -126,7 +126,7 @@ portability rather than game performance or production readiness. Stage 6 is com
 
 ## Stage 6.5: Playable Sims 4 Prototype
 
-- [ ] Add one player-triggered Empneon social interaction to the Sim pie menu
+- [x] Add one player-triggered Empneon social interaction to the Sim pie menu
 - [ ] Display generated dialogue and action outcome through native in-game UI
 - [ ] Map a whitelist of three to five generic intents to base-game social interactions
 - [ ] Execute the selected native interaction and persist only its game-confirmed outcome
@@ -138,6 +138,12 @@ This stage turns the working reference adapter into a noticeable gameplay vertic
 developer-product work begins. It must reuse base-game interactions and native UI where possible.
 Custom animations, voice, unrestricted autonomous control, a large interaction library, and an
 elaborate UI are outside this prototype.
+
+**Pie-menu validation, 2026-07-13:** The packaged `Empneon:Social` interaction loaded in game,
+appeared as **Empneon Social** when the player clicked another Sim, and recorded the selected
+actor and target for two live invocations without the cheat console. The mod build and installer
+now produce and deploy both the script archive and its interaction-tuning package. Generated
+dialogue and visible outcome feedback remain the next checklist item.
 
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
@@ -287,7 +293,8 @@ added 36m26s and 167 lines. These are reproducible repository-session measuremen
 person-hours or production estimates. The canonical scenario subsequently passed through both
 adapter boundaries and the real headless Godot engine, completing Stage 6.
 
-Stage 6.5 is now the current focus. It requires a player-triggered pie-menu interaction first,
-then native UI feedback, a small base-game social whitelist, game-confirmed consequences,
+Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction passed live
+validation. The next task is native input and dialogue/outcome feedback, followed by a small
+base-game social whitelist, game-confirmed consequences,
 context-dependent follow-up behavior, and save/reload plus cancellation validation. Stage 7
 must not begin until this playable prototype passes its in-game exit gate.

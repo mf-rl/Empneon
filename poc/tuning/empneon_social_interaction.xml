@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<I c="EmpneonSocialInteraction" i="interaction" m="ai_sims_agent" n="Empneon:Social" s="16906812068311597057">
+  <V n="_saveable" t="disabled" />
+  <T n="allow_autonomous">False</T>
+</I>

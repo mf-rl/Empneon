@@ -153,6 +153,7 @@ Version **0.2.0** is an early framework release.
 - [x] Published adapter contract tests and development guide
 - [x] Measured minimal adapter implementation effort
 - [x] Cross-adapter portability exit gate
+- [x] Player-triggered Empneon Sims 4 pie-menu interaction
 - [ ] Playable Sims 4 prototype with visible native consequences
 - [ ] Validated in-game performance benchmarks
 
@@ -285,6 +286,11 @@ three to five whitelisted base-game socials, game-confirmed relationship or mood
 and a later choice changed by retained context. Its exit gate requires save/reload continuity
 and safe cancellation without relying on cheat-console commands. Custom animation, voice, broad
 autonomy, and elaborate UI remain out of scope.
+
+The first Stage 6.5 item passed live validation on 2026-07-13. Clicking another Sim exposed an
+**Empneon Social** pie-menu entry, and two selections recorded the correct player and target Sims
+without a cheat-console command. The next item adds native message input and generated
+dialogue/outcome feedback; the interaction does not yet contact Empneon when selected.
 
 ## Documentation
 

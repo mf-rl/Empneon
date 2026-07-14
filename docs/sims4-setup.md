@@ -25,23 +25,26 @@ Python 3.12 may be replaced with any installed Python version supported by
 
 1. Configure and start an OpenAI-compatible provider. The default is LM Studio at
    `http://127.0.0.1:1234`.
-2. Install the script mod:
+2. Install the script mod and interaction tuning:
 
    ```powershell
    .\poc\install_mod.ps1
    ```
 
-   The script builds with Python 3.7, copies
-   `AI_Sims_Agent.ts4script` into the game's `Mods` directory, and clears the Sims
-   thumbnail cache.
+   The script builds with Python 3.7, copies `AI_Sims_Agent.ts4script` and
+   `AI_Sims_Agent.package` into the game's `Mods` directory, and clears the Sims thumbnail
+   cache.
 3. Start the backend from the repository root:
 
    ```powershell
    .\poc\run_backend.ps1
    ```
 
-4. Restart The Sims 4, load a household, and run `aiping` in the cheat console.
-5. Use `aichat Bella Goth | Hello` for a model-backed interaction. With a lot active,
+4. Restart The Sims 4 and load a household. Clicking another Sim exposes the
+   **Empneon Social** pie-menu entry. The current entry records the selected actor and target;
+   native message input and generated response feedback are not implemented yet.
+5. Run `aiping` in the cheat console for backend diagnostics, then use
+   `aichat Bella Goth | Hello` for the existing model-backed interaction. With a lot active,
    the mod also submits at most one non-player pair every 30 simulated minutes.
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or

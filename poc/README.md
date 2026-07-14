@@ -16,13 +16,17 @@ Install Core first with `py -3.12 -m pip install -e .` from the repository root.
 .\run_backend.ps1
 ```
 
-4. Install the script mod:
+4. Install the script mod and interaction tuning:
 
 ```powershell
 .\install_mod.ps1
 ```
 
-5. In The Sims 4, enable script mods, restart the game, open the cheat console, and use:
+5. In The Sims 4, enable custom content and script mods, then restart the game. Clicking another
+   Sim now shows **Empneon Social** in the pie menu. The current entry records the selected pair;
+   native message input and generated response feedback are the next prototype task.
+
+   The existing diagnostic commands remain available through the cheat console:
 
 ```text
 ai.loaded
@@ -44,6 +48,7 @@ The packaged mod currently requires the backend at `127.0.0.1:8765`.
 ## Files
 
 - `backend/ai_sims_server.py`: local AI backend; `/chat` and `/autonomous` run through Core
-- `ts4script/ai_sims_agent.py`: Sims 4 cheat commands
-- `build_mod.py`: builds `dist/AI_Sims_Agent.ts4script`
+- `ts4script/ai_sims_agent.py`: Sims 4 interaction, autonomy bridge, and diagnostic commands
+- `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning
+- `build_mod.py`: builds the `.ts4script` and `.package` mod artifacts
 - `test.py`: smoke test for `/chat`
