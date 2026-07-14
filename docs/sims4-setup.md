@@ -41,8 +41,9 @@ Python 3.12 may be replaced with any installed Python version supported by
    ```
 
 4. Restart The Sims 4 and load a household. Clicking another Sim exposes the
-   **Empneon Social** pie-menu entry. The current entry records the selected actor and target;
-   native message input and generated response feedback are not implemented yet.
+   **Empneon Social** pie-menu entry. It opens a native message field, submits the message to
+   Empneon, and uses native notifications for progress, generated dialogue, or errors. Native Sim
+   movement and base-game social execution are later Stage 6.5 tasks and are not implemented yet.
 5. Run `aiping` in the cheat console for backend diagnostics, then use
    `aichat Bella Goth | Hello` for the existing model-backed interaction. With a lot active,
    the mod also submits at most one non-player pair every 30 simulated minutes.
@@ -78,6 +79,30 @@ Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_ke
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
 and `models.large` may override `provider`, `endpoint`, `model`, `temperature`, and
 `max_tokens` per task.
+
+### Native social UI validation handoff
+
+The 2026-07-13 live test used game version `1.121.361.1020`,
+`AI_SIM_DB=$PWD\stage2-6-poc.sqlite3`, and
+`AI_SIM_CONFIG=$PWD\stage2-6-config.json`. The text field accepted the player's message and the
+request reached Empneon, but LM Studio did not complete generation. A direct eight-token request
+to `http://127.0.0.1:1234/v1/chat/completions` also timed out after 120 seconds, while Empneon's
+`/health` endpoint remained healthy. This distinguishes a stalled provider from a Sims dialog or
+backend-connectivity failure.
+
+Before the next in-game test:
+
+1. Restart the LM Studio server and reload `gemma-4-e4b-it-uncensored`.
+2. Reduce its context length from 131,072 to 8,192 and parallel requests from four to one.
+3. Confirm a minimal direct completion returns promptly.
+4. Start or retain the backend with the environment variables above.
+5. Reinstall with `.\poc\install_mod.ps1`, restart the game, and submit **Empneon Social**.
+6. Confirm progress and generated-result notifications, then cancel a second dialog and confirm
+   cancellation produces no request.
+
+Do not mark the native UI roadmap item complete until generated feedback and safe cancellation
+both pass live. Do not diagnose the active Sim remaining still as part of this item; routing the
+actor to the target requires the later whitelisted native-interaction execution task.
 
 Memory settings:
 

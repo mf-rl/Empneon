@@ -1,7 +1,7 @@
 import json
 import os
-import traceback
 import threading
+import traceback
 import urllib.parse
 
 import alarms
@@ -11,8 +11,12 @@ import sims4.commands
 import zone
 from interactions.base.immediate_interaction import ImmediateSuperInteraction
 from sims.sim import Sim
+from sims4.collections import FrozenAttributeDict
 from sims4.localization import LocalizationHelperTuning
-
+from sims4.tuning.tunable import AutoFactoryInit, HasTunableSingletonFactory
+from ui.ui_dialog_generic import UiDialogTextInputOkCancel
+from ui.ui_dialog_notification import UiDialogNotification
+from ui.ui_text_input import UiTextInput
 
 BACKEND_URL = "http://127.0.0.1:8765"
 EMPNEON_SOCIAL_INTERACTION_ID = 16906812068311597057
@@ -34,6 +38,7 @@ _AUTONOMY_RESPONSE_ALARM = None
 _AUTONOMY_CURSOR = 0
 _AUTONOMY_IN_FLIGHT = False
 _AUTONOMY_RESPONSES = []
+_CHAT_RESPONSES = []
 _AUTONOMY_RESPONSES_LOCK = threading.Lock()
 
 
@@ -67,6 +72,7 @@ class EmpneonSocialInteraction(ImmediateSuperInteraction):
                 sim_full_name(getattr(target, "sim_info", target)),
             )
         )
+        show_empneon_message_dialog(actor, target)
         if False:
             yield None
         return True
@@ -330,7 +336,13 @@ def autonomous_tick(_alarm_handle):
 
 def process_autonomy_responses(_alarm_handle):
     with _AUTONOMY_RESPONSES_LOCK:
+        chat_item = _CHAT_RESPONSES.pop(0) if _CHAT_RESPONSES else None
         item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
+    if chat_item is not None:
+        try:
+            show_empneon_chat_result(*chat_item)
+        except Exception:
+            write_marker(traceback.format_exc())
     if item is None:
         return
     payload, data, selected_interaction = item
@@ -539,6 +551,125 @@ def query_json(path, params, timeout=10):
     return get_json(suffix, timeout=timeout)
 
 
+def raw_text(text):
+    return lambda **_: LocalizationHelperTuning.get_raw_text(str(text))
+
+
+def show_empneon_notification(owner, title, text):
+    notification = UiDialogNotification.TunableFactory().default(
+        owner,
+        title=raw_text(title),
+        text=raw_text(text),
+    )
+    notification.show_dialog()
+
+
+class EmpneonTextInputLength(HasTunableSingletonFactory, AutoFactoryInit):
+    def build_msg(self, dialog, msg, *additional_tokens):
+        msg.max_length = 280
+        msg.min_length = 1
+        msg.input_too_short_tooltip = LocalizationHelperTuning.get_raw_text(
+            "Enter at least one character."
+        )
+
+
+def show_empneon_message_dialog(actor, target):
+    if actor is None or target is None:
+        write_marker("Empneon Social canceled: actor or target unavailable")
+        return
+    target_name = sim_full_name(getattr(target, "sim_info", target))
+    message_input = UiTextInput(sort_order=0, restricted_characters=None)
+    message_input.default_text = raw_text("Type a message...")
+    message_input.title = None
+    message_input.initial_value = None
+    message_input.check_profanity = False
+    message_input.height = None
+    message_input.length_restriction = EmpneonTextInputLength()
+    # The game checks text-input names with hasattr(), so this must support
+    # attribute lookup as well as mapping iteration.
+    inputs = FrozenAttributeDict({"message": message_input})
+    dialog = UiDialogTextInputOkCancel.TunableFactory().default(
+        actor,
+        title=raw_text("Empneon Social"),
+        text=raw_text("What should {} say to {}?".format(sim_full_name(actor.sim_info), target_name)),
+        text_inputs=inputs,
+    )
+
+    def on_response(response):
+        if not getattr(response, "accepted", False):
+            write_marker("Empneon Social input canceled")
+            return
+        responses = getattr(response, "text_input_responses", {}) or {}
+        value = responses.get("message")
+        if not value:
+            value = next((item for item in responses.values() if item), "")
+        message = str(getattr(value, "text", value) or "").strip()
+        write_marker(
+            "Empneon Social input keys={} length={}".format(
+                tuple(str(key) for key in responses),
+                len(message),
+            )
+        )
+        if not message:
+            show_empneon_notification(actor, "Empneon Social", "Enter a message before sending.")
+            return
+        submit_empneon_chat(actor, target, message)
+
+    dialog.add_listener(on_response)
+    dialog.show_dialog()
+
+
+def submit_empneon_chat(actor, target, message):
+    payload = chat_payload_for_target(
+        actor,
+        getattr(target, "sim_info", None),
+        message,
+        "pie_menu",
+    )
+    show_empneon_notification(actor, "Empneon Social", "Thinking...")
+
+    def worker():
+        try:
+            data = post_json("/chat", payload)
+            result = (actor, target, data, None)
+        except Exception as exc:
+            result = (actor, target, None, str(exc))
+        with _AUTONOMY_RESPONSES_LOCK:
+            _CHAT_RESPONSES.append(result)
+
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+
+
+def show_empneon_chat_result(actor, target, data, error):
+    target_name = sim_full_name(getattr(target, "sim_info", target))
+    if error:
+        show_empneon_notification(actor, "Empneon error", error)
+        write_marker("Empneon Social failed: " + error)
+        return
+    relationship = data.get("relationship") or {}
+    details = "Emotion: {} | Intent: {} | Suggested action: {}".format(
+        data.get("emotion", "neutral"),
+        data.get("intent", "respond"),
+        data.get("animation", "friendly_chat"),
+    )
+    deltas = [
+        "{} {:+d}".format(label, int(relationship.get(key) or 0))
+        for label, key in (
+            ("Friendship", "friendship_delta"),
+            ("Romance", "romance_delta"),
+            ("Trust", "trust_delta"),
+        )
+        if int(relationship.get(key) or 0)
+    ]
+    if deltas:
+        details += "\nEmpneon state: " + ", ".join(deltas)
+    dialogue = str(data.get("dialogue") or "...")
+    show_empneon_notification(actor, target_name, dialogue + "\n\n" + details)
+    write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
+
+
 def split_chat_args(args):
     parts = [str(item) for item in args]
     if "|" in parts:
@@ -653,14 +784,29 @@ def ai_ping(_connection=None):
         out(_connection, "AI backend error: {}".format(exc))
 
 
-def chat_payload(active, target_name, message):
+def chat_payload_for_target(active, target_info, message, source):
     player = sim_payload(active)
-    target_info = find_sim_info_by_name(target_name)
-    npc = sim_info_payload(target_info) if target_info is not None else npc_payload(target_name)
+    npc = sim_info_payload(target_info)
     return {
         "speaker": npc,
         "listener": player,
         "relationship": relationship_payload(active.sim_info, target_info),
+        "location": current_location(),
+        "event": {"type": "player_conversation", "source": source},
+        "available_actions": AVAILABLE_ACTIONS,
+        "message": message,
+    }
+
+
+def chat_payload(active, target_name, message):
+    target_info = find_sim_info_by_name(target_name)
+    if target_info is not None:
+        return chat_payload_for_target(active, target_info, message, "cheat_console")
+    player = sim_payload(active)
+    return {
+        "speaker": npc_payload(target_name),
+        "listener": player,
+        "relationship": relationship_payload(active.sim_info, None),
         "location": current_location(),
         "event": {"type": "player_conversation", "source": "cheat_console"},
         "available_actions": AVAILABLE_ACTIONS,

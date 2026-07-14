@@ -47,6 +47,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     commands.CheatOutput = lambda _connection: lambda _text: None
     sims4 = ModuleType("sims4")
     sims4.commands = commands
+    collections = ModuleType("sims4.collections")
+
+    class FrozenAttributeDict(dict):
+        __getattr__ = dict.__getitem__
+
+    collections.FrozenAttributeDict = FrozenAttributeDict
     resources = ModuleType("sims4.resources")
     resources.Types = SimpleNamespace(INTERACTION="interaction")
     resources.get_resource_key = lambda name, resource_type: (name, resource_type)
@@ -56,6 +62,55 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     sims = ModuleType("sims")
     sim_module = ModuleType("sims.sim")
     sim_module.Sim = type("Sim", (), {"on_add": lambda self: "added"})
+    ui = ModuleType("ui")
+    ui_dialog_generic = ModuleType("ui.ui_dialog_generic")
+    ui_dialog_notification = ModuleType("ui.ui_dialog_notification")
+    ui_text_input = ModuleType("ui.ui_text_input")
+    tunable = ModuleType("sims4.tuning.tunable")
+    tunable.AutoFactoryInit = type("AutoFactoryInit", (), {})
+    tunable.HasTunableSingletonFactory = type("HasTunableSingletonFactory", (), {})
+
+    class UiTextInput:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+        def build_msg(self, *args):
+            return None
+
+    ui_text_input.UiTextInput = UiTextInput
+    dialogs = []
+    notifications = []
+
+    class FakeDialog:
+        def __init__(self, owner, kwargs):
+            self.owner = owner
+            self.kwargs = kwargs
+            self.accepted = False
+            self.text_input_responses = {}
+            self.listener = None
+
+        def add_listener(self, listener):
+            self.listener = listener
+
+        def show_dialog(self, **kwargs):
+            self.show_kwargs = kwargs
+
+    def dialog_default(owner, **kwargs):
+        dialog = FakeDialog(owner, kwargs)
+        dialogs.append(dialog)
+        return dialog
+
+    def notification_default(owner, **kwargs):
+        notification = FakeDialog(owner, kwargs)
+        notifications.append(notification)
+        return notification
+
+    ui_dialog_generic.UiDialogTextInputOkCancel = SimpleNamespace(
+        TunableFactory=lambda: SimpleNamespace(default=dialog_default)
+    )
+    ui_dialog_notification.UiDialogNotification = SimpleNamespace(
+        TunableFactory=lambda: SimpleNamespace(default=notification_default)
+    )
     zone = ModuleType("zone")
     zone.Zone = type("Zone", (), {"on_loading_screen_animation_finished": lambda self: None})
     for name, module in {
@@ -69,9 +124,15 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "sims": sims,
         "sims.sim": sim_module,
         "sims4": sims4,
+        "sims4.collections": collections,
         "sims4.commands": commands,
         "sims4.localization": localization,
         "sims4.resources": resources,
+        "sims4.tuning.tunable": tunable,
+        "ui": ui,
+        "ui.ui_dialog_generic": ui_dialog_generic,
+        "ui.ui_dialog_notification": ui_dialog_notification,
+        "ui.ui_text_input": ui_text_input,
         "zone": zone,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
@@ -97,6 +158,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert pie_sim._super_affordances == (pie_affordance,)
     selected = []
     monkeypatch.setattr(agent, "write_marker", selected.append)
+    submitted = []
+    monkeypatch.setattr(
+        agent,
+        "submit_empneon_chat",
+        lambda actor, target, message: submitted.append((actor, target, message)),
+    )
     pie_interaction = agent.EmpneonSocialInteraction()
     pie_interaction.sim = SimpleNamespace(sim_info=SimpleNamespace(full_name="Alice"))
     pie_interaction.target = SimpleNamespace(sim_info=SimpleNamespace(full_name="Bob"))
@@ -106,6 +173,37 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         assert finished.value is True
     assert selected == ["Empneon Social selected: Alice -> Bob"]
     assert agent.EmpneonSocialInteraction.get_name(None, None) == "Empneon Social"
+    dialog = dialogs[-1]
+    assert hasattr(dialog.kwargs["text_inputs"], "message")
+    text_input = dialog.kwargs["text_inputs"]["message"]
+    assert callable(text_input.build_msg)
+    assert text_input.check_profanity is False
+    assert text_input.height is None
+    assert isinstance(
+        text_input.length_restriction,
+        agent.EmpneonTextInputLength,
+    )
+    assert dialog.show_kwargs == {}
+    dialog.accepted = True
+    dialog.text_input_responses = {"message": "  Remember our promise?  "}
+    dialog.listener(dialog)
+    assert submitted == [(pie_interaction.sim, pie_interaction.target, "Remember our promise?")]
+
+    agent.show_empneon_chat_result(
+        pie_interaction.sim,
+        pie_interaction.target,
+        {
+            "dialogue": "I remember.",
+            "emotion": "warm",
+            "intent": "reassure",
+            "animation": "friendly_chat",
+            "relationship": {"trust_delta": 2},
+        },
+        None,
+    )
+    assert "I remember." in notifications[-1].kwargs["text"]()
+    assert "Trust +2" in notifications[-1].kwargs["text"]()
+    assert notifications[-1].show_kwargs == {}
 
     sim_chat = type("native_NPC_social", (), {})
     target = type(

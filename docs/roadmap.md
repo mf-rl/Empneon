@@ -145,6 +145,33 @@ actor and target for two live invocations without the cheat console. The mod bui
 now produce and deploy both the script archive and its interaction-tuning package. Generated
 dialogue and visible outcome feedback remain the next checklist item.
 
+**Native UI handoff, 2026-07-13:** The open second checklist item now has a native text-entry
+dialog, a **Thinking...** notification, asynchronous `/chat` submission through the existing
+payload path, and a native result/error notification. Focused tests cover message capture and
+rendering the dialogue, intent, emotion, suggested action, and Empneon relationship deltas. The
+latest live build rendered and accepted text, reached the backend, and woke the target agent. It
+then displayed **Empneon error: Time out**, so successful generated feedback has not passed live
+validation and this item remains unchecked.
+
+Three Sims 4 `1.121.361.1020` UI compatibility problems were resolved during the live iterations:
+icon overrides cannot use the older tuple form, text input entries must be `UiTextInput` objects
+with the current required attributes, and the outer `text_inputs` mapping must support attribute
+lookup. Disassembly of the installed `UiDialogTextInput.on_text_input` showed that it calls
+`hasattr(self.text_inputs, text_input_name)`; using `FrozenAttributeDict` fixed the silently empty
+message response. The focused test now preserves that contract.
+
+The remaining blocker is outside the mod. The Empneon `/health` endpoint passed, but a direct
+eight-token request to LM Studio also produced no output and timed out after 120 seconds. LM Studio
+reported `gemma-4-e4b-it-uncensored` loaded with 131,072-token context, four parallel slots, batch
+size 2,048, and physical batch size 512 on the test machine's RTX 2060. Resume by restarting the LM
+Studio server/model with an 8,192-token context and one parallel slot, then verify a direct minimal
+completion before repeating the in-game interaction. The backend session used
+`AI_SIM_DB=$PWD\stage2-6-poc.sqlite3` and `AI_SIM_CONFIG=$PWD\stage2-6-config.json`; that config and
+the generated databases are local evidence and are intentionally not tracked. After a successful
+response, validate cancel without a backend request, update this checkbox, and commit the completed
+item. Do not add Sim movement here: intent whitelisting and native queued interaction execution are
+the next two roadmap items. Stage 7 remains blocked until the full Stage 6.5 exit gate passes.
+
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
 mood consequence. A second interaction between the same Sims must make a demonstrably different
@@ -294,7 +321,9 @@ person-hours or production estimates. The canonical scenario subsequently passed
 adapter boundaries and the real headless Godot engine, completing Stage 6.
 
 Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction passed live
-validation. The next task is native input and dialogue/outcome feedback, followed by a small
-base-game social whitelist, game-confirmed consequences,
-context-dependent follow-up behavior, and save/reload plus cancellation validation. Stage 7
-must not begin until this playable prototype passes its in-game exit gate.
+validation. Native input reaches the backend, but the generated-feedback item remains open because
+the configured LM Studio model stopped responding during live validation. Resume from the native
+UI handoff above, then continue with a small base-game social whitelist, queued native execution,
+game-confirmed consequences, context-dependent follow-up behavior, and save/reload plus
+cancellation validation. Stage 7 must not begin until this playable prototype passes its in-game
+exit gate.
