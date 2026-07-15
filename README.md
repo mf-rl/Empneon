@@ -180,8 +180,9 @@ interaction through the native executor.
 Filterable `ai.socialtunings friendly`
 diagnostics remain available for game-version investigation. Live validation passed
 across a game restart with 20 persistent Core agents, all 20 participating, 15 successful
-autonomous results, zero pending proposals, and 16 ordered consequences. Stage 2 is
-complete. Stage 3 now includes deterministic 20-agent social-ring and reciprocal-pair
+autonomous results, zero pending proposals, and 16 ordered consequences. Stage 2 is complete.
+
+Stage 3 now includes deterministic 20-agent social-ring and reciprocal-pair
 workloads plus comparable one-call-per-agent and provider-free fixed-CLOD baseline
 execution. Raw metric observations retain CPU, RAM, VRAM, frame time, tokens, and
 latency, with aggregate token totals and p50/p95 latency. The concurrent in-game
@@ -189,6 +190,7 @@ hardware run completed but showed severe pressure:
 87.37 ms p50 Sims frame time and 18.821 s p50 provider latency with 5,918 MiB peak VRAM
 use. These are preliminary measurements, not a performance claim. See
 [SocietyBench results](docs/benchmark-results.md).
+
 SocietyBench can also measure retained expected identities and contradictory values per
 agent subject; scenario-specific consistency evaluation remains separate from the raw
 hardware run. A 30-sim-minute Stage 2.6 regression run confirmed that native target
@@ -201,12 +203,14 @@ The foreground provider observations, raw PresentMon rows, blind evaluation arti
 checksums, configuration, and limitations are published in the
 [Stage 3 artifact manifest](output/README.md). Stage 3 is complete, but its preliminary
 results support no scalability or acceptable-performance claim.
+
 Stage 4 now has separate canonical-event, observation, and belief storage plus schema-backed
 belief provenance. Direct beliefs reference their agent's observation; transmitted beliefs
 reference their source belief and inherit an ordered lineage. Confidence is bounded, source
 evidence is protected by foreign keys, and contradictions can be recorded symmetrically
 between one agent's beliefs. Atomic revisions retain the original belief for audit while
 current-belief queries expose its single replacement.
+
 Beliefs now propagate without model calls through directed relationship trust. Confidence
 decays multiplicatively, statements remain unchanged, and hard hop, recipient, minimum-
 confidence, and cycle bounds prevent unbounded relay.
@@ -215,6 +219,7 @@ secret, a trust-decayed rumor, conflicting witness testimony, and a correction t
 the rumor while preserving history. Developers can request a JSON-serializable causal trace
 containing the canonical event, observation, ordered belief chain, and contradiction/revision
 records. The correction scenario verifies this output after restart, completing Stage 4.
+
 Stage 5 now begins from reusable comparison records that align each cognitive request with
 its provider-free fixed-CLOD 1 decision and one-call provider decision. The collector
 validates strategy coverage, result counts, and agent alignment before the records feed the
@@ -224,6 +229,7 @@ The same blinded ratings now yield a signed net-preference estimate: deeper-reas
 wins minus cheap-reasoning wins, divided by evaluated pairs. The initial 19-to-1 result
 is `+0.90` on a `-1` to `+1` scale. This is a synthetic single-evaluator proxy, not
 measured player utility.
+
 Core now accepts provider routes with a CLOD, capability declaration, resource estimate,
 and resolver. Expected value multiplied by request urgency gates deeper cognition; eligible
 routes are degraded to the highest affordable CLOD, with provider choice ordered by estimated
@@ -231,23 +237,28 @@ cost. Context and completion limits are clamped to the request, runtime budget, 
 context window before the existing governor reserves resources. If no route fits, selection
 remains deterministic at provider-free CLOD 1. The overall adaptive-scheduler item remains
 validated by the differentiated Stage 5 result below.
+
 Provider helpers now detect the longest common message prefix across compatible generation
 requests. Native batching is used only when the provider declares `batching`; prefix
 preparation is invoked only when it declares `prefix_caching`. Providers declaring neither
 capability continue through ordinary generation unchanged, and the OpenAI-compatible adapter
 currently declares neither. This is working capability routing, not a latency or cache-hit
 claim.
+
 The archetype approximation gate found no supporting comparison in the published evidence.
 Stage 3 measured individual one-call and fixed-CLOD paths, not pooled policies; it contains no
 archetype resource delta, quality-loss score, or promotion criterion. The `+0.90` preference
 for deeper individual reasoning also makes unmeasured approximation a quality risk. No
-archetype code was added. The adaptive replay reduced provider calls from 20 to 0, but
-retained only 5.26% of the one-call baseline's blinded preference rate: 5% adaptive versus
-95% one-call, below the predefined 90% retention threshold. Consistency was not re-evaluated,
-so the Stage 5 exit gate failed. The
-uniform Stage 3 urgency made every request choose CLOD 1, exposing that the first policy is too
-coarse rather than validating it. Stage 5 now requires a differentiated, predeclared workload
-and a new comparison before Stage 6. That workload is now implemented as 20 deterministic
+archetype code was added.
+
+The adaptive replay reduced provider calls from 20 to 0, but retained only 5.26% of the
+one-call baseline's blinded preference rate: 5% adaptive versus 95% one-call, below the
+predefined 90% retention threshold. Consistency was not re-evaluated, so the Stage 5 exit
+gate failed. The uniform Stage 3 urgency made every request choose CLOD 1, exposing that the
+first policy is too coarse rather than validating it.
+
+Stage 5 now requires a differentiated, predeclared workload and a new comparison before
+Stage 6. That workload is now implemented as 20 deterministic
 events: 8 low-, 6 medium-, and 6 high-value cases. Each event declares urgency plus
 consequence, novelty, and social-complexity features before any cognition output or rating
 exists. Their unweighted mean supplies expected value, producing a planned split of 8 cheap

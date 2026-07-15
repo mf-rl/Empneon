@@ -277,7 +277,9 @@ context, token, latency, concurrency, RAM, and VRAM ceilings. SQLite records req
 estimates and actual provider usage. Resource-admission and provider failures degrade
 deterministically to the provider-free CLOD 1 path. The Sims POC autonomous endpoint now
 runs generic autonomous and conversation events through Core and persists their adapter
-results. Stage 1 is complete. Sims observations enter generic world-event facts, and
+results. Stage 1 is complete.
+
+Sims observations enter generic world-event facts, and
 generic intents map to whitelisted actions reported available by the game. Core can store
 adapter-returned results and ordered consequences, and a bounded zone alarm submits NPC
 pairs without a player command. The confirmation path now persists observed Core
@@ -292,8 +294,9 @@ Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game protocol in
 `docs/sims4-setup.md`. The Stage 2 exit gate passed in a live game across a restart with
 20 persistent Core agents, all 20 participating, 15 successful autonomous results, zero
-pending proposals, and 16 ordered consequences. Stage 2 is complete. SocietyBench now
-defines deterministic 20-agent social-ring and reciprocal-pair workloads with stable
+pending proposals, and 16 ordered consequences. Stage 2 is complete.
+
+SocietyBench now defines deterministic 20-agent social-ring and reciprocal-pair workloads with stable
 request and event data. Both workloads can run comparable one-call-per-agent and
 provider-free fixed-CLOD 1 baselines while retaining their decisions and provider-call
 counts. SocietyBench retains validated raw CPU, RAM, VRAM, frame-time, token, and latency
@@ -302,6 +305,7 @@ and contradiction metrics were subsequently added. The first foreground concurre
 completed on baseline hardware with 20 provider calls and 20 fixed-CLOD decisions.
 It measured 87.37 ms p50 Sims frame time, 18,821 ms p50 provider latency, and 5,918 MiB
 peak VRAM use, demonstrating severe resource pressure rather than acceptable performance.
+
 Identity continuity now reports retained expected agent IDs, while contradiction rate
 reports agent-subject groups containing multiple distinct values. A 30-sim-minute Stage 2.6
 regression run completed one NPC social and its ordered consequence with zero pending
@@ -310,52 +314,63 @@ candidate 19 times and fixed CLOD 1 once. Its single evaluator, synthetic contex
 recognizable output styles, and formatting violations prevent any broader player-quality
 claim. The selected raw provider, PresentMon, packet, key, and score artifacts are published
 with checksums, reproduction commands, configuration, privacy scope, and limitations.
-Stage 3 is complete. Stage 4 stores canonical events, per-agent observations, and agent
+Stage 3 is complete.
+
+Stage 4 stores canonical events, per-agent observations, and agent
 beliefs separately. Schema migration 8 adds source foreign keys, bounded confidence,
 interpretation, and ordered transmission lineage. The belief store validates direct
 observations and derives lineage from transmitted beliefs; referenced evidence cannot be
 deleted while a belief depends on it. Schema migration 9 adds explicit same-agent
 contradiction links and directional revision links. Revisions atomically preserve the prior
-belief as history while current-belief queries return its replacement. Propagation is now a
-provider-free deterministic relay: recipient-to-source trust and per-hop decay
+belief as history while current-belief queries return its replacement.
+
+Propagation is now a provider-free deterministic relay: recipient-to-source trust and per-hop decay
 attenuate confidence, while hop, recipient, confidence, and cycle bounds stop propagation.
 Persistent integration scenarios now verify secret containment, trust-decayed rumor lineage,
 conflicting testimony, and evidence-backed correction across database close/reopen. These are
 deterministic causal checks, not a player-realism claim. `BeliefStore.causal_trace()` returns
 JSON-serializable canonical
 event, originating observation, ordered belief lineage, and contradiction/revision records;
-the correction scenario verifies the trace after restart. Stage 4 and its exit gate are
-complete. Stage 5 now has validated per-request comparison records pairing the provider-free
+the correction scenario verifies the trace after restart. Stage 4 and its exit gate are complete.
+
+Stage 5 now has validated per-request comparison records pairing the provider-free
 fixed-CLOD 1 decision with the one-call provider decision. Collection rejects missing,
 mis-sized, or agent-misaligned baseline results, and the existing blinded evaluator consumes
 the same records. The first evidence set is the 20 paired Stage 3 samples; it remains
 single-evaluator synthetic evidence, not a player study. The blinded ratings now provide a
 signed net-preference estimate: `(deeper wins - cheap wins) / evaluated comparisons`. The
 initial 19-to-1 result is `+0.90` on a `-1` to `+1` scale. This is a preliminary proxy from one
-synthetic evaluator, not measured player utility. Core now gates deeper reasoning on expected
+synthetic evaluator, not measured player utility.
+
+Core now gates deeper reasoning on expected
 value times request urgency, then selects the highest affordable route at or below the requested
 CLOD. Provider ordering uses declared resource estimates; context and completion budgets are
 clamped to request limits, runtime limits, and the provider context window. Admission is
 rechecked during reservation, and the absence of an eligible route degrades deterministically
 to CLOD 1.
+
 Generation preparation now finds the longest common message prefix, requires compatible
 temperature and schema settings for a native batch, and invokes batching or prefix-cache
 preparation only when the provider declares the matching capability. Ordinary providers keep
 their existing per-request generation path. Capability/method mismatches and incomplete batch
 results fail explicitly. No backend performance benefit has been measured.
+
 The archetype gate found no pooled-versus-individual benchmark, no measured resource benefit,
 no quality-loss result, and no promotion criterion. Stage 3 pressure establishes a need for
 optimization, but not for this approximation specifically; the `+0.90` deeper-reasoning
 preference increases the cost of guessing. Archetype code is therefore intentionally absent.
 Reopen the gate only after a controlled SocietyBench comparison shows a resource or latency
 benefit while meeting predefined identity-continuity, contradiction, and believability
-thresholds. The initial replay used the published global value `0.90`, uniform request
+thresholds.
+
+The initial replay used the published global value `0.90`, uniform request
 urgency `0.50`, and the predeclared selection threshold `0.50`. Every score was `0.45`, so
 all 20 requests chose CLOD 1. Provider calls fell from 20 to 0, but adaptive blinded
 preference was 5% versus the
 one-call baseline's 95%: only 5.26% retention against the predefined 90% threshold.
-Consistency was not re-evaluated. That initial comparison failed the Stage 5 exit gate and
-triggered remediation. The remediation workload declares 20 event-semantic
+Consistency was not re-evaluated. That initial comparison failed the Stage 5 exit gate and triggered remediation.
+
+The remediation workload declares 20 event-semantic
 cases before observing outcomes: 8 low, 6 medium, and 6 high. Each records urgency,
 consequence, novelty, and social complexity; expected value is their unweighted mean. At the
 existing `0.50` threshold, the declared scores plan 8 CLOD 1 and 12 provider selections. This
@@ -386,7 +401,8 @@ validation, three generic actions map to base-game socials, and the selected map
 with results deferred until its game finishing callback. Retained negative versus non-negative
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
-cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The read-only
-Stage 7 developer timeline, replay inspection, resource/CLOD telemetry, scenario regression
+cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`.
+
+The read-only Stage 7 developer timeline, replay inspection, resource/CLOD telemetry, scenario regression
 runner, and stable 0.3 developer package are complete. The next pending task is recruiting three
 studio design partners.
