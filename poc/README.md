@@ -40,7 +40,9 @@ aidirector
 
 With a lot active, the mod also submits one NPC-to-NPC interaction every 30 simulated
 minutes. Player-controlled Sims are excluded, and a new request is skipped while the
-previous one is still running.
+previous one is still running. Autonomous proposals are restricted to mapped base-game
+**Ask About Day**, **Apologize**, and **Compliment Appearance** socials; queuing the selected
+mapping is the next Stage 6.5 task.
 
 ## Configuration
 

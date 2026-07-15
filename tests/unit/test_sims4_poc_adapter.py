@@ -1,6 +1,6 @@
 from empneon.adapters.sims4 import Sims4PocAdapter
 from empneon.core.clod import resolve_clod1
-from empneon.core.contracts import CognitiveRequest, StateDelta
+from empneon.core.contracts import CognitiveRequest, Decision, StateDelta
 
 
 def test_conversation_response_becomes_validated_sims_action() -> None:
@@ -57,3 +57,15 @@ def test_autonomous_npc_event_maps_to_available_action() -> None:
     assert event.facts["source"] == "sim_alarm"
     assert decision.target_id == "mortimer"
     assert result.applied_changes == (StateDelta("animation", "set", "friendly_chat"),)
+
+def test_native_social_intent_whitelist() -> None:
+    adapter = Sims4PocAdapter(
+        {"available_actions": ["friendly_chat", "apologize", "flirt"]}
+    )
+
+    for intent, action in (
+        ("greet", "friendly_chat"),
+        ("apologize", "apologize"),
+        ("flirt", "flirt"),
+    ):
+        assert adapter.action_for(Decision("sim", intent)) == action

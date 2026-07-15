@@ -23,6 +23,7 @@ SIMS_ACTIONS = frozenset(
 INTENT_ACTIONS = {
     "acknowledge": "idle",
     "accept_apology": "apologize",
+    "apologize": "apologize",
     "argue": "argue",
     "deflect": "awkward_chat",
     "flirt": "flirt",

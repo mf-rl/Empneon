@@ -287,15 +287,13 @@ and a later choice changed by retained context. Its exit gate requires save/relo
 and safe cancellation without relying on cheat-console commands. Custom animation, voice, broad
 autonomy, and elaborate UI remain out of scope.
 
-The first Stage 6.5 item passed live validation on 2026-07-13. Clicking another Sim exposed an
-**Empneon Social** pie-menu entry, and two selections recorded the correct player and target Sims
-without a cheat-console command. The second item is in progress: the interaction now opens a
-native transcript dialog, captures repeated messages, shows progress/error notifications, and
-sends the existing `/chat` payload without using the cheat console. Live LM Studio requests
-returned generated dialogue and outcome metadata in the transcript, completing the native-UI
-checklist item. Native walking and social execution belong to the following
-whitelist/execution items and are not implemented yet. See the Stage 6.5 handoff in the roadmap and
-the troubleshooting notes in `docs/sims4-setup.md` before resuming.
+The first two Stage 6.5 items passed live validation on 2026-07-13 and 2026-07-14. Clicking another
+Sim exposes **Empneon Social**, and its native transcript displays repeated messages, generated
+dialogue, and outcome metadata without the cheat console. The autonomous bridge now advertises
+only three mapped base-game socials: **Ask About Day**, **Apologize**, and **Compliment
+Appearance**. Queuing the selected native interaction and persisting its game-confirmed outcome is
+the next checklist item. See the Stage 6.5 handoff in the roadmap and the troubleshooting notes in
+`docs/sims4-setup.md` before resuming.
 
 ## Documentation
 

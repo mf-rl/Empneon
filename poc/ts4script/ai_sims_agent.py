@@ -21,18 +21,12 @@ from ui.ui_text_input import UiTextInput
 BACKEND_URL = "http://127.0.0.1:8765"
 EMPNEON_SOCIAL_INTERACTION_ID = 16906812068311597057
 AUTONOMY_INTERVAL_SIM_MINUTES = 30
-AVAILABLE_ACTIONS = [
-    "friendly_chat",
-    "funny_chat",
-    "romantic_chat",
-    "awkward_chat",
-    "angry_chat",
-    "sad_chat",
-    "apologize",
-    "argue",
-    "flirt",
-    "laugh",
-]
+NATIVE_SOCIAL_TUNINGS = {
+    "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+    "apologize": "mixer_social_Apologize_targeted_friendly_lowScore",
+    "flirt": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
+}
+AVAILABLE_ACTIONS = list(NATIVE_SOCIAL_TUNINGS)
 _AUTONOMY_ALARM = None
 _AUTONOMY_RESPONSE_ALARM = None
 _AUTONOMY_CURSOR = 0
@@ -442,9 +436,7 @@ def find_sim_info_by_id(sim_id):
 
 
 def find_action_affordance(action):
-    tuning_name = {
-        "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
-    }.get(action)
+    tuning_name = NATIVE_SOCIAL_TUNINGS.get(action)
     return next(
         (
             tuning

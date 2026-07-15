@@ -300,6 +300,10 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         (social_mixer_base,),
         {},
     )
+    apologize = type("mixer_social_Apologize_targeted_friendly_lowScore", (), {})
+    flirt = type(
+        "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn", (), {}
+    )
     infos = {
         "bella": bella,
         "mortimer": mortimer,
@@ -315,6 +319,8 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             3: custom_social,
             4: mixer,
             5: sim_chat,
+            6: apologize,
+            7: flirt,
         },
     )
     monkeypatch.setattr(
@@ -322,6 +328,10 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     )
 
     assert agent.find_action_affordance("friendly_chat") is mixer
+    assert agent.find_action_affordance("apologize") is apologize
+    assert agent.find_action_affordance("flirt") is flirt
+    assert agent.find_action_affordance("argue") is None
+    assert agent.AVAILABLE_ACTIONS == ["friendly_chat", "apologize", "flirt"]
     assert agent.social_tuning_names("askaboutday") == [
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]

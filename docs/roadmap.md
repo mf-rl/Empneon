@@ -128,7 +128,7 @@ portability rather than game performance or production readiness. Stage 6 is com
 
 - [x] Add one player-triggered Empneon social interaction to the Sim pie menu
 - [x] Display generated dialogue and action outcome through native in-game UI
-- [ ] Map a whitelist of three to five generic intents to base-game social interactions
+- [x] Map a whitelist of three to five generic intents to base-game social interactions
 - [ ] Execute the selected native interaction and persist only its game-confirmed outcome
 - [ ] Let retained memory, relationship, or belief context alter a later interaction choice
 - [ ] Reflect at least one confirmed native relationship or mood consequence back into Core
@@ -158,10 +158,12 @@ lookup. Disassembly of the installed `UiDialogTextInput.on_text_input` showed th
 `hasattr(self.text_inputs, text_input_name)`; using `FrozenAttributeDict` fixed the silently empty
 message response. The focused test now preserves that contract.
 
-The next task is to map three to five generic intents to base-game social interactions. Native
-queued interaction execution follows as a separate checklist item. The backend session uses
-`AI_SIM_CONFIG=$PWD\stage2-6-config.json`; that local config and generated databases remain
-untracked. Stage 7 remains blocked until the full Stage 6.5 exit gate passes.
+**Native social whitelist, 2026-07-14:** Autonomous proposals now advertise only three mapped
+base-game socials: `friendly_chat` resolves to **Ask About Day**, `apologize` to **Apologize**, and
+`flirt` to **Compliment Appearance**. Core intent mapping and mod affordance-resolution tests cover
+all three and reject unlisted actions. This item maps but does not queue an interaction; selected
+native execution is the next checklist item. The local `stage2-6-config.json` and generated
+databases remain untracked. Stage 7 remains blocked until the full Stage 6.5 exit gate passes.
 
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
@@ -312,7 +314,7 @@ person-hours or production estimates. The canonical scenario subsequently passed
 adapter boundaries and the real headless Godot engine, completing Stage 6.
 
 Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction and native transcript
-passed live validation. Continue with a small base-game social whitelist, queued native execution,
-game-confirmed consequences, context-dependent follow-up behavior, and save/reload plus
-cancellation validation. Stage 7 must not begin until this playable prototype passes its in-game
-exit gate.
+passed live validation, and three generic actions map to base-game socials. Continue with queued
+native execution, game-confirmed consequences, context-dependent follow-up behavior, and
+save/reload plus cancellation validation. Stage 7 must not begin until this playable prototype
+passes its in-game exit gate.

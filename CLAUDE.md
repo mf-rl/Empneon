@@ -110,7 +110,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 163 tests and Ruff pass. Strict mypy passes for Core, both adapter
+Current verification: 164 tests and Ruff pass. Strict mypy passes for Core, both adapter
 boundaries, and the published contract suite; the full test tree still has pre-existing
 annotation failures. Published evidence supports no scalability or player-quality claim.
 
@@ -236,13 +236,14 @@ game-specific results. Godot 4.7 independently consumed the same file headlessly
 this proves contract portability, not game performance. Stage 6 is complete.
 
 Stage 6.5 is a bounded playable Sims 4 prototype required before Stage 7. Its player-triggered
-pie-menu interaction and native conversation transcript passed live validation. Remaining work
-adds three to five whitelisted base-game socials, confirmed native relationship or mood
-consequences, one later choice altered by retained context, and save/reload plus cancellation
-validation. Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
+pie-menu interaction and native conversation transcript passed live validation, and three generic
+actions map to base-game socials. Remaining work queues the selected native interaction, persists
+confirmed relationship or mood consequences, alters one later choice through retained context,
+and validates save/reload plus cancellation. Custom animation, voice, broad autonomy, and
+elaborate UI remain deferred.
 
 ## Current Work Order
 
-1. Map a whitelist of three to five generic intents to base-game social interactions.
+1. Execute the selected native interaction and persist only its game-confirmed outcome.
 
 See `docs/roadmap.md` for evidence gates.
