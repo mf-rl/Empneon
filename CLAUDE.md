@@ -110,7 +110,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 164 tests and Ruff pass. Strict mypy passes for Core, both adapter
+Current verification: 165 tests and Ruff pass. Strict mypy passes for Core, both adapter
 boundaries, and the published contract suite; the full test tree still has pre-existing
 annotation failures. Published evidence supports no scalability or player-quality claim.
 
@@ -239,12 +239,13 @@ Stage 6.5 is a bounded playable Sims 4 prototype required before Stage 7. Its pl
 pie-menu interaction and native conversation transcript passed live validation, and three generic
 actions map to base-game socials. The mapped selection is now tested, instantiated, and queued with
 the game's native interaction context; Core receives an action result only from its finishing
-callback. Remaining work alters one later choice through retained context, reflects a confirmed
-relationship or mood consequence into Core, and validates save/reload plus cancellation. Custom
-animation, voice, broad autonomy, and elaborate UI remain deferred.
+callback. Generic autonomous acknowledgements now select **Apologize** for a retained negative
+relationship score and **Ask About Day** after it becomes non-negative. Remaining work reflects a
+confirmed relationship or mood consequence into Core and validates save/reload plus cancellation.
+Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
 
 ## Current Work Order
 
-1. Let retained memory, relationship, or belief context alter a later interaction choice.
+1. Reflect at least one confirmed native relationship or mood consequence back into Core.
 
 See `docs/roadmap.md` for evidence gates.

@@ -155,6 +155,11 @@ class Sims4PocAdapter:
         else:
             available = sorted(SIMS_ACTIONS)
         preferred = INTENT_ACTIONS.get(intent, "friendly_chat")
+        relationship = self._payload.get("relationship")
+        if intent == "acknowledge" and isinstance(relationship, Mapping):
+            raw_score = relationship.get("raw_score")
+            if isinstance(raw_score, (int, float)) and raw_score < 0:
+                preferred = "apologize"
         if preferred in available:
             return preferred
         if "friendly_chat" in available:

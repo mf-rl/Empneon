@@ -49,8 +49,10 @@ Python 3.12 may be replaced with any installed Python version supported by
    `aichat Bella Goth | Hello` for the existing model-backed interaction. With a lot active,
    the mod also submits at most one non-player pair every 30 simulated minutes. Autonomous
    proposals are restricted to mapped **Ask About Day**, **Apologize**, and **Compliment
-   Appearance** base-game socials. Core receives the result only after the queued interaction
-   finishes; a proposal or queue acceptance is not treated as a confirmed outcome.
+   Appearance** base-game socials. A generic autonomous acknowledgement selects **Apologize**
+   while the game's retained aggregate relationship score is negative and **Ask About Day** once
+   it is non-negative. Core receives the result only after the queued interaction finishes; a
+   proposal or queue acceptance is not treated as a confirmed outcome.
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `poc/ts4script/ai_sims_agent.py` and rebuilding

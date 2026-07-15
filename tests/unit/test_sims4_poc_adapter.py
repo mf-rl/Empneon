@@ -58,10 +58,9 @@ def test_autonomous_npc_event_maps_to_available_action() -> None:
     assert decision.target_id == "mortimer"
     assert result.applied_changes == (StateDelta("animation", "set", "friendly_chat"),)
 
+
 def test_native_social_intent_whitelist() -> None:
-    adapter = Sims4PocAdapter(
-        {"available_actions": ["friendly_chat", "apologize", "flirt"]}
-    )
+    adapter = Sims4PocAdapter({"available_actions": ["friendly_chat", "apologize", "flirt"]})
 
     for intent, action in (
         ("greet", "friendly_chat"),
@@ -69,3 +68,13 @@ def test_native_social_intent_whitelist() -> None:
         ("flirt", "flirt"),
     ):
         assert adapter.action_for(Decision("sim", intent)) == action
+
+
+def test_retained_relationship_changes_later_autonomous_choice() -> None:
+    actions = ["friendly_chat", "apologize", "flirt"]
+    strained = Sims4PocAdapter({"available_actions": actions, "relationship": {"raw_score": -20}})
+    repaired = Sims4PocAdapter({"available_actions": actions, "relationship": {"raw_score": 5}})
+    decision = Decision("sim", "acknowledge")
+
+    assert strained.action_for(decision) == "apologize"
+    assert repaired.action_for(decision) == "friendly_chat"

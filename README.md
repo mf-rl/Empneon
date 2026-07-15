@@ -293,8 +293,10 @@ dialogue, and outcome metadata without the cheat console. The autonomous bridge 
 only three mapped base-game socials: **Ask About Day**, **Apologize**, and **Compliment
 Appearance**. The bridge now tests and instantiates the selected mapped affordance with the game's
 native interaction context, queues that interaction, and sends `/action-result` only after its
-finishing callback. The next checklist item is making retained memory, relationship, or belief
-context change a later interaction choice. See the Stage 6.5 handoff in the roadmap and the
+finishing callback. For generic autonomous acknowledgements, the adapter now chooses **Apologize**
+while the game's retained aggregate relationship score is negative and returns to **Ask About
+Day** after it becomes non-negative. The next checklist item is reflecting a confirmed native
+relationship or mood consequence into Core. See the Stage 6.5 handoff in the roadmap and the
 troubleshooting notes in `docs/sims4-setup.md` before resuming.
 
 ## Documentation
