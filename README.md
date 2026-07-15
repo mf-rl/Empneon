@@ -156,6 +156,7 @@ Version **0.2.0** is an early framework release.
 - [x] Player-triggered Empneon Sims 4 pie-menu interaction
 - [x] Playable Sims 4 prototype with visible native consequences
 - [x] Agent, event, decision, and belief timeline
+- [x] Replay and state-delta inspection
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -303,8 +304,10 @@ completed with `+5` friendship, cancellation before arrival produced no request,
 after save/reload recalled a retained pizza plan at 7 PM tomorrow. Stage 6.5 is complete.
 Stage 7 now includes `agent_timeline`, a read-only, newest-first JSON view of one agent's canonical
 events, confirmed decisions and outcomes, and beliefs. It reuses existing Core records and applies
-one global result limit; unconfirmed proposals remain outside the timeline. The next pending
-roadmap task is replay and state-delta inspection.
+one global result limit; unconfirmed proposals remain outside the timeline. `replay_action_record`
+reconstructs a confirmed event, decision, result, and ordered delta comparison without invoking a
+provider, adapter, or game. It distinguishes matched, unapplied, and additional changes and checks
+normalized consequence integrity. The next pending roadmap task is resource and CLOD telemetry.
 
 ## Documentation
 

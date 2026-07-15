@@ -204,7 +204,7 @@ backend restart, and game reload; unavailable Sims and canceled interactions mus
 ## Stage 7: Developer Product
 
 - [x] Agent, event, decision, and belief timeline
-- [ ] Replay and state-delta inspection
+- [x] Replay and state-delta inspection
 - [ ] Resource and CLOD telemetry
 - [ ] Scenario regression runner
 - [ ] Stable package, API reference, versioning, and migration policy
@@ -215,6 +215,12 @@ events, confirmed decisions and game outcomes, and beliefs into one deterministi
 JSON-serializable view. A global limit bounds the result. It reads the existing Core stores, so no
 duplicate table or schema migration was added. Unconfirmed proposals remain excluded because they
 have neither a confirmed outcome nor a persisted timeline timestamp.
+
+**Recorded replay, 2026-07-15:** `replay_action_record` reconstructs a confirmed action's
+canonical event when available, decision, game result, and ordered state deltas without calling a
+provider, adapter, or game. Delta inspection separates exact matches, proposed changes the game did
+not apply, and additional game-applied changes. It also reports whether normalized consequence
+rows match the confirmed result, exposing incomplete legacy or corrupted records without mutation.
 
 ## Stage 8: Optional Managed Service
 
@@ -355,4 +361,5 @@ with results deferred until its game finishing callback. Retained negative versu
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
 cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The read-only
-Stage 7 developer timeline is complete; the next pending task is replay and state-delta inspection.
+Stage 7 developer timeline and recorded replay inspection are complete; the next pending task is
+resource and CLOD telemetry.

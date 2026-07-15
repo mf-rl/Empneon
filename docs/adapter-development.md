@@ -33,6 +33,12 @@ The required generic types are:
 Rejected or failed actions require a reason. Rejected actions cannot claim applied changes.
 Never report success before the engine confirms the action.
 
+## Inspecting Confirmed Actions
+
+Use `empneon.core.replay.replay_action_record(connection, decision_id)` to inspect the persisted
+event, decision, result, and state-delta differences. This is a read-only recorded replay; it never
+calls the adapter or repeats a game mutation.
+
 ## Minimal In-Process Adapter
 
 ```python

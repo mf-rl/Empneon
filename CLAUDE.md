@@ -250,8 +250,11 @@ Stage 7 now has a read-only `agent_timeline` query that merges canonical partici
 confirmed decisions and outcomes, and beliefs into a deterministic newest-first JSON view without
 adding duplicate persistence.
 
+`replay_action_record` now reconstructs confirmed action records without re-execution, classifies
+matched, unapplied, and additional state deltas, and reports normalized-consequence integrity.
+
 ## Current Work Order
 
-1. Implement Stage 7 replay and state-delta inspection.
+1. Implement Stage 7 resource and CLOD telemetry.
 
 See `docs/roadmap.md` for evidence gates.

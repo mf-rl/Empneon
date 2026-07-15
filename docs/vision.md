@@ -151,6 +151,10 @@ The developer-facing `agent_timeline(connection, agent_id, limit)` query exposes
 confirmed decisions and outcomes, and beliefs as one newest-first JSON-serializable view. It reads
 existing Core records rather than maintaining a second history.
 
+`replay_action_record(connection, decision_id)` provides a read-only reconstruction of a confirmed
+action and classifies its proposed and applied state deltas. Recorded replay is inspection, not
+re-execution: it never calls a provider or mutates a game.
+
 ## Epistemic Social Memory
 
 Empneon separates canonical events from agent beliefs. An agent may observe an event,
