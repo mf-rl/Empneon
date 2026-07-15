@@ -155,6 +155,7 @@ Version **0.2.0** is an early framework release.
 - [x] Cross-adapter portability exit gate
 - [x] Player-triggered Empneon Sims 4 pie-menu interaction
 - [x] Playable Sims 4 prototype with visible native consequences
+- [x] Agent, event, decision, and belief timeline
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -299,8 +300,11 @@ Day** after it becomes non-negative. Successful native friendship deltas now upd
 ordered action consequences and the actor-to-target relationship strength in Core. On The Sims 4
 `1.125.59.1030`, the interaction queued and routed before opening input, a native **Ask About Day**
 completed with `+5` friendship, cancellation before arrival produced no request, and a fresh chat
-after save/reload recalled a retained pizza plan at 7 PM tomorrow. Stage 6.5 is complete. The next
-pending roadmap task is the Stage 7 agent, event, decision, and belief timeline.
+after save/reload recalled a retained pizza plan at 7 PM tomorrow. Stage 6.5 is complete.
+Stage 7 now includes `agent_timeline`, a read-only, newest-first JSON view of one agent's canonical
+events, confirmed decisions and outcomes, and beliefs. It reuses existing Core records and applies
+one global result limit; unconfirmed proposals remain outside the timeline. The next pending
+roadmap task is replay and state-delta inspection.
 
 ## Documentation
 

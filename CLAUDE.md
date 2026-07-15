@@ -246,8 +246,12 @@ consequences. Live testing on The Sims 4 `1.125.59.1030` confirmed queue-before-
 native `+5` friendship result, cancellation without a request, and retained pizza-plan recall
 after save/reload. Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
 
+Stage 7 now has a read-only `agent_timeline` query that merges canonical participated events,
+confirmed decisions and outcomes, and beliefs into a deterministic newest-first JSON view without
+adding duplicate persistence.
+
 ## Current Work Order
 
-1. Implement the Stage 7 agent, event, decision, and belief timeline.
+1. Implement Stage 7 replay and state-delta inspection.
 
 See `docs/roadmap.md` for evidence gates.

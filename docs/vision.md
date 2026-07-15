@@ -147,6 +147,10 @@ Every committed decision should be attributable and replayable:
 - proposed and accepted state changes
 - action result from the game
 
+The developer-facing `agent_timeline(connection, agent_id, limit)` query exposes canonical events,
+confirmed decisions and outcomes, and beliefs as one newest-first JSON-serializable view. It reads
+existing Core records rather than maintaining a second history.
+
 ## Epistemic Social Memory
 
 Empneon separates canonical events from agent beliefs. An agent may observe an event,

@@ -203,12 +203,18 @@ backend restart, and game reload; unavailable Sims and canceled interactions mus
 
 ## Stage 7: Developer Product
 
-- [ ] Agent, event, decision, and belief timeline
+- [x] Agent, event, decision, and belief timeline
 - [ ] Replay and state-delta inspection
 - [ ] Resource and CLOD telemetry
 - [ ] Scenario regression runner
 - [ ] Stable package, API reference, versioning, and migration policy
 - [ ] Recruit three studio design partners
+
+**Developer timeline, 2026-07-15:** `agent_timeline` merges an agent's canonical participated
+events, confirmed decisions and game outcomes, and beliefs into one deterministic newest-first,
+JSON-serializable view. A global limit bounds the result. It reads the existing Core stores, so no
+duplicate table or schema migration was added. Unconfirmed proposals remain excluded because they
+have neither a confirmed outcome nor a persisted timeline timestamp.
 
 ## Stage 8: Optional Managed Service
 
@@ -348,5 +354,5 @@ validation, three generic actions map to base-game socials, and the selected map
 with results deferred until its game finishing callback. Retained negative versus non-negative
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
-cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The next pending
-roadmap task is the Stage 7 agent, event, decision, and belief timeline.
+cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The read-only
+Stage 7 developer timeline is complete; the next pending task is replay and state-delta inspection.

@@ -121,17 +121,15 @@ class ActionRecordStore:
         row = self._conn.execute(
             "SELECT * FROM action_results WHERE decision_id=?", (decision_id,)
         ).fetchone()
-        if row is None:
-            return None
-        decision = _decision_from_row(row)
-        result = ActionResult(
-            decision.id,
-            row["status"],
-            tuple(StateDelta(**change) for change in json.loads(row["applied_changes"])),
-            row["reason"],
-            row["completed_at"],
-        )
-        return ActionRecord(row["event_id"], decision, result)
+        return None if row is None else _action_record_from_row(row)
+
+    def get_for_agent(self, agent_id: str) -> list[ActionRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM action_results WHERE actor_id=?"
+            " ORDER BY completed_at DESC, decision_id",
+            (agent_id,),
+        ).fetchall()
+        return [_action_record_from_row(row) for row in rows]
 
 
 class CognitiveRuntime:
@@ -181,6 +179,18 @@ class CognitiveRuntime:
             max_context_tokens=plan.context_tokens,
         )
         return await self.decide(selected, plan.resolver, plan.estimate)
+
+
+def _action_record_from_row(row: sqlite3.Row) -> ActionRecord:
+    decision = _decision_from_row(row)
+    result = ActionResult(
+        decision.id,
+        row["status"],
+        tuple(StateDelta(**change) for change in json.loads(row["applied_changes"])),
+        row["reason"],
+        row["completed_at"],
+    )
+    return ActionRecord(row["event_id"], decision, result)
 
 
 def _decision_from_row(row: sqlite3.Row) -> Decision:
