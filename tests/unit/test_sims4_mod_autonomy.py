@@ -38,9 +38,37 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     )
     aop_module = ModuleType("interactions.aop")
     executed = []
-    aop_module.AffordanceObjectPair = SimpleNamespace(
-        execute_interaction=lambda interaction: executed.append(interaction) or True
-    )
+    mapped_aops = []
+
+    class FakeMappedInteraction:
+        def __init__(self, affordance):
+            self.affordance = affordance
+            self.finishing_type = ""
+            self.finishing_callback = None
+
+        def register_on_finishing_callback(self, callback):
+            self.finishing_callback = callback
+
+    class FakeAffordanceObjectPair:
+        def __init__(self, affordance, target, super_affordance, super_interaction):
+            self.affordance = affordance
+            self.target = target
+            self.super_affordance = super_affordance
+            self.super_interaction = super_interaction
+            mapped_aops.append(self)
+
+        def test(self, _context):
+            return True
+
+        def interaction_factory(self, _context):
+            return SimpleNamespace(interaction=FakeMappedInteraction(self.affordance))
+
+        @staticmethod
+        def execute_interaction(interaction):
+            executed.append(interaction)
+            return True
+
+    aop_module.AffordanceObjectPair = FakeAffordanceObjectPair
     commands = ModuleType("sims4.commands")
     commands.CommandType = SimpleNamespace(Live="live")
     commands.Command = lambda *_args, **_kwargs: lambda function: function
@@ -232,11 +260,14 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         {"commodity_flags": frozenset(("social",)), "is_selectable": False},
     )()
     interaction = SimpleNamespace(
+        _aop=SimpleNamespace(
+            super_affordance=type("SocialSuperInteraction", (), {}),
+            super_interaction=None,
+        ),
         affordance=sim_chat,
-        finishing_type="FinishingType.NATURAL",
+        context=SimpleNamespace(sim="actor-context"),
         target=target,
     )
-    interaction.register_on_finishing_callback = lambda callback: callback(interaction)
     request = SimpleNamespace(object_list=None)
     actor = SimpleNamespace(
         autonomy_component=SimpleNamespace(_create_autonomy_request=lambda: request)
@@ -338,7 +369,16 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     agent.process_autonomy_responses(None)
 
-    assert executed == [interaction]
+    assert len(mapped_aops) == 1
+    assert mapped_aops[0].affordance is mixer
+    assert mapped_aops[0].target is target
+    assert len(executed) == 1
+    assert executed[0] is not interaction
+    assert executed[0].affordance is mixer
+    assert len(payloads) == 1
+
+    executed[0].finishing_type = "FinishingType.NATURAL"
+    executed[0].finishing_callback(executed[0])
     assert payloads[1] == (
         "/action-result",
         {

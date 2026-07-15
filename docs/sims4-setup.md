@@ -43,13 +43,14 @@ Python 3.12 may be replaced with any installed Python version supported by
 4. Restart The Sims 4 and load a household. Clicking another Sim exposes the
    **Empneon Social** pie-menu entry. It opens a native message field, submits the message to
    Empneon, and reopens the native dialog with the conversation transcript and generated reply.
-   Progress and errors remain notifications. Native Sim movement and base-game social execution
-   are later Stage 6.5 tasks and are not implemented yet.
+   Progress and errors remain notifications. Autonomous Empneon decisions now queue their mapped
+   base-game social through the game's native interaction context.
 5. Run `aiping` in the cheat console for backend diagnostics, then use
    `aichat Bella Goth | Hello` for the existing model-backed interaction. With a lot active,
    the mod also submits at most one non-player pair every 30 simulated minutes. Autonomous
    proposals are restricted to mapped **Ask About Day**, **Apologize**, and **Compliment
-   Appearance** base-game socials; native execution is the next Stage 6.5 task.
+   Appearance** base-game socials. Core receives the result only after the queued interaction
+   finishes; a proposal or queue acceptance is not treated as a confirmed outcome.
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `poc/ts4script/ai_sims_agent.py` and rebuilding

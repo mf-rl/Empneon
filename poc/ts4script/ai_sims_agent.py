@@ -355,9 +355,30 @@ def execute_sims_action(payload, data, interaction):
         target = target_info.get_sim_instance() if target_info is not None else None
         if actor is None or target is None:
             raise RuntimeError("actor or target left the active zone")
-        if action != "friendly_chat":
-            raise RuntimeError("native autonomy selected only for friendly_chat")
-        callback = getattr(interaction, "register_on_finishing_callback", None)
+        affordance = find_action_affordance(action)
+        if affordance is None:
+            raise RuntimeError("no native social mapped for {}".format(action))
+        seed_aop = getattr(interaction, "_aop", None)
+        context = getattr(interaction, "context", None)
+        if seed_aop is None or context is None:
+            raise RuntimeError("autonomy selection has no reusable interaction context")
+
+        from interactions.aop import AffordanceObjectPair
+
+        mapped_aop = AffordanceObjectPair(
+            affordance,
+            target,
+            seed_aop.super_affordance,
+            seed_aop.super_interaction,
+        )
+        test_result = mapped_aop.test(context)
+        if not test_result:
+            raise RuntimeError("native social failed game tests: {}".format(test_result))
+        factory_result = mapped_aop.interaction_factory(context)
+        if not factory_result:
+            raise RuntimeError("native social could not be created: {}".format(factory_result))
+        mapped_interaction = factory_result.interaction
+        callback = getattr(mapped_interaction, "register_on_finishing_callback", None)
         if not callable(callback):
             raise RuntimeError("game interaction has no completion callback")
 
@@ -387,16 +408,14 @@ def execute_sims_action(payload, data, interaction):
             )
 
         callback(finished)
-        from interactions.aop import AffordanceObjectPair
-
-        if not AffordanceObjectPair.execute_interaction(interaction):
+        if not AffordanceObjectPair.execute_interaction(mapped_interaction):
             raise RuntimeError("game rejected native autonomous interaction")
         write_marker(
             "queued {} -> {}: {} ({})".format(
                 payload["speaker"]["name"],
                 payload["listener"]["name"],
                 action,
-                getattr(getattr(interaction, "affordance", None), "__name__", "unknown"),
+                getattr(affordance, "__name__", "unknown"),
             )
         )
     except Exception as exc:

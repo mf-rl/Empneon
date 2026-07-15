@@ -291,9 +291,11 @@ The first two Stage 6.5 items passed live validation on 2026-07-13 and 2026-07-1
 Sim exposes **Empneon Social**, and its native transcript displays repeated messages, generated
 dialogue, and outcome metadata without the cheat console. The autonomous bridge now advertises
 only three mapped base-game socials: **Ask About Day**, **Apologize**, and **Compliment
-Appearance**. Queuing the selected native interaction and persisting its game-confirmed outcome is
-the next checklist item. See the Stage 6.5 handoff in the roadmap and the troubleshooting notes in
-`docs/sims4-setup.md` before resuming.
+Appearance**. The bridge now tests and instantiates the selected mapped affordance with the game's
+native interaction context, queues that interaction, and sends `/action-result` only after its
+finishing callback. The next checklist item is making retained memory, relationship, or belief
+context change a later interaction choice. See the Stage 6.5 handoff in the roadmap and the
+troubleshooting notes in `docs/sims4-setup.md` before resuming.
 
 ## Documentation
 

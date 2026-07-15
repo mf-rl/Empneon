@@ -237,13 +237,14 @@ this proves contract portability, not game performance. Stage 6 is complete.
 
 Stage 6.5 is a bounded playable Sims 4 prototype required before Stage 7. Its player-triggered
 pie-menu interaction and native conversation transcript passed live validation, and three generic
-actions map to base-game socials. Remaining work queues the selected native interaction, persists
-confirmed relationship or mood consequences, alters one later choice through retained context,
-and validates save/reload plus cancellation. Custom animation, voice, broad autonomy, and
-elaborate UI remain deferred.
+actions map to base-game socials. The mapped selection is now tested, instantiated, and queued with
+the game's native interaction context; Core receives an action result only from its finishing
+callback. Remaining work alters one later choice through retained context, reflects a confirmed
+relationship or mood consequence into Core, and validates save/reload plus cancellation. Custom
+animation, voice, broad autonomy, and elaborate UI remain deferred.
 
 ## Current Work Order
 
-1. Execute the selected native interaction and persist only its game-confirmed outcome.
+1. Let retained memory, relationship, or belief context alter a later interaction choice.
 
 See `docs/roadmap.md` for evidence gates.
