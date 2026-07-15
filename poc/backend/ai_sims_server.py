@@ -1232,7 +1232,14 @@ def build_chat_prompt(payload, context):
     nearby = ", ".join(sim_name(item) if isinstance(item, dict) else str(item) for item in context["nearby_sims"]) or "none"
     goals = speaker_profile.get("goals") or []
 
-    return """Speaker:
+    return """Role assignment:
+You are {speaker_name}, the Speaker.
+{listener_name} is the Listener and wrote the message below.
+Reply as {speaker_name} to {listener_name}.
+Never address the Listener by the Speaker's name.
+Do not include the Speaker's name in dialogue.
+
+Speaker:
 {speaker_name}
 Identity: {identity}
 Traits: {speaker_traits}
@@ -1286,6 +1293,12 @@ Player says:
         message=payload.get("message") or "",
     )
 
+
+def response_has_role_confusion(response, context):
+    words = set(re.findall(r"\w+", str(response.get("dialogue") or "").casefold()))
+    speaker = set(re.findall(r"\w+", str(context["speaker"].get("name") or "").casefold()))
+    listener = set(re.findall(r"\w+", str(context["listener"].get("name") or "").casefold()))
+    return bool({word for word in speaker - listener if len(word) > 1} & words)
 
 def save_conversation(conversation_id, speaker_id, listener_id, message, response):
     with connect_db() as conn:
@@ -1345,23 +1358,33 @@ def reasoning_fallback_response(payload, context):
 
 class HermesRuntime:
     def dialogue(self, payload, context):
-        try:
-            content = llm_chat(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": build_chat_prompt(payload, context)},
-                ],
-                schema=DIALOGUE_SCHEMA,
-                schema_name="sims_dialogue",
-                task="large",
-            )
-        except ReasoningOnlyResponse as exc:
-            PROVIDER_LOG.warning("%s", exc)
-            return reasoning_fallback_response(payload, context)
-        try:
-            return normalize_response(extract_json(content))
-        except (ValueError, json.JSONDecodeError):
-            return fallback_response(content)
+        prompt = build_chat_prompt(payload, context)
+        for attempt in range(2):
+            try:
+                content = llm_chat(
+                    [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    schema=DIALOGUE_SCHEMA,
+                    schema_name="sims_dialogue",
+                    task="large",
+                )
+            except ReasoningOnlyResponse as exc:
+                PROVIDER_LOG.warning("%s", exc)
+                return reasoning_fallback_response(payload, context)
+            try:
+                response = normalize_response(extract_json(content))
+            except (ValueError, json.JSONDecodeError):
+                response = fallback_response(content)
+            if not response_has_role_confusion(response, context):
+                return response
+            PROVIDER_LOG.warning("model confused speaker and listener; retrying=%s", attempt == 0)
+            prompt += (
+                "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
+                "If using a name, use the Listener's name, '{}'."
+            ).format(context["speaker"]["name"], context["listener"]["name"])
+        return reasoning_fallback_response(payload, context)
 
     def story_beat(self, prompt):
         content = llm_chat(
@@ -1816,6 +1839,12 @@ def self_test():
     assert result["animation"] == "friendly_chat"
     assert extract_json("{dialogue: \"ok\"}")["dialogue"] == "ok"
     assert fallback_response("plain text")["dialogue"] == "plain text"
+    role_context = {
+        "speaker": {"name": "Sri Bolton"},
+        "listener": {"name": "Robin Casillas"},
+    }
+    assert response_has_role_confusion({"dialogue": "Sure, Sri."}, role_context)
+    assert not response_has_role_confusion({"dialogue": "Sure, Robin."}, role_context)
     assert chat_base_urls("http://x/api/v1") == ["http://x/v1", "http://x/api/v1"]
     assert native_models_url().endswith("/api/v1/models")
     old_db = DB_PATH

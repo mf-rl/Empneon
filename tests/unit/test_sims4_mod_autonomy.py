@@ -162,7 +162,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     monkeypatch.setattr(
         agent,
         "submit_empneon_chat",
-        lambda actor, target, message: submitted.append((actor, target, message)),
+        lambda actor, target, message, transcript="": submitted.append(
+            (actor, target, message, transcript)
+        ),
     )
     pie_interaction = agent.EmpneonSocialInteraction()
     pie_interaction.sim = SimpleNamespace(sim_info=SimpleNamespace(full_name="Alice"))
@@ -187,8 +189,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     dialog.accepted = True
     dialog.text_input_responses = {"message": "  Remember our promise?  "}
     dialog.listener(dialog)
-    assert submitted == [(pie_interaction.sim, pie_interaction.target, "Remember our promise?")]
+    assert submitted == [
+        (pie_interaction.sim, pie_interaction.target, "Remember our promise?", "")
+    ]
 
+    notification_count = len(notifications)
     agent.show_empneon_chat_result(
         pie_interaction.sim,
         pie_interaction.target,
@@ -200,10 +205,25 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             "relationship": {"trust_delta": 2},
         },
         None,
+        "Alice: Remember our promise?",
     )
-    assert "I remember." in notifications[-1].kwargs["text"]()
-    assert "Trust +2" in notifications[-1].kwargs["text"]()
-    assert notifications[-1].show_kwargs == {}
+    chat_dialog = dialogs[-1]
+    assert chat_dialog.kwargs["title"]() == "Bob says:"
+    assert "Alice: Remember our promise?" in chat_dialog.kwargs["text"]()
+    assert "Bob: I remember." in chat_dialog.kwargs["text"]()
+    assert "Trust +2" in chat_dialog.kwargs["text"]()
+    assert hasattr(chat_dialog.kwargs["text_inputs"], "message")
+    assert chat_dialog.show_kwargs == {}
+    assert len(notifications) == notification_count
+    chat_dialog.accepted = True
+    chat_dialog.text_input_responses = {"message": "Do you?"}
+    chat_dialog.listener(chat_dialog)
+    assert submitted[-1] == (
+        pie_interaction.sim,
+        pie_interaction.target,
+        "Do you?",
+        chat_dialog.kwargs["text"](),
+    )
 
     sim_chat = type("native_NPC_social", (), {})
     target = type(

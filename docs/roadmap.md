@@ -142,16 +142,15 @@ elaborate UI are outside this prototype.
 **Pie-menu validation, 2026-07-13:** The packaged `Empneon:Social` interaction loaded in game,
 appeared as **Empneon Social** when the player clicked another Sim, and recorded the selected
 actor and target for two live invocations without the cheat console. The mod build and installer
-now produce and deploy both the script archive and its interaction-tuning package. Generated
-dialogue and visible outcome feedback remain the next checklist item.
+now produce and deploy both the script archive and its interaction-tuning package. Safe
+cancellation remains before the native UI checklist item can be completed.
 
-**Native UI handoff, 2026-07-13:** The open second checklist item now has a native text-entry
+**Native UI handoff, 2026-07-14:** The open second checklist item now has a native transcript
 dialog, a **Thinking...** notification, asynchronous `/chat` submission through the existing
-payload path, and a native result/error notification. Focused tests cover message capture and
-rendering the dialogue, intent, emotion, suggested action, and Empneon relationship deltas. The
-latest live build rendered and accepted text, reached the backend, and woke the target agent. It
-then displayed **Empneon error: Time out**, so successful generated feedback has not passed live
-validation and this item remains unchecked.
+payload path, and native error notifications. Focused tests cover repeated message capture and
+rendering dialogue, intent, emotion, suggested action, and Empneon relationship deltas. Live LM
+Studio requests returned generated dialogue in the transcript. Safe cancellation has not passed
+live validation, so this item remains unchecked.
 
 Three Sims 4 `1.121.361.1020` UI compatibility problems were resolved during the live iterations:
 icon overrides cannot use the older tuple form, text input entries must be `UiTextInput` objects

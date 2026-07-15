@@ -573,7 +573,7 @@ class EmpneonTextInputLength(HasTunableSingletonFactory, AutoFactoryInit):
         )
 
 
-def show_empneon_message_dialog(actor, target):
+def show_empneon_message_dialog(actor, target, transcript=""):
     if actor is None or target is None:
         write_marker("Empneon Social canceled: actor or target unavailable")
         return
@@ -590,8 +590,11 @@ def show_empneon_message_dialog(actor, target):
     inputs = FrozenAttributeDict({"message": message_input})
     dialog = UiDialogTextInputOkCancel.TunableFactory().default(
         actor,
-        title=raw_text("Empneon Social"),
-        text=raw_text("What should {} say to {}?".format(sim_full_name(actor.sim_info), target_name)),
+        title=raw_text("{} says:".format(target_name)),
+        text=raw_text(
+            transcript
+            or "What should {} say to {}?".format(sim_full_name(actor.sim_info), target_name)
+        ),
         text_inputs=inputs,
     )
 
@@ -613,27 +616,29 @@ def show_empneon_message_dialog(actor, target):
         if not message:
             show_empneon_notification(actor, "Empneon Social", "Enter a message before sending.")
             return
-        submit_empneon_chat(actor, target, message)
+        submit_empneon_chat(actor, target, message, transcript)
 
     dialog.add_listener(on_response)
     dialog.show_dialog()
 
 
-def submit_empneon_chat(actor, target, message):
+def submit_empneon_chat(actor, target, message, transcript=""):
     payload = chat_payload_for_target(
         actor,
         getattr(target, "sim_info", None),
         message,
         "pie_menu",
     )
+    speaker_name = sim_full_name(getattr(actor, "sim_info", actor))
+    transcript = "{}\n\n{}: {}".format(transcript, speaker_name, message).strip()
     show_empneon_notification(actor, "Empneon Social", "Thinking...")
 
     def worker():
         try:
             data = post_json("/chat", payload)
-            result = (actor, target, data, None)
+            result = (actor, target, data, None, transcript)
         except Exception as exc:
-            result = (actor, target, None, str(exc))
+            result = (actor, target, None, str(exc), transcript)
         with _AUTONOMY_RESPONSES_LOCK:
             _CHAT_RESPONSES.append(result)
 
@@ -642,7 +647,7 @@ def submit_empneon_chat(actor, target, message):
     thread.start()
 
 
-def show_empneon_chat_result(actor, target, data, error):
+def show_empneon_chat_result(actor, target, data, error, transcript=""):
     target_name = sim_full_name(getattr(target, "sim_info", target))
     if error:
         show_empneon_notification(actor, "Empneon error", error)
@@ -666,7 +671,13 @@ def show_empneon_chat_result(actor, target, data, error):
     if deltas:
         details += "\nEmpneon state: " + ", ".join(deltas)
     dialogue = str(data.get("dialogue") or "...")
-    show_empneon_notification(actor, target_name, dialogue + "\n\n" + details)
+    transcript = "{}\n\n{}: {}\n\n{}".format(
+        transcript,
+        target_name,
+        dialogue,
+        details,
+    ).strip()
+    show_empneon_message_dialog(actor, target, transcript)
     write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
 
 
