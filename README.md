@@ -154,7 +154,7 @@ Version **0.2.0** is an early framework release.
 - [x] Measured minimal adapter implementation effort
 - [x] Cross-adapter portability exit gate
 - [x] Player-triggered Empneon Sims 4 pie-menu interaction
-- [ ] Playable Sims 4 prototype with visible native consequences
+- [x] Playable Sims 4 prototype with visible native consequences
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -287,7 +287,7 @@ and a later choice changed by retained context. Its exit gate requires save/relo
 and safe cancellation without relying on cheat-console commands. Custom animation, voice, broad
 autonomy, and elaborate UI remain out of scope.
 
-The first two Stage 6.5 items passed live validation on 2026-07-13 and 2026-07-14. Clicking another
+The Stage 6.5 prototype passed live validation across 2026-07-13 through 2026-07-15. Clicking another
 Sim exposes **Empneon Social**, and its native transcript displays repeated messages, generated
 dialogue, and outcome metadata without the cheat console. The autonomous bridge now advertises
 only three mapped base-game socials: **Ask About Day**, **Apologize**, and **Compliment
@@ -296,9 +296,11 @@ native interaction context, queues that interaction, and sends `/action-result` 
 finishing callback. For generic autonomous acknowledgements, the adapter now chooses **Apologize**
 while the game's retained aggregate relationship score is negative and returns to **Ask About
 Day** after it becomes non-negative. Successful native friendship deltas now update both the
-ordered action consequences and the actor-to-target relationship strength in Core. The final
-Stage 6.5 checklist item is dedicated save/reload continuity and safe-cancellation validation.
-See the roadmap handoff and `docs/sims4-setup.md` before resuming.
+ordered action consequences and the actor-to-target relationship strength in Core. On The Sims 4
+`1.125.59.1030`, the interaction queued and routed before opening input, a native **Ask About Day**
+completed with `+5` friendship, cancellation before arrival produced no request, and a fresh chat
+after save/reload recalled a retained pizza plan at 7 PM tomorrow. Stage 6.5 is complete. The next
+pending roadmap task is the Stage 7 agent, event, decision, and belief timeline.
 
 ## Documentation
 

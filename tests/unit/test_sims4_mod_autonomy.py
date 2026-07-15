@@ -30,15 +30,35 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     clock = ModuleType("clock")
     clock.interval_in_sim_minutes = lambda minutes: minutes
     services = ModuleType("services")
+
     interactions = ModuleType("interactions")
+    interactions.ParticipantType = SimpleNamespace(Actor="actor")
     interactions_base = ModuleType("interactions.base")
-    immediate_interaction = ModuleType("interactions.base.immediate_interaction")
-    immediate_interaction.ImmediateSuperInteraction = type(
-        "ImmediateSuperInteraction", (), {}
+    super_interaction = ModuleType("interactions.base.super_interaction")
+    super_interaction.SuperInteraction = type("SuperInteraction", (), {})
+    constraints = ModuleType("interactions.constraints")
+    constraints.Anywhere = lambda: SimpleNamespace(kind="anywhere")
+    constraints.Circle = lambda center, radius, routing_surface=None: SimpleNamespace(
+        kind="circle", center=center, radius=radius, routing_surface=routing_surface
     )
     aop_module = ModuleType("interactions.aop")
+    context_module = ModuleType("interactions.context")
+
+    class FakeInteractionContext:
+        SOURCE_SCRIPT_WITH_USER_INTENT = "script_with_user_intent"
+
+        def __init__(self, sim, source, priority):
+            self.sim = sim
+            self.source = source
+            self.priority = priority
+
+    context_module.InteractionContext = FakeInteractionContext
+    priority_module = ModuleType("interactions.priority")
+    priority_module.Priority = SimpleNamespace(High="high")
     executed = []
     mapped_aops = []
+    failed_factories = set()
+
 
     class FakeMappedInteraction:
         def __init__(self, affordance):
@@ -50,17 +70,20 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             self.finishing_callback = callback
 
     class FakeAffordanceObjectPair:
-        def __init__(self, affordance, target, super_affordance, super_interaction):
+        def __init__(self, affordance, target, super_affordance, super_interaction, **kwargs):
             self.affordance = affordance
             self.target = target
             self.super_affordance = super_affordance
             self.super_interaction = super_interaction
+            self.__dict__.update(kwargs)
             mapped_aops.append(self)
 
         def test(self, _context):
             return True
 
         def interaction_factory(self, _context):
+            if self.super_affordance in failed_factories:
+                raise TypeError("get_name() got multiple values for argument 'target'")
             return SimpleNamespace(interaction=FakeMappedInteraction(self.affordance))
 
         @staticmethod
@@ -82,7 +105,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     collections.FrozenAttributeDict = FrozenAttributeDict
     resources = ModuleType("sims4.resources")
-    resources.Types = SimpleNamespace(INTERACTION="interaction")
+    resources.Types = SimpleNamespace(
+        INTERACTION="interaction", RELATIONSHIP_BIT="relationship_bit"
+    )
     resources.get_resource_key = lambda name, resource_type: (name, resource_type)
     sims4.resources = resources
     localization = ModuleType("sims4.localization")
@@ -97,6 +122,18 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     tunable = ModuleType("sims4.tuning.tunable")
     tunable.AutoFactoryInit = type("AutoFactoryInit", (), {})
     tunable.HasTunableSingletonFactory = type("HasTunableSingletonFactory", (), {})
+    utils = ModuleType("sims4.utils")
+
+    class flexmethod:
+        def __init__(self, function):
+            self.function = function
+
+        def __get__(self, instance, owner):
+            return lambda *args, **kwargs: self.function(
+                owner, instance, *args, **kwargs
+            )
+
+    utils.flexmethod = flexmethod
 
     class UiTextInput:
         def __init__(self, **kwargs):
@@ -146,8 +183,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "clock": clock,
         "interactions": interactions,
         "interactions.base": interactions_base,
-        "interactions.base.immediate_interaction": immediate_interaction,
+        "interactions.base.super_interaction": super_interaction,
+        "interactions.constraints": constraints,
         "interactions.aop": aop_module,
+        "interactions.context": context_module,
+        "interactions.priority": priority_module,
         "services": services,
         "sims": sims,
         "sims.sim": sim_module,
@@ -157,6 +197,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "sims4.localization": localization,
         "sims4.resources": resources,
         "sims4.tuning.tunable": tunable,
+        "sims4.utils": utils,
         "ui": ui,
         "ui.ui_dialog_generic": ui_dialog_generic,
         "ui.ui_dialog_notification": ui_dialog_notification,
@@ -203,6 +244,18 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         assert finished.value is True
     assert selected == ["Empneon Social selected: Alice -> Bob"]
     assert agent.EmpneonSocialInteraction.get_name(None, None) == "Empneon Social"
+    assert pie_interaction.get_name() == "Empneon Social"
+    route_target = SimpleNamespace(position="position", routing_surface="surface")
+    route_constraint = next(
+        agent.EmpneonSocialInteraction._constraint_gen(
+            pie_interaction.sim, route_target, "actor"
+        )
+    )
+    assert (route_constraint.kind, route_constraint.center, route_constraint.radius) == (
+        "circle",
+        "position",
+        2.0,
+    )
     dialog = dialogs[-1]
     assert hasattr(dialog.kwargs["text_inputs"], "message")
     text_input = dialog.kwargs["text_inputs"]["message"]
@@ -268,11 +321,25 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         context=SimpleNamespace(sim="actor-context"),
         target=target,
     )
-    request = SimpleNamespace(object_list=None)
+    target.potential_interactions = lambda _context: [
+        SimpleNamespace(affordance=interaction._aop.super_affordance)
+    ]
+
+    request = SimpleNamespace(object_list=None, interactions_to_invalidate=[])
     actor = SimpleNamespace(
         autonomy_component=SimpleNamespace(_create_autonomy_request=lambda: request)
     )
-    bella = SimpleNamespace(sim_id="bella", get_sim_instance=lambda: actor)
+    relationship_bits = set()
+    has_met = type("has_met", (), {})
+    tracker = SimpleNamespace(
+        has_bit=lambda target_id, bit: (target_id, bit) in relationship_bits,
+        add_relationship_bit=lambda target_id, bit: relationship_bits.add((target_id, bit)),
+    )
+    bella = SimpleNamespace(
+        sim_id="bella",
+        get_sim_instance=lambda: actor,
+        relationship_tracker=tracker,
+    )
     mortimer = SimpleNamespace(sim_id="mortimer", get_sim_instance=lambda: target)
     target.sim_info = mortimer
     sims = [bella, mortimer]
@@ -280,10 +347,19 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     monkeypatch.setattr(agent, "instanced_npc_infos", lambda: sims)
 
     def find_best_action(selected_request):
-        motives = ("social",)
+        motives = frozenset(("social",))
         if selected_request.object_list:
             for candidate in selected_request.object_list:
                 candidate.commodity_flags & motives
+        affordances = getattr(selected_request, "affordance_list", None)
+        if affordances:
+            return FakeAffordanceObjectPair(
+                affordances[0],
+                selected_request.object_list[0],
+                interaction._aop.super_affordance,
+                None,
+                push_super_on_prepare=True,
+            )
         return interaction
 
     services.autonomy_service = lambda: SimpleNamespace(
@@ -324,12 +400,14 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "source": "sim_alarm",
     }
 
-    generic_social = type("socials_SuperInteraction", (), {})
     social_mixer_base = type("SocialMixerInteraction", (), {})
     mixer = type(
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
         (social_mixer_base,),
         {},
+    )
+    interaction._aop.super_affordance.all_affordances_gen = classmethod(
+        lambda _cls, **_kwargs: iter((mixer,))
     )
     apologize = type("mixer_social_Apologize_targeted_friendly_lowScore", (), {})
     flirt = type(
@@ -346,12 +424,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         get=lambda _key: None,
         types={
             1: unrelated_social,
-            2: generic_social,
             3: custom_social,
             4: mixer,
             5: sim_chat,
             6: apologize,
             7: flirt,
+            8: has_met,
         },
     )
     monkeypatch.setattr(
@@ -390,3 +468,74 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         },
     )
     assert agent._AUTONOMY_IN_FLIGHT is False
+
+    agent.execute_sims_action(
+        payloads[0][1],
+        {"decision_id": "decision-2", "suggested_action": "apologize"},
+        interaction,
+    )
+    assert mapped_aops[1].affordance is apologize
+    assert len(payloads) == 2
+
+    executed[1].finishing_type = "FinishingType.DISPLACED"
+    executed[1].finishing_callback(executed[1])
+    assert payloads[2] == (
+        "/action-result",
+        {
+            "decision_id": "decision-2",
+            "action": "apologize",
+            "status": "failed",
+            "reason": "FinishingType.DISPLACED",
+            "changes": [],
+        },
+    )
+    player_payload = dict(payloads[0][1])
+    player_payload["speaker"], player_payload["listener"] = (
+        player_payload["listener"],
+        player_payload["speaker"],
+    )
+    player_data = {
+        "decision_id": "decision-3",
+        "animation": "friendly_chat",
+        "dialogue": "How is your day?",
+        "emotion": "happy",
+        "intent": "greet",
+        "relationship": {},
+        "_empneon_payload": player_payload,
+    }
+    agent.show_empneon_chat_result(
+        pie_interaction.sim,
+        pie_interaction.target,
+        player_data,
+        None,
+    )
+    assert len(mapped_aops) == 3
+    assert mapped_aops[2].affordance is mixer
+    assert mapped_aops[2].push_super_on_prepare is True
+    assert executed[2].affordance is mixer
+    assert len(payloads) == 3
+    assert relationship_bits == {("mortimer", has_met)}
+
+    executed[2].finishing_type = "FinishingType.NATURAL"
+    executed[2].finishing_callback(executed[2])
+    assert payloads[3][0] == "/action-result"
+    assert payloads[3][1]["decision_id"] == "decision-3"
+    assert payloads[3][1]["status"] == "succeeded"
+
+    bad_parent = type("EmpneonSocialInteraction", (), {})
+    bad_parent.all_affordances_gen = classmethod(
+        lambda _cls, **_kwargs: iter((mixer,))
+    )
+    failed_factories.add(bad_parent)
+    target.potential_interactions = lambda _context: [
+        SimpleNamespace(affordance=bad_parent),
+        SimpleNamespace(affordance=interaction._aop.super_affordance),
+    ]
+    agent.execute_sims_action(
+        player_payload,
+        {"decision_id": "decision-4", "animation": "friendly_chat"},
+        None,
+    )
+    assert mapped_aops[-1].affordance is mixer
+    assert executed[-1].affordance is mixer
+    assert relationship_bits == {("mortimer", has_met)}

@@ -87,23 +87,15 @@ Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.
 and `models.large` may override `provider`, `endpoint`, `model`, `temperature`, and
 `max_tokens` per task.
 
-### Native social UI validation handoff
+### Native social UI validation
 
-The 2026-07-14 live test used `AI_SIM_CONFIG=$PWD\stage2-6-config.json`. LM Studio returned valid
-structured dialogue, and the game displayed multiple replies in the native conversation
-transcript. Empneon now binds and validates speaker/listener roles independently of the selected
-provider. Safe cancellation still needs live validation.
-
-Before the next in-game test:
-
-1. Start the configured model provider and Empneon backend.
-2. Reinstall with `.\poc\install_mod.ps1`, restart the game, and submit **Empneon Social**.
-3. Confirm the generated reply appears in the transcript, then cancel a second dialog and confirm
-   cancellation produces no request.
-
-The native UI roadmap item passed live validation. Keep safe cancellation for the final dedicated
-save/reload validation item. The active Sim remaining still is expected until the later whitelisted
-native-interaction execution task.
+Live validation completed on 2026-07-15 with The Sims 4 `1.125.59.1030`. **Empneon Social** enters
+the active Sim's queue, routes to the target, and opens its input after arrival. A mapped **Ask
+About Day** completed with a native `+5` friendship consequence confirmed to Core. Canceling the
+queued interaction before arrival opened no input and created no backend request or action
+proposal. After save/reload, a fresh conversation recalled the retained pizza plan at 7 PM the
+next day. The provider-independent speaker/listener guard and raw recent-conversation context keep
+the reply addressed and grounded when switching providers. Stage 6.5 is complete.
 
 Memory settings:
 

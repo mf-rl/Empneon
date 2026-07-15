@@ -235,18 +235,19 @@ game-specific results. Godot 4.7 independently consumed the same file headlessly
 `EMPNEON_GODOT_OK`, and exited 0. The Sims side was the in-process adapter, not a live game run;
 this proves contract portability, not game performance. Stage 6 is complete.
 
-Stage 6.5 is a bounded playable Sims 4 prototype required before Stage 7. Its player-triggered
+Stage 6.5 is a bounded playable Sims 4 prototype completed before Stage 7. Its player-triggered
 pie-menu interaction and native conversation transcript passed live validation, and three generic
 actions map to base-game socials. The mapped selection is now tested, instantiated, and queued with
 the game's native interaction context; Core receives an action result only from its finishing
 callback. Generic autonomous acknowledgements now select **Apologize** for a retained negative
 relationship score and **Ask About Day** after it becomes non-negative. Confirmed native friendship
 deltas now update Core's canonical actor-to-target relationship edge as well as ordered action
-consequences. Remaining work validates save/reload continuity and safe cancellation. Custom
-animation, voice, broad autonomy, and elaborate UI remain deferred.
+consequences. Live testing on The Sims 4 `1.125.59.1030` confirmed queue-before-input routing, a
+native `+5` friendship result, cancellation without a request, and retained pizza-plan recall
+after save/reload. Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
 
 ## Current Work Order
 
-1. Validate save/reload continuity and safe cancellation in a dedicated test save.
+1. Implement the Stage 7 agent, event, decision, and belief timeline.
 
 See `docs/roadmap.md` for evidence gates.

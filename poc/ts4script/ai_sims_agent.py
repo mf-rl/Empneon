@@ -9,11 +9,14 @@ import clock
 import services
 import sims4.commands
 import zone
-from interactions.base.immediate_interaction import ImmediateSuperInteraction
+from interactions import ParticipantType
+from interactions.base.super_interaction import SuperInteraction
+from interactions.constraints import Anywhere, Circle
 from sims.sim import Sim
 from sims4.collections import FrozenAttributeDict
 from sims4.localization import LocalizationHelperTuning
 from sims4.tuning.tunable import AutoFactoryInit, HasTunableSingletonFactory
+from sims4.utils import flexmethod
 from ui.ui_dialog_generic import UiDialogTextInputOkCancel
 from ui.ui_dialog_notification import UiDialogNotification
 from ui.ui_text_input import UiTextInput
@@ -52,10 +55,16 @@ def write_marker(text):
 write_marker("AI Sims Agent imported")
 
 
-class EmpneonSocialInteraction(ImmediateSuperInteraction):
-    @classmethod
-    def get_name(cls, target, context, **interaction_parameters):
+class EmpneonSocialInteraction(SuperInteraction):
+    def get_name(self, *args, **kwargs):
         return LocalizationHelperTuning.get_raw_text("Empneon Social")
+
+    @flexmethod
+    def _constraint_gen(cls, inst, sim, target, participant_type, **kwargs):
+        if participant_type == ParticipantType.Actor and target is not None:
+            yield Circle(target.position, 2.0, routing_surface=target.routing_surface)
+        else:
+            yield Anywhere()
 
     def _run_interaction_gen(self, timeline):
         actor = getattr(self, "sim", None)
@@ -345,12 +354,12 @@ def process_autonomy_responses(_alarm_handle):
 
 def execute_sims_action(payload, data, interaction):
     decision_id = str(data.get("decision_id") or "")
-    action = str(data.get("suggested_action") or "")
+    action = str(data.get("suggested_action") or data.get("animation") or "")
     speaker_id = str(payload["speaker"]["id"])
     listener_id = str(payload["listener"]["id"])
     try:
-        actor_info = find_sim_info_by_id(speaker_id)
-        target_info = find_sim_info_by_id(listener_id)
+        actor_info = find_sim_info_by_id(listener_id if interaction is None else speaker_id)
+        target_info = find_sim_info_by_id(speaker_id if interaction is None else listener_id)
         actor = actor_info.get_sim_instance() if actor_info is not None else None
         target = target_info.get_sim_instance() if target_info is not None else None
         if actor is None or target is None:
@@ -358,26 +367,84 @@ def execute_sims_action(payload, data, interaction):
         affordance = find_action_affordance(action)
         if affordance is None:
             raise RuntimeError("no native social mapped for {}".format(action))
-        seed_aop = getattr(interaction, "_aop", None)
-        context = getattr(interaction, "context", None)
-        if seed_aop is None or context is None:
-            raise RuntimeError("autonomy selection has no reusable interaction context")
-
         from interactions.aop import AffordanceObjectPair
 
-        mapped_aop = AffordanceObjectPair(
-            affordance,
-            target,
-            seed_aop.super_affordance,
-            seed_aop.super_interaction,
-        )
-        test_result = mapped_aop.test(context)
-        if not test_result:
-            raise RuntimeError("native social failed game tests: {}".format(test_result))
-        factory_result = mapped_aop.interaction_factory(context)
-        if not factory_result:
-            raise RuntimeError("native social could not be created: {}".format(factory_result))
-        mapped_interaction = factory_result.interaction
+        mapped_interaction = None
+        if interaction is None:
+            from interactions.context import InteractionContext
+            from interactions.priority import Priority
+            import sims4.resources
+
+            bit_manager = services.get_instance_manager(sims4.resources.Types.RELATIONSHIP_BIT)
+            has_met = next(
+                (
+                    tuning
+                    for tuning in bit_manager.types.values()
+                    if getattr(tuning, "__name__", "") == "has_met"
+                ),
+                None,
+            )
+            tracker = getattr(actor_info, "relationship_tracker", None)
+            if has_met is not None and tracker is not None and not tracker.has_bit(target_info.sim_id, has_met):
+                tracker.add_relationship_bit(target_info.sim_id, has_met)
+                write_marker("established has_met: {} -> {}".format(listener_id, speaker_id))
+
+            context = InteractionContext(
+                actor,
+                InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
+                Priority.High,
+            )
+            mapped_aop = None
+            failures = []
+            candidates = tuple(target.potential_interactions(context))
+            for candidate in candidates:
+                candidate_name = getattr(candidate.affordance, "__name__", "unknown")
+                try:
+                    available = getattr(candidate.affordance, "all_affordances_gen", None)
+                    if not callable(available) or affordance not in tuple(available(context=context)):
+                        continue
+                    proposed = AffordanceObjectPair(
+                        affordance,
+                        target,
+                        candidate.affordance,
+                        None,
+                        push_super_on_prepare=True,
+                    )
+                    test_result = proposed.test(context)
+                    factory_result = proposed.interaction_factory(context) if test_result else None
+                    if factory_result:
+                        mapped_aop = proposed
+                        mapped_interaction = factory_result.interaction
+                        break
+                    failures.append("{}={}".format(candidate_name, test_result))
+                except Exception as exc:
+                    failures.append("{}={!r}".format(candidate_name, exc))
+
+            if mapped_aop is None:
+                raise RuntimeError(
+                    "native social failed game selection: {}".format("; ".join(failures[:8]))
+                )
+        else:
+            seed_aop = getattr(interaction, "_aop", None)
+            context = getattr(interaction, "context", None)
+            if seed_aop is None or context is None:
+                raise RuntimeError("autonomy selection has no reusable interaction context")
+            super_affordance = seed_aop.super_affordance
+            super_interaction = seed_aop.super_interaction
+            mapped_aop = AffordanceObjectPair(
+                affordance,
+                target,
+                super_affordance,
+                super_interaction,
+            )
+        if mapped_interaction is None:
+            test_result = mapped_aop.test(context)
+            if not test_result:
+                raise RuntimeError("native social failed game tests: {}".format(test_result))
+            factory_result = mapped_aop.interaction_factory(context)
+            if not factory_result:
+                raise RuntimeError("native social could not be created: {}".format(factory_result))
+            mapped_interaction = factory_result.interaction
         callback = getattr(mapped_interaction, "register_on_finishing_callback", None)
         if not callable(callback):
             raise RuntimeError("game interaction has no completion callback")
@@ -409,7 +476,7 @@ def execute_sims_action(payload, data, interaction):
 
         callback(finished)
         if not AffordanceObjectPair.execute_interaction(mapped_interaction):
-            raise RuntimeError("game rejected native autonomous interaction")
+            raise RuntimeError("game rejected native interaction")
         write_marker(
             "queued {} -> {}: {} ({})".format(
                 payload["speaker"]["name"],
@@ -435,7 +502,14 @@ def report_action_result(decision_id, action, status, reason=None, changes=None)
         global _AUTONOMY_IN_FLIGHT
         try:
             post_json("/action-result", body, timeout=10)
-            write_marker("confirmed {}: {} ({})".format(decision_id, action, status))
+            write_marker(
+                "confirmed {}: {} ({}){}".format(
+                    decision_id,
+                    action,
+                    status,
+                    " reason=" + str(reason) if reason else "",
+                )
+            )
         except Exception:
             write_marker(traceback.format_exc())
         finally:
@@ -647,6 +721,7 @@ def submit_empneon_chat(actor, target, message, transcript=""):
     def worker():
         try:
             data = post_json("/chat", payload)
+            data["_empneon_payload"] = payload
             result = (actor, target, data, None, transcript)
         except Exception as exc:
             result = (actor, target, None, str(exc), transcript)
@@ -664,6 +739,9 @@ def show_empneon_chat_result(actor, target, data, error, transcript=""):
         show_empneon_notification(actor, "Empneon error", error)
         write_marker("Empneon Social failed: " + error)
         return
+    payload = data.pop("_empneon_payload", None)
+    if payload is not None and data.get("decision_id"):
+        execute_sims_action(payload, data, None)
     relationship = data.get("relationship") or {}
     details = "Emotion: {} | Intent: {} | Suggested action: {}".format(
         data.get("emotion", "neutral"),
@@ -812,7 +890,7 @@ def chat_payload_for_target(active, target_info, message, source):
     return {
         "speaker": npc,
         "listener": player,
-        "relationship": relationship_payload(active.sim_info, target_info),
+        "relationship": relationship_payload(target_info, active.sim_info),
         "location": current_location(),
         "event": {"type": "player_conversation", "source": source},
         "available_actions": AVAILABLE_ACTIONS,

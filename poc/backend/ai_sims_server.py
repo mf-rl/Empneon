@@ -1163,8 +1163,40 @@ def request_bodies(messages, temperature, schema, schema_name, task="large"):
     yield json.dumps(base).encode("utf-8")
 
 
+def lmstudio_chat(messages, temperature=None, task="large"):
+    cfg = task_model_config(task)
+    prompt = "\n\n".join(
+        "{}:\n{}".format(str(message.get("role") or "user").upper(), message.get("content") or "")
+        for message in messages
+    )
+    body = json.dumps(
+        {
+            "model": loaded_model_id(task),
+            "input": prompt,
+            "temperature": temperature if temperature is not None else cfg.get("temperature", 0.6),
+            "max_output_tokens": int(cfg.get("max_tokens") or 350),
+            "reasoning": "off",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        api_root(cfg["endpoint"]) + "/api/v1/chat",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    PROVIDER_LOG.info("chat provider=lmstudio model=%s task=%s", loaded_model_id(task), task)
+    with urllib.request.urlopen(request, timeout=90) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    for item in data.get("output") or []:
+        if item.get("type") == "message" and str(item.get("content") or "").strip():
+            return str(item["content"]).strip()
+    raise RuntimeError("LM Studio returned empty content")
+
+
 def llm_chat(messages, temperature=None, schema=None, schema_name="response", task="large"):
     cfg = task_model_config(task)
+    if cfg.get("name") == "lmstudio":
+        return lmstudio_chat(messages, temperature=temperature, task=task)
     last_error = None
     headers = {"Content-Type": "application/json"}
     api_key = cfg.get("api_key") or os.environ.get("AI_SIM_API_KEY")
@@ -1232,6 +1264,24 @@ def build_chat_prompt(payload, context):
     memory_lines = "\n".join("- " + item["summary"] for item in context["memories"]) or "- None yet"
     nearby = ", ".join(sim_name(item) if isinstance(item, dict) else str(item) for item in context["nearby_sims"]) or "none"
     goals = speaker_profile.get("goals") or []
+    conversation_lines = []
+    current_message = " ".join(str(payload.get("message") or "").casefold().split())
+    for turn in context.get("conversation") or []:
+        if current_message == " ".join(str(turn["message"] or "").casefold().split()):
+            continue
+        if turn["speaker_id"] == context["speaker_id"]:
+            asker = listener_profile.get("name")
+            respondent = speaker_profile.get("name")
+        else:
+            asker = speaker_profile.get("name")
+            respondent = listener_profile.get("name")
+        conversation_lines.extend(
+            (
+                "{}: {}".format(asker, turn["message"]),
+                "{}: {}".format(respondent, turn["dialogue"]),
+            )
+        )
+    recent_conversation = "\n".join(conversation_lines) or "None yet"
 
     return """Role assignment:
 You are {speaker_name}, the Speaker.
@@ -1272,6 +1322,10 @@ Location:
 Nearby Sims:
 {nearby}
 
+Recent conversation (source of truth for past facts):
+{recent_conversation}
+When asked about a prior plan or agreement, answer with its exact activity, date, and time from this conversation. Do not merely repeat an earlier reply.
+
 Player says:
 {message}
 """.format(
@@ -1287,6 +1341,7 @@ Player says:
         listener_traits=", ".join(context["listener_traits"]) or "unknown",
         relationship=dumps(relationship),
         emotions=dumps(emotions),
+        recent_conversation=recent_conversation,
         summary=context["summary"] or "None yet",
         memories=memory_lines,
         location=context["location"],
@@ -1311,6 +1366,29 @@ def save_conversation(conversation_id, speaker_id, listener_id, message, respons
             (conversation_id, speaker_id, listener_id, str(message or ""), dumps(response), now()),
         )
         conn.commit()
+
+
+def recent_conversation(speaker_id, listener_id, limit=None):
+    limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
+    with connect_db() as conn:
+        rows = conn.execute(
+            """
+            select speaker_id, listener_id, message, response_json
+            from conversations
+            where (speaker_id = ? and listener_id = ?) or (speaker_id = ? and listener_id = ?)
+            order by id desc limit ?
+            """,
+            (speaker_id, listener_id, listener_id, speaker_id, limit),
+        ).fetchall()
+    return [
+        {
+            "speaker_id": row["speaker_id"],
+            "listener_id": row["listener_id"],
+            "message": row["message"],
+            "dialogue": str(loads(row["response_json"], {}).get("dialogue") or ""),
+        }
+        for row in reversed(rows)
+    ]
 
 
 def reasoning_fallback_response(payload, context):
@@ -1434,6 +1512,9 @@ def chat(payload):
         )
         summary = memory_summary(speaker_id, listener_id)
         context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
+        context["conversation"] = recent_conversation(speaker_id, listener_id)
+        context["speaker_id"] = speaker_id
+        context["listener_id"] = listener_id
         adapter = Sims4PocAdapter(payload)
         event = adapter.observe()[0]
         request = CognitiveRequest(
@@ -1457,9 +1538,17 @@ def chat(payload):
             latency_ms=request.deadline_ms,
         )
         with open_db(CORE_DB_PATH) as conn:
-            runtime = CognitiveRuntime(CORE_GOVERNOR, ActionRecordStore(conn))
-            record = asyncio.run(runtime.process(request, adapter, resolve_dialogue, estimate))
-        result = adapter.response_for(record.decision, record.result)
+            actions = ActionRecordStore(conn)
+            runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
+            decision = asyncio.run(runtime.decide(request, resolve_dialogue, estimate))
+            action = adapter.action_for(decision)
+            if action is None:
+                raise ValueError("no supported Sims action available")
+            persist_core_agent(conn, speaker)
+            persist_core_agent(conn, listener)
+            actions.propose(event.id, decision, action)
+        result = adapter.response_for(decision)
+        result["animation"] = action
     memory = result["memory"]
     if memory["summary"] and memory["importance"] >= 0.2:
         add_memory(
@@ -1479,8 +1568,8 @@ def chat(payload):
     result["emotion_state"] = emotion_state
     result["memory_summary"] = summary
     result["agent"] = {"id": speaker_id, "state": "dormant"}
-    result["decision_id"] = record.decision.id
-    result["action_status"] = record.result.status
+    result["decision_id"] = decision.id
+    result["action_status"] = "proposed"
     return result
 
 

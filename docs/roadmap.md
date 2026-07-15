@@ -132,7 +132,7 @@ portability rather than game performance or production readiness. Stage 6 is com
 - [x] Execute the selected native interaction and persist only its game-confirmed outcome
 - [x] Let retained memory, relationship, or belief context alter a later interaction choice
 - [x] Reflect at least one confirmed native relationship or mood consequence back into Core
-- [ ] Validate save/reload continuity and safe cancellation in a dedicated test save
+- [x] Validate save/reload continuity and safe cancellation in a dedicated test save
 
 This stage turns the working reference adapter into a noticeable gameplay vertical slice before
 developer-product work begins. It must reuse base-game interactions and native UI where possible.
@@ -186,6 +186,14 @@ by 100 and clamped to Core's `-1.0..1.0` strength range. Romance remains an orde
 consequence because Core has no canonical romance field. An integration regression confirms a
 native `+5` friendship result becomes Core strength `0.05`. Live consequence and persistence
 validation remains part of the final dedicated-save checklist item.
+
+**Save/reload and cancellation validation, 2026-07-15:** A dedicated live test on The Sims 4
+`1.125.59.1030` confirmed that **Empneon Social** enters the active Sim's queue, routes the Sim to
+the target, and opens input only after arrival. A mapped **Ask About Day** completed with a native
+`+5` friendship consequence confirmed back into Core. Canceling a queued interaction before
+arrival opened no input and created no backend request or action proposal. After a pizza meeting
+was discussed, the game was saved and reloaded; a fresh interaction recalled the retained plan as
+`Pizza at 7 PM tomorrow.` Stage 6.5 is complete.
 
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
@@ -335,10 +343,10 @@ added 36m26s and 167 lines. These are reproducible repository-session measuremen
 person-hours or production estimates. The canonical scenario subsequently passed through both
 adapter boundaries and the real headless Godot engine, completing Stage 6.
 
-Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction and native transcript
-passed live validation, three generic actions map to base-game socials, and the selected mapped
-social is queued with results deferred until its game finishing callback. Retained negative versus
-non-negative relationship context now changes a later generic autonomous choice. Confirmed native
-friendship deltas also update Core's canonical relationship edge. Continue with the final dedicated
-save/reload and safe-cancellation validation. Stage 7 must not begin until this playable prototype
-passes its in-game exit gate.
+Stage 6.5 is complete. Its player-triggered pie-menu interaction and native transcript passed live
+validation, three generic actions map to base-game socials, and the selected mapped social is queued
+with results deferred until its game finishing callback. Retained negative versus non-negative
+relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
+also update Core's canonical relationship edge. Save/reload conversation continuity and
+cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The next pending
+roadmap task is the Stage 7 agent, event, decision, and belief timeline.
