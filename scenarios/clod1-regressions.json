@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "name": "canonical portability acknowledgement",
+      "request": {
+        "id": "portability-request-1",
+        "agent_id": "godot-a",
+        "preferred_clod": 1,
+        "event": {
+          "id": "godot-encounter-1",
+          "type": "encounter",
+          "actor_ids": ["godot-a", "godot-b"],
+          "location": "godot-square",
+          "facts": {"distance": 1},
+          "happened_at": 1
+        }
+      },
+      "expected": {
+        "id": "abc780ba-3e2c-501a-95a5-85e289d2a7f5",
+        "actor_id": "godot-a",
+        "intent": "acknowledge",
+        "target_id": "godot-b",
+        "evidence_ids": ["godot-encounter-1"],
+        "state_changes": [],
+        "confidence": 1.0
+      }
+    }
+  ]
+}

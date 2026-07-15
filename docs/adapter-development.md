@@ -93,6 +93,19 @@ Add a small round-trip factory for a new adapter to that parametrized test. Use 
 identities and no personal save data. Adapter-specific validation belongs in focused unit tests;
 cross-engine performance and believability belong in SocietyBench.
 
+## Scenario Regressions
+
+Store provider-free cognition requests and expected `Decision` fields in a JSON fixture, then run:
+
+```powershell
+empneon-regress scenarios/clod1-regressions.json
+```
+
+Each case requires a unique `name`, a generic `request` with its `event`, and a non-empty
+`expected` object. Expected fields may be partial or exact. The command prints JSON and returns `0`
+for a pass, `1` for a decision mismatch, and `2` for an invalid fixture or I/O error. Use
+`--output FILE` for a report file; existing files are never overwritten.
+
 ## Measured Godot Proof Effort
 
 This measurement covers the minimal two-agent portability proof, not a production integration.

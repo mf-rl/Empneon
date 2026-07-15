@@ -13,6 +13,9 @@ dependencies = [
     "sqlite-vec>=0.1.9",
 ]
 
+[project.scripts]
+empneon-regress = "empneon.benchmarks.regression:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",

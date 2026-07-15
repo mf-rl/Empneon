@@ -257,8 +257,12 @@ Schema v10 adds nullable selected-CLOD persistence to cognition usage; legacy ro
 `UsageStore.telemetry` aggregates CLOD/provider distributions, estimated peak RAM/VRAM, and
 estimated/actual token and latency totals with an optional agent filter.
 
+`empneon-regress` runs validated JSON cognition fixtures through provider-free CLOD 1, reports
+field-level decision mismatches, and returns distinct pass, regression, and invalid-input exit
+codes. CI runs the canonical portability fixture.
+
 ## Current Work Order
 
-1. Implement the Stage 7 scenario regression runner.
+1. Define stable packaging, API reference, versioning, and migration policy for Stage 7.
 
 See `docs/roadmap.md` for evidence gates.

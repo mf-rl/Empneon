@@ -158,6 +158,7 @@ Version **0.2.0** is an early framework release.
 - [x] Agent, event, decision, and belief timeline
 - [x] Replay and state-delta inspection
 - [x] Resource and CLOD telemetry
+- [x] Scenario regression runner
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -311,7 +312,10 @@ provider, adapter, or game. It distinguishes matched, unapplied, and additional 
 normalized consequence integrity. Schema v10 now records selected CLOD on new usage rows, while
 legacy rows remain explicitly unknown. `UsageStore.telemetry` aggregates request/attempt counts,
 CLOD/provider distributions, estimated peak RAM/VRAM, and estimated/actual token and latency totals,
-with an optional agent filter. The next pending roadmap task is the scenario regression runner.
+with an optional agent filter. `empneon-regress` now runs provider-free JSON decision fixtures,
+reports field-level mismatches, and returns CI-friendly pass, regression, or invalid-input exit
+codes. CI runs the canonical fixture in `scenarios/clod1-regressions.json`. The next pending roadmap
+task is stable packaging, API reference, versioning, and migration policy.
 
 ## Documentation
 

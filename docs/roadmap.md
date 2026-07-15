@@ -206,7 +206,7 @@ backend restart, and game reload; unavailable Sims and canceled interactions mus
 - [x] Agent, event, decision, and belief timeline
 - [x] Replay and state-delta inspection
 - [x] Resource and CLOD telemetry
-- [ ] Scenario regression runner
+- [x] Scenario regression runner
 - [ ] Stable package, API reference, versioning, and migration policy
 - [ ] Recruit three studio design partners
 
@@ -228,6 +228,13 @@ invented value. `UsageStore.telemetry` returns JSON-ready attempt and distinct-r
 CLOD and provider distributions, estimated peak RAM/VRAM, estimated token and latency totals, and
 actual token and latency totals, optionally filtered to one agent. It aggregates the existing
 usage table and introduces no telemetry service or duplicate store.
+
+**Scenario regression runner, 2026-07-15:** `empneon-regress` validates JSON fixtures containing
+generic cognition requests and exact or partial expected decision fields, runs the provider-free
+CLOD 1 resolver, and emits a machine-readable mismatch report. Exit codes distinguish pass (`0`),
+behavior regression (`1`), and invalid fixture or I/O (`2`). The canonical portability decision is
+now a checked fixture, and CI executes it after the unit suite. No provider, database, or game is
+required.
 
 ## Stage 8: Optional Managed Service
 
@@ -368,5 +375,6 @@ with results deferred until its game finishing callback. Retained negative versu
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
 cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The read-only
-Stage 7 developer timeline, recorded replay inspection, and resource/CLOD telemetry are complete;
-the next pending task is the scenario regression runner.
+Stage 7 developer timeline, replay inspection, resource/CLOD telemetry, and scenario regression
+runner are complete. The next pending task is stable packaging, API reference, versioning, and
+migration policy.
