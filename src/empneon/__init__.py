@@ -1,3 +1,36 @@
-"""Game-agnostic cognitive runtime for persistent simulated societies."""
+"""Supported public API for the Empneon cognitive runtime."""
 
-__version__ = "0.2.0"
+from empneon.adapters import GameAdapter
+from empneon.core.contracts import (
+    ActionResult,
+    CognitiveRequest,
+    Decision,
+    StateDelta,
+    WorldEvent,
+)
+from empneon.core.replay import replay_action_record
+from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
+from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
+from empneon.core.scheduler.usage import UsageStore
+from empneon.core.timeline import agent_timeline
+from empneon.db.connection import open_db
+
+__version__ = "0.3.0"
+
+__all__ = [
+    "ActionRecordStore",
+    "ActionResult",
+    "CognitiveRequest",
+    "CognitiveRuntime",
+    "Decision",
+    "GameAdapter",
+    "ResourceBudget",
+    "ResourceEstimate",
+    "ResourceGovernor",
+    "StateDelta",
+    "UsageStore",
+    "WorldEvent",
+    "agent_timeline",
+    "open_db",
+    "replay_action_record",
+]

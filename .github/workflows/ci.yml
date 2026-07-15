@@ -24,3 +24,5 @@ jobs:
         run: pytest
       - name: Scenario regressions
         run: empneon-regress scenarios/clod1-regressions.json
+      - name: Build package
+        run: python -m build

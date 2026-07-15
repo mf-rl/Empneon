@@ -102,7 +102,7 @@ No performance claim is accepted without an in-game benchmark. See
 
 ## Status
 
-Version **0.2.0** is an early framework release.
+Version **0.3.0** is a pre-1.0 developer release with a documented supported API.
 
 - [x] Persistent identity and relationship storage
 - [x] Episodic memory and SQLite vector search
@@ -159,6 +159,7 @@ Version **0.2.0** is an early framework release.
 - [x] Replay and state-delta inspection
 - [x] Resource and CLOD telemetry
 - [x] Scenario regression runner
+- [x] Stable package, API reference, versioning, and migration policy
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -314,12 +315,16 @@ legacy rows remain explicitly unknown. `UsageStore.telemetry` aggregates request
 CLOD/provider distributions, estimated peak RAM/VRAM, and estimated/actual token and latency totals,
 with an optional agent filter. `empneon-regress` now runs provider-free JSON decision fixtures,
 reports field-level mismatches, and returns CI-friendly pass, regression, or invalid-input exit
-codes. CI runs the canonical fixture in `scenarios/clod1-regressions.json`. The next pending roadmap
-task is stable packaging, API reference, versioning, and migration policy.
+codes. CI runs the canonical fixture in `scenarios/clod1-regressions.json`. Version 0.3.0 now
+builds from one version source into wheel and source distributions. The documented supported API
+covers contracts, runtime integration, resource controls, persistence, inspection, and provider
+extension points. Semantic-version and transactional forward-only database migration policies are
+published. The next pending roadmap task is recruiting three studio design partners.
 
 ## Documentation
 
 - [Vision and architecture](docs/vision.md)
+- [Package, API, and compatibility policy](docs/api.md)
 - [Adapter development guide](docs/adapter-development.md)
 - [Research and innovation program](docs/innovations.md)
 - [SocietyBench results](docs/benchmark-results.md)

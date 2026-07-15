@@ -207,7 +207,7 @@ backend restart, and game reload; unavailable Sims and canceled interactions mus
 - [x] Replay and state-delta inspection
 - [x] Resource and CLOD telemetry
 - [x] Scenario regression runner
-- [ ] Stable package, API reference, versioning, and migration policy
+- [x] Stable package, API reference, versioning, and migration policy
 - [ ] Recruit three studio design partners
 
 **Developer timeline, 2026-07-15:** `agent_timeline` merges an agent's canonical participated
@@ -235,6 +235,13 @@ CLOD 1 resolver, and emits a machine-readable mismatch report. Exit codes distin
 behavior regression (`1`), and invalid fixture or I/O (`2`). The canonical portability decision is
 now a checked fixture, and CI executes it after the unit suite. No provider, database, or game is
 required.
+
+**Stable developer package, 2026-07-15:** Version `0.3.0` uses `empneon.__version__` as its
+single build-version source and declares a small supported top-level API plus the provider
+extension namespace. CI builds a wheel and source distribution. `docs/api.md` defines pre-1.0
+Semantic Versioning guarantees and keeps database schema versions independent. Database upgrades
+remain transactional and forward-only; newer schemas are rejected, and rollback requires a
+pre-upgrade backup.
 
 ## Stage 8: Optional Managed Service
 
@@ -375,6 +382,6 @@ with results deferred until its game finishing callback. Retained negative versu
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
 cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The read-only
-Stage 7 developer timeline, replay inspection, resource/CLOD telemetry, and scenario regression
-runner are complete. The next pending task is stable packaging, API reference, versioning, and
-migration policy.
+Stage 7 developer timeline, replay inspection, resource/CLOD telemetry, scenario regression
+runner, and stable 0.3 developer package are complete. The next pending task is recruiting three
+studio design partners.

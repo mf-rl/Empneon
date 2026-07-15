@@ -1,6 +1,6 @@
 # Empneon Working Context
 
-**Specification version:** 0.2
+**Specification version:** 0.3
 
 ## Product
 
@@ -261,8 +261,12 @@ estimated/actual token and latency totals with an optional agent filter.
 field-level decision mismatches, and returns distinct pass, regression, and invalid-input exit
 codes. CI runs the canonical portability fixture.
 
+Version 0.3.0 has a single build-version source, a documented supported API, wheel and source
+distribution builds in CI, and a pre-1.0 Semantic Versioning policy. Schema versions remain
+independent; upgrades are transactional and forward-only, while rollback restores a backup.
+
 ## Current Work Order
 
-1. Define stable packaging, API reference, versioning, and migration policy for Stage 7.
+1. Recruit three studio design partners for Stage 7.
 
 See `docs/roadmap.md` for evidence gates.
