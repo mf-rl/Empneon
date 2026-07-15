@@ -157,6 +157,7 @@ Version **0.2.0** is an early framework release.
 - [x] Playable Sims 4 prototype with visible native consequences
 - [x] Agent, event, decision, and belief timeline
 - [x] Replay and state-delta inspection
+- [x] Resource and CLOD telemetry
 - [ ] Validated in-game performance benchmarks
 
 Foundation Stage 0 and Stage 1 are complete. The Sims POC autonomous and conversation
@@ -307,7 +308,10 @@ events, confirmed decisions and outcomes, and beliefs. It reuses existing Core r
 one global result limit; unconfirmed proposals remain outside the timeline. `replay_action_record`
 reconstructs a confirmed event, decision, result, and ordered delta comparison without invoking a
 provider, adapter, or game. It distinguishes matched, unapplied, and additional changes and checks
-normalized consequence integrity. The next pending roadmap task is resource and CLOD telemetry.
+normalized consequence integrity. Schema v10 now records selected CLOD on new usage rows, while
+legacy rows remain explicitly unknown. `UsageStore.telemetry` aggregates request/attempt counts,
+CLOD/provider distributions, estimated peak RAM/VRAM, and estimated/actual token and latency totals,
+with an optional agent filter. The next pending roadmap task is the scenario regression runner.
 
 ## Documentation
 

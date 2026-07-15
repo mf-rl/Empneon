@@ -205,7 +205,7 @@ backend restart, and game reload; unavailable Sims and canceled interactions mus
 
 - [x] Agent, event, decision, and belief timeline
 - [x] Replay and state-delta inspection
-- [ ] Resource and CLOD telemetry
+- [x] Resource and CLOD telemetry
 - [ ] Scenario regression runner
 - [ ] Stable package, API reference, versioning, and migration policy
 - [ ] Recruit three studio design partners
@@ -221,6 +221,13 @@ canonical event when available, decision, game result, and ordered state deltas 
 provider, adapter, or game. Delta inspection separates exact matches, proposed changes the game did
 not apply, and additional game-applied changes. It also reports whether normalized consequence
 rows match the confirmed result, exposing incomplete legacy or corrupted records without mutation.
+
+**Resource and CLOD telemetry, 2026-07-15:** Schema v10 persists the selected CLOD with each new
+cognition-usage record. Migrated legacy rows remain explicitly `unknown` rather than receiving an
+invented value. `UsageStore.telemetry` returns JSON-ready attempt and distinct-request counts,
+CLOD and provider distributions, estimated peak RAM/VRAM, estimated token and latency totals, and
+actual token and latency totals, optionally filtered to one agent. It aggregates the existing
+usage table and introduces no telemetry service or duplicate store.
 
 ## Stage 8: Optional Managed Service
 
@@ -361,5 +368,5 @@ with results deferred until its game finishing callback. Retained negative versu
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
 cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`. The read-only
-Stage 7 developer timeline and recorded replay inspection are complete; the next pending task is
-resource and CLOD telemetry.
+Stage 7 developer timeline, recorded replay inspection, and resource/CLOD telemetry are complete;
+the next pending task is the scenario regression runner.

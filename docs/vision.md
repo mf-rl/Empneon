@@ -155,6 +155,10 @@ existing Core records rather than maintaining a second history.
 action and classifies its proposed and applied state deltas. Recorded replay is inspection, not
 re-execution: it never calls a provider or mutates a game.
 
+`UsageStore.telemetry(agent_id=None)` exposes persisted resource estimates, actual provider usage,
+and selected-CLOD distribution as a JSON-ready aggregate. It is historical developer telemetry,
+not a live process or hardware monitor.
+
 ## Epistemic Social Memory
 
 Empneon separates canonical events from agent beliefs. An agent may observe an event,

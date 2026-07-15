@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -171,6 +171,11 @@ CREATE TABLE IF NOT EXISTS cognition_usage (
     actual_latency_ms           INTEGER,
     recorded_at                 INTEGER NOT NULL
 )
+"""
+
+_ADD_COGNITION_USAGE_SELECTED_CLOD = """
+ALTER TABLE cognition_usage
+ADD COLUMN selected_clod INTEGER CHECK(selected_clod BETWEEN 0 AND 4)
 """
 
 _CREATE_ACTION_RESULTS = """
@@ -403,4 +408,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     ),
     8: (_CREATE_BELIEF_PROVENANCE,),
     9: (_CREATE_BELIEF_RELATIONS, _CREATE_IDX_BELIEF_SINGLE_REVISION),
+    10: (_ADD_COGNITION_USAGE_SELECTED_CLOD,),
 }

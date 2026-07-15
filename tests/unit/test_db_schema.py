@@ -169,6 +169,41 @@ def test_migrates_v8_schema_with_belief_relations() -> None:
     ).fetchone() == (1,)
 
 
+def test_migrates_v9_schema_with_selected_clod_telemetry() -> None:
+    conn = sqlite3.connect(":memory:")
+    for ddl in ALL_DDL:
+        conn.execute(ddl)
+    conn.execute("INSERT INTO schema_version VALUES (9)")
+    conn.execute(
+        "INSERT INTO cognition_usage VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "usage-1",
+            "request-1",
+            "alice",
+            "event-1",
+            "local",
+            "small",
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+        ),
+    )
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert conn.execute(
+        "SELECT selected_clod FROM cognition_usage WHERE id='usage-1'"
+    ).fetchone()[0] is None
+
+
 def test_rejects_database_newer_than_runtime() -> None:
     conn = sqlite3.connect(":memory:")
     for ddl in ALL_DDL:

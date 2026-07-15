@@ -253,8 +253,12 @@ adding duplicate persistence.
 `replay_action_record` now reconstructs confirmed action records without re-execution, classifies
 matched, unapplied, and additional state deltas, and reports normalized-consequence integrity.
 
+Schema v10 adds nullable selected-CLOD persistence to cognition usage; legacy rows remain unknown.
+`UsageStore.telemetry` aggregates CLOD/provider distributions, estimated peak RAM/VRAM, and
+estimated/actual token and latency totals with an optional agent filter.
+
 ## Current Work Order
 
-1. Implement Stage 7 resource and CLOD telemetry.
+1. Implement the Stage 7 scenario regression runner.
 
 See `docs/roadmap.md` for evidence gates.
