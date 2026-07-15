@@ -236,15 +236,13 @@ game-specific results. Godot 4.7 independently consumed the same file headlessly
 this proves contract portability, not game performance. Stage 6 is complete.
 
 Stage 6.5 is a bounded playable Sims 4 prototype required before Stage 7. Its player-triggered
-pie-menu interaction passed live validation. Remaining work adds native in-game message input
-and dialogue/outcome feedback, three to five whitelisted
-base-game socials, confirmed native relationship or mood consequences, one later choice altered
-by retained context, and save/reload plus cancellation validation. Custom animation, voice, broad
-autonomy, and elaborate UI remain deferred.
+pie-menu interaction and native conversation transcript passed live validation. Remaining work
+adds three to five whitelisted base-game socials, confirmed native relationship or mood
+consequences, one later choice altered by retained context, and save/reload plus cancellation
+validation. Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
 
 ## Current Work Order
 
-1. Display generated dialogue and action outcome through native in-game UI, beginning with a
-   message-input dialog from the validated Empneon Social pie-menu entry.
+1. Map a whitelist of three to five generic intents to base-game social interactions.
 
 See `docs/roadmap.md` for evidence gates.

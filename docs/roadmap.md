@@ -127,7 +127,7 @@ portability rather than game performance or production readiness. Stage 6 is com
 ## Stage 6.5: Playable Sims 4 Prototype
 
 - [x] Add one player-triggered Empneon social interaction to the Sim pie menu
-- [ ] Display generated dialogue and action outcome through native in-game UI
+- [x] Display generated dialogue and action outcome through native in-game UI
 - [ ] Map a whitelist of three to five generic intents to base-game social interactions
 - [ ] Execute the selected native interaction and persist only its game-confirmed outcome
 - [ ] Let retained memory, relationship, or belief context alter a later interaction choice
@@ -142,15 +142,14 @@ elaborate UI are outside this prototype.
 **Pie-menu validation, 2026-07-13:** The packaged `Empneon:Social` interaction loaded in game,
 appeared as **Empneon Social** when the player clicked another Sim, and recorded the selected
 actor and target for two live invocations without the cheat console. The mod build and installer
-now produce and deploy both the script archive and its interaction-tuning package. Safe
-cancellation remains before the native UI checklist item can be completed.
+now produce and deploy both the script archive and its interaction-tuning package.
 
-**Native UI handoff, 2026-07-14:** The open second checklist item now has a native transcript
+**Native UI validation, 2026-07-14:** The completed second checklist item has a native transcript
 dialog, a **Thinking...** notification, asynchronous `/chat` submission through the existing
 payload path, and native error notifications. Focused tests cover repeated message capture and
 rendering dialogue, intent, emotion, suggested action, and Empneon relationship deltas. Live LM
-Studio requests returned generated dialogue in the transcript. Safe cancellation has not passed
-live validation, so this item remains unchecked.
+Studio requests returned generated dialogue and outcome metadata in the transcript. Safe
+cancellation remains part of the final dedicated save/reload validation item.
 
 Three Sims 4 `1.121.361.1020` UI compatibility problems were resolved during the live iterations:
 icon overrides cannot use the older tuple form, text input entries must be `UiTextInput` objects
@@ -159,17 +158,10 @@ lookup. Disassembly of the installed `UiDialogTextInput.on_text_input` showed th
 `hasattr(self.text_inputs, text_input_name)`; using `FrozenAttributeDict` fixed the silently empty
 message response. The focused test now preserves that contract.
 
-The remaining blocker is outside the mod. The Empneon `/health` endpoint passed, but a direct
-eight-token request to LM Studio also produced no output and timed out after 120 seconds. LM Studio
-reported `gemma-4-e4b-it-uncensored` loaded with 131,072-token context, four parallel slots, batch
-size 2,048, and physical batch size 512 on the test machine's RTX 2060. Resume by restarting the LM
-Studio server/model with an 8,192-token context and one parallel slot, then verify a direct minimal
-completion before repeating the in-game interaction. The backend session used
-`AI_SIM_DB=$PWD\stage2-6-poc.sqlite3` and `AI_SIM_CONFIG=$PWD\stage2-6-config.json`; that config and
-the generated databases are local evidence and are intentionally not tracked. After a successful
-response, validate cancel without a backend request, update this checkbox, and commit the completed
-item. Do not add Sim movement here: intent whitelisting and native queued interaction execution are
-the next two roadmap items. Stage 7 remains blocked until the full Stage 6.5 exit gate passes.
+The next task is to map three to five generic intents to base-game social interactions. Native
+queued interaction execution follows as a separate checklist item. The backend session uses
+`AI_SIM_CONFIG=$PWD\stage2-6-config.json`; that local config and generated databases remain
+untracked. Stage 7 remains blocked until the full Stage 6.5 exit gate passes.
 
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
@@ -319,10 +311,8 @@ added 36m26s and 167 lines. These are reproducible repository-session measuremen
 person-hours or production estimates. The canonical scenario subsequently passed through both
 adapter boundaries and the real headless Godot engine, completing Stage 6.
 
-Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction passed live
-validation. Native input reaches the backend, but the generated-feedback item remains open because
-the configured LM Studio model stopped responding during live validation. Resume from the native
-UI handoff above, then continue with a small base-game social whitelist, queued native execution,
+Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction and native transcript
+passed live validation. Continue with a small base-game social whitelist, queued native execution,
 game-confirmed consequences, context-dependent follow-up behavior, and save/reload plus
 cancellation validation. Stage 7 must not begin until this playable prototype passes its in-game
 exit gate.

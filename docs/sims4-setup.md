@@ -95,9 +95,9 @@ Before the next in-game test:
 3. Confirm the generated reply appears in the transcript, then cancel a second dialog and confirm
    cancellation produces no request.
 
-Do not mark the native UI roadmap item complete until generated feedback and safe cancellation
-both pass live. Do not diagnose the active Sim remaining still as part of this item; routing the
-actor to the target requires the later whitelisted native-interaction execution task.
+The native UI roadmap item passed live validation. Keep safe cancellation for the final dedicated
+save/reload validation item. The active Sim remaining still is expected until the later whitelisted
+native-interaction execution task.
 
 Memory settings:
 

@@ -291,9 +291,9 @@ The first Stage 6.5 item passed live validation on 2026-07-13. Clicking another 
 **Empneon Social** pie-menu entry, and two selections recorded the correct player and target Sims
 without a cheat-console command. The second item is in progress: the interaction now opens a
 native transcript dialog, captures repeated messages, shows progress/error notifications, and
-sends the existing `/chat` payload without using the cheat console. Live LM Studio requests now
-return generated dialogue in the transcript. Safe cancellation is not yet validated, so the
-checklist remains open. Native walking and social execution belong to the following
+sends the existing `/chat` payload without using the cheat console. Live LM Studio requests
+returned generated dialogue and outcome metadata in the transcript, completing the native-UI
+checklist item. Native walking and social execution belong to the following
 whitelist/execution items and are not implemented yet. See the Stage 6.5 handoff in the roadmap and
 the troubleshooting notes in `docs/sims4-setup.md` before resuming.
 
