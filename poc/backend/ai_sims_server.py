@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 from empneon.adapters.sims4 import Sims4PocAdapter
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
 from empneon.core.identity.models import Agent
+from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
@@ -1593,7 +1594,29 @@ def confirm_action(payload):
             changes.append(StateDelta(path, "increment", value))
     result = ActionResult(decision_id, status, tuple(changes), reason)
     with open_db(CORE_DB_PATH) as conn:
-        record = ActionRecordStore(conn).confirm(result, action)
+        actions = ActionRecordStore(conn)
+        proposal = actions.get_proposal(decision_id)
+        friendship_delta = sum(
+            float(change.value)
+            for change in changes
+            if change.path == "relationship.friendship"
+        )
+        if proposal is not None and proposal.decision.target_id and friendship_delta:
+            relationships = RelationshipStore(conn)
+            relationship = relationships.get(
+                proposal.decision.actor_id,
+                proposal.decision.target_id,
+            ) or Relationship(
+                proposal.decision.actor_id,
+                proposal.decision.target_id,
+                "acquaintance",
+            )
+            relationship.strength = max(
+                -1.0,
+                min(1.0, relationship.strength + friendship_delta / 100.0),
+            )
+            relationships.set(relationship, commit=False)
+        record = actions.confirm(result, action)
     return {
         "decision_id": record.decision.id,
         "status": record.result.status,

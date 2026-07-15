@@ -110,7 +110,7 @@ The final foundation changes were:
   identity store to share one connection, and uses a SQLite savepoint so late failures
   roll back both new imports and updates.
 
-Current verification: 165 tests and Ruff pass. Strict mypy passes for Core, both adapter
+Current verification: 166 tests and Ruff pass. Strict mypy passes for Core, both adapter
 boundaries, and the published contract suite; the full test tree still has pre-existing
 annotation failures. Published evidence supports no scalability or player-quality claim.
 
@@ -240,12 +240,13 @@ pie-menu interaction and native conversation transcript passed live validation, 
 actions map to base-game socials. The mapped selection is now tested, instantiated, and queued with
 the game's native interaction context; Core receives an action result only from its finishing
 callback. Generic autonomous acknowledgements now select **Apologize** for a retained negative
-relationship score and **Ask About Day** after it becomes non-negative. Remaining work reflects a
-confirmed relationship or mood consequence into Core and validates save/reload plus cancellation.
-Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
+relationship score and **Ask About Day** after it becomes non-negative. Confirmed native friendship
+deltas now update Core's canonical actor-to-target relationship edge as well as ordered action
+consequences. Remaining work validates save/reload continuity and safe cancellation. Custom
+animation, voice, broad autonomy, and elaborate UI remain deferred.
 
 ## Current Work Order
 
-1. Reflect at least one confirmed native relationship or mood consequence back into Core.
+1. Validate save/reload continuity and safe cancellation in a dedicated test save.
 
 See `docs/roadmap.md` for evidence gates.

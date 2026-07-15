@@ -52,7 +52,8 @@ Python 3.12 may be replaced with any installed Python version supported by
    Appearance** base-game socials. A generic autonomous acknowledgement selects **Apologize**
    while the game's retained aggregate relationship score is negative and **Ask About Day** once
    it is non-negative. Core receives the result only after the queued interaction finishes; a
-   proposal or queue acceptance is not treated as a confirmed outcome.
+   proposal or queue acceptance is not treated as a confirmed outcome. Confirmed friendship
+   changes also update Core's actor-to-target relationship strength.
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `poc/ts4script/ai_sims_agent.py` and rebuilding
@@ -233,6 +234,7 @@ print("distinct action participants:", len(participant_ids))
 print("participant IDs:", sorted(participant_ids))
 print("action results:", scalar(core, "SELECT COUNT(*) FROM action_results"))
 print("ordered consequences:", scalar(core, "SELECT COUNT(*) FROM action_consequences"))
+print("core relationships:", scalar(core, "SELECT COUNT(*) FROM relationships"))
 print("pending proposals:", scalar(core, "SELECT COUNT(*) FROM action_proposals"))
 print("POC profiles:", scalar(poc, "SELECT COUNT(*) FROM sim_profiles"))
 print("POC relationships:", scalar(poc, "SELECT COUNT(*) FROM relationships"))

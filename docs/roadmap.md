@@ -131,7 +131,7 @@ portability rather than game performance or production readiness. Stage 6 is com
 - [x] Map a whitelist of three to five generic intents to base-game social interactions
 - [x] Execute the selected native interaction and persist only its game-confirmed outcome
 - [x] Let retained memory, relationship, or belief context alter a later interaction choice
-- [ ] Reflect at least one confirmed native relationship or mood consequence back into Core
+- [x] Reflect at least one confirmed native relationship or mood consequence back into Core
 - [ ] Validate save/reload continuity and safe cancellation in a dedicated test save
 
 This stage turns the working reference adapter into a noticeable gameplay vertical slice before
@@ -178,6 +178,14 @@ score already retained by the game and included in each autonomous payload. A ge
 About Day** after it becomes non-negative. A focused regression proves the same decision changes
 action when the retained relationship changes. This is implementation and automated-test
 evidence; the full two-interaction live demonstration remains part of the Stage 6.5 exit gate.
+
+**Confirmed Core consequence, 2026-07-14:** Successful `relationship.friendship` increments from
+the native finishing callback now update Core's canonical directed relationship edge in the same
+database transaction that confirms and removes the proposal. Sims friendship points are divided
+by 100 and clamped to Core's `-1.0..1.0` strength range. Romance remains an ordered confirmed
+consequence because Core has no canonical romance field. An integration regression confirms a
+native `+5` friendship result becomes Core strength `0.05`. Live consequence and persistence
+validation remains part of the final dedicated-save checklist item.
 
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
@@ -330,7 +338,7 @@ adapter boundaries and the real headless Godot engine, completing Stage 6.
 Stage 6.5 is now the current focus. Its player-triggered pie-menu interaction and native transcript
 passed live validation, three generic actions map to base-game socials, and the selected mapped
 social is queued with results deferred until its game finishing callback. Retained negative versus
-non-negative relationship context now changes a later generic autonomous choice. Continue with a
-confirmed relationship or mood consequence and save/reload plus cancellation validation. Stage 7
-must not begin until this playable prototype
+non-negative relationship context now changes a later generic autonomous choice. Confirmed native
+friendship deltas also update Core's canonical relationship edge. Continue with the final dedicated
+save/reload and safe-cancellation validation. Stage 7 must not begin until this playable prototype
 passes its in-game exit gate.

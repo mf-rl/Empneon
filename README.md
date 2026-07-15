@@ -295,9 +295,10 @@ Appearance**. The bridge now tests and instantiates the selected mapped affordan
 native interaction context, queues that interaction, and sends `/action-result` only after its
 finishing callback. For generic autonomous acknowledgements, the adapter now chooses **Apologize**
 while the game's retained aggregate relationship score is negative and returns to **Ask About
-Day** after it becomes non-negative. The next checklist item is reflecting a confirmed native
-relationship or mood consequence into Core. See the Stage 6.5 handoff in the roadmap and the
-troubleshooting notes in `docs/sims4-setup.md` before resuming.
+Day** after it becomes non-negative. Successful native friendship deltas now update both the
+ordered action consequences and the actor-to-target relationship strength in Core. The final
+Stage 6.5 checklist item is dedicated save/reload continuity and safe-cancellation validation.
+See the roadmap handoff and `docs/sims4-setup.md` before resuming.
 
 ## Documentation
 
