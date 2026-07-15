@@ -243,6 +243,11 @@ Semantic Versioning guarantees and keeps database schema versions independent. D
 remain transactional and forward-only; newer schemas are rejected, and rollback requires a
 pre-upgrade backup.
 
+**Design-partner preparation, 2026-07-15:** `docs/design-partners.md` defines what counts as a
+confirmed partner, ranks six simulation-studio prospects, and provides individual outreach and
+discovery templates. No studio has been contacted and the repository remains private. The task
+stays open at zero of three confirmed partners.
+
 ## Stage 8: Optional Managed Service
 
 Begin only after repeated customer demand:

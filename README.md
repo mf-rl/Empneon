@@ -329,6 +329,7 @@ published. The next pending roadmap task is recruiting three studio design partn
 - [Research and innovation program](docs/innovations.md)
 - [SocietyBench results](docs/benchmark-results.md)
 - [Business model](docs/business-model.md)
+- [Studio design-partner recruitment](docs/design-partners.md)
 - [Validated roadmap](docs/roadmap.md)
 - [Sims 4 POC setup and privacy](docs/sims4-setup.md)
 

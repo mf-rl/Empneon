@@ -265,6 +265,9 @@ Version 0.3.0 has a single build-version source, a documented supported API, whe
 distribution builds in CI, and a pre-1.0 Semantic Versioning policy. Schema versions remain
 independent; upgrades are transactional and forward-only, while rollback restores a backup.
 
+The design-partner recruitment guide defines a three-step confirmation threshold, six prospects,
+and outreach/discovery templates. No studio has been contacted; progress remains 0/3.
+
 ## Current Work Order
 
 1. Recruit three studio design partners for Stage 7.
