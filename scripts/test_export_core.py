@@ -19,8 +19,14 @@ def main() -> None:
             check=True,
         )
         assert (output / "src/empneon/core/runtime.py").is_file()
+        assert (output / "src/empneon/adapters/sims4/poc.py").is_file()
         assert (output / "docs/api.md").is_file()
-        assert not (output / "poc/ai_sims_memory.sqlite3").exists()
+        assert (output / "README.md").is_file()
+        assert not (output / "CORE-README.md").exists()
+        assert not (output / "poc").exists()
+        assert not (output / "docs/sims4-setup.md").exists()
+        assert not (output / "tests/unit/test_sims4_backend.py").exists()
+        assert not (output / "tests/unit/test_sims4_mod_autonomy.py").exists()
         assert not (output / "docs/business-model.md").exists()
         assert not (output / "docs/design-partners.md").exists()
         assert not (output / "docs/roadmap.md").exists()
@@ -28,6 +34,7 @@ def main() -> None:
         readme = (output / "README.md").read_text(encoding="utf-8")
         assert "docs/business-model.md" not in readme
         assert "docs/design-partners.md" not in readme
+        assert readme == (ROOT / "CORE-README.md").read_text(encoding="utf-8")
     finally:
         shutil.rmtree(output, ignore_errors=True)
 

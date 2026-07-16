@@ -7,28 +7,26 @@ include = [
   ".github/workflows/ci.yml",
   "CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md",
+  "CORE-README.md",
   "LICENSE",
   "MANIFEST.in",
-  "README.md",
   "pyproject.toml",
   "docs/adapter-development.md",
   "docs/api.md",
   "docs/benchmark-results.md",
   "docs/innovations.md",
-  "docs/sims4-setup.md",
   "docs/vision.md",
   "godot/**",
   "output/**",
-  "poc/README.md",
-  "poc/backend/**",
-  "poc/build_mod.py",
-  "poc/config/config.json",
-  "poc/install_mod.ps1",
-  "poc/run_backend.ps1",
-  "poc/test.py",
-  "poc/ts4script/**",
-  "poc/tuning/**",
   "scenarios/**",
   "src/**",
   "tests/**",
 ]
+
+exclude = [
+  "tests/unit/test_sims4_backend.py",
+  "tests/unit/test_sims4_mod_autonomy.py",
+]
+
+[rename]
+"CORE-README.md" = "README.md"

@@ -10,6 +10,11 @@ credential formats, and symlinks even if a manifest pattern includes them. Each 
 the destination snapshot, so deletions are synchronized too; the private Git history is never
 copied.
 
+`CORE-README.md` is published as the destination repository's `README.md`. The top-level `poc/`
+directory and `docs/sims4-setup.md` remain private because they implement and document the original
+Sims 4 playable prototype, not the reusable Core runtime. The generic Sims 4 adapter boundary under
+`src/empneon/adapters/sims4/` remains part of Core.
+
 ## One-time setup
 
 1. Create public `PandaBakers/EmpneonCore`, initialized with a README so its `main` branch exists.

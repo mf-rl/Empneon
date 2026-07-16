@@ -42,16 +42,18 @@ def tracked_files() -> list[str]:
     return [path.decode() for path in result.stdout.split(b"\0") if path]
 
 
-def selected_files() -> tuple[str, list[str]]:
+def selected_files() -> tuple[str, list[str], dict[str, str]]:
     with MANIFEST.open("rb") as file:
         config = tomllib.load(file)
-    patterns = config["include"]
+    includes = config["include"]
+    excludes = config.get("exclude", [])
     selected = [
         path
         for path in tracked_files()
-        if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+        if any(fnmatch.fnmatchcase(path, pattern) for pattern in includes)
+        and not any(fnmatch.fnmatchcase(path, pattern) for pattern in excludes)
     ]
-    return str(config["repository"]), selected
+    return str(config["repository"]), selected, dict(config.get("rename", {}))
 
 
 def validate(path: str) -> Path:
@@ -70,15 +72,22 @@ def validate(path: str) -> Path:
 
 
 def export(output: Path) -> None:
-    repository, files = selected_files()
+    repository, files, renames = selected_files()
     if not files:
         raise SystemExit("no tracked files selected for publication")
     if output.exists() and any(output.iterdir()):
         raise SystemExit(f"output directory must be empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
+    destinations: set[Path] = set()
     for path in files:
         source = validate(path)
-        destination = output / path
+        destination_relative = Path(renames.get(path, path))
+        destination = (output / destination_relative).resolve()
+        if destination_relative.is_absolute() or output not in destination.parents:
+            raise SystemExit(f"unsafe destination path: {destination_relative}")
+        if destination in destinations:
+            raise SystemExit(f"duplicate destination path: {destination_relative}")
+        destinations.add(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
     print(f"Exported {len(files)} files for {repository}.")
