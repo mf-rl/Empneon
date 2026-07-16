@@ -1,0 +1,94 @@
+name: Publish product
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - ".github/publications.toml"
+      - ".github/workflows/publish-products.yml"
+      - "core/**"
+      - "adapters/godot/**"
+      - "adapters/thesims4/**"
+      - "scripts/export_product.py"
+      - "scripts/test_export_products.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: >-
+      github.event_name == 'pull_request' ||
+      startsWith(github.event.release.tag_name, 'core-v') ||
+      startsWith(github.event.release.tag_name, 'thesims4_v') ||
+      startsWith(github.event.release.tag_name, 'godot-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/test_export_products.py
+
+  publish:
+    if: >-
+      github.event_name == 'release' &&
+      (startsWith(github.event.release.tag_name, 'core-v') ||
+      startsWith(github.event.release.tag_name, 'thesims4_v') ||
+      startsWith(github.event.release.tag_name, 'godot-v'))
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+      - name: Select product
+        id: release
+        shell: bash
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          tag="${{ github.event.release.tag_name }}"
+          case "$tag" in
+            core-v*) product=core; repository=EmpneonCore; version="${tag#core-}" ;;
+            thesims4_v*) product=thesims4; repository=EmpneonTheSims4; version="${tag#thesims4_}" ;;
+            godot-v*) product=godot; repository=EmpneonGodot; version="${tag#godot-}" ;;
+            *) exit 1 ;;
+          esac
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          echo "product=$product" >> "$GITHUB_OUTPUT"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Export product snapshot
+        run: >-
+          python scripts/export_product.py
+          --product "${{ steps.release.outputs.product }}"
+          --output "$RUNNER_TEMP/export"
+      - name: Check out destination
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/${{ steps.release.outputs.repository }}
+          token: ${{ secrets.REPOSITORY_SYNC_TOKEN }}
+          path: destination
+      - name: Publish snapshot
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          rsync -a --delete --exclude=.git "$RUNNER_TEMP/export/" destination/
+          cd destination
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Release $VERSION from PandaBakers/Empneon@$GITHUB_SHA"
+            git push origin HEAD:main
+          fi
+          git tag "$VERSION"
+          git push origin "$VERSION"

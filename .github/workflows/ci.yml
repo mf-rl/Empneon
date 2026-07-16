@@ -1,8 +1,8 @@
-name: CI
+name: Monorepo CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, refactor]
   pull_request:
     branches: [main]
 
@@ -14,15 +14,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Install projects
+        run: pip install -e "core[dev]" -e "adapters/thesims4[dev]" -e "adapters/godot[dev]"
       - name: Lint
-        run: ruff check src tests
+        run: ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests adapters/godot/src adapters/godot/tests tests scripts
       - name: Type check
-        run: mypy src
-      - name: Test
+        run: mypy core/src adapters/thesims4/src adapters/godot/src
+      - name: Test Core
         run: pytest
+        working-directory: core
+      - name: Test The Sims 4 adapter
+        run: pytest
+        working-directory: adapters/thesims4
+      - name: Test Godot adapter
+        run: pytest
+        working-directory: adapters/godot
+      - name: Test cross-adapter contracts
+        run: pytest tests
       - name: Scenario regressions
-        run: empneon-regress scenarios/clod1-regressions.json
-      - name: Build package
+        run: empneon-regress core/scenarios/clod1-regressions.json
+      - name: Validate publication snapshots
+        run: python scripts/test_export_products.py
+      - name: Build Core
         run: python -m build
+        working-directory: core
+      - name: Build The Sims 4 adapter
+        run: python -m build
+        working-directory: adapters/thesims4
+      - name: Build Godot adapter
+        run: python -m build
+        working-directory: adapters/godot

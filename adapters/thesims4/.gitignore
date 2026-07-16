@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.pytest-*/
+*.sqlite3
+*.db
+.env
+*.log
+stage*-config.json
