@@ -1,0 +1,73 @@
+name: Publish EmpneonCore
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - ".github/core-publication.toml"
+      - ".github/workflows/publish-core.yml"
+      - "scripts/export_core.py"
+      - "scripts/test_export_core.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request' || startsWith(github.event.release.tag_name, 'core-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/test_export_core.py
+
+  publish:
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'core-v')
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+      - name: Validate release tag
+        id: release
+        shell: bash
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          tag="${{ github.event.release.tag_name }}"
+          version="${tag#core-}"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Export public snapshot
+        run: python scripts/export_core.py --output "$RUNNER_TEMP/export"
+      - name: Check out EmpneonCore
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/EmpneonCore
+          token: ${{ secrets.REPOSITORY_SYNC_TOKEN }}
+          path: destination
+      - name: Publish snapshot
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          rsync -a --delete --exclude=.git "$RUNNER_TEMP/export/" destination/
+          cd destination
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Release $VERSION from PandaBakers/Empneon@$GITHUB_SHA"
+            git push origin HEAD:main
+          fi
+          git tag "$VERSION"
+          git push origin "$VERSION"

@@ -97,8 +97,8 @@ Initial validation target:
 - 16 GB RAM
 - The Sims 4 running concurrently with Empneon
 
-No performance claim is accepted without an in-game benchmark. See
-[docs/roadmap.md](docs/roadmap.md).
+No performance claim is accepted without an in-game benchmark. See the
+[SocietyBench results](docs/benchmark-results.md).
 
 ## Status
 
@@ -330,7 +330,7 @@ codes. CI runs the canonical fixture in `scenarios/clod1-regressions.json`. Vers
 builds from one version source into wheel and source distributions. The documented supported API
 covers contracts, runtime integration, resource controls, persistence, inspection, and provider
 extension points. Semantic-version and transactional forward-only database migration policies are
-published. The next pending roadmap task is recruiting three studio design partners.
+published.
 
 ## Documentation
 
@@ -339,13 +339,8 @@ published. The next pending roadmap task is recruiting three studio design partn
 - [Adapter development guide](docs/adapter-development.md)
 - [Research and innovation program](docs/innovations.md)
 - [SocietyBench results](docs/benchmark-results.md)
-- [Business model](docs/business-model.md)
-- [Studio design-partner recruitment](docs/design-partners.md)
-- [Validated roadmap](docs/roadmap.md)
 - [Sims 4 POC setup and privacy](docs/sims4-setup.md)
 
 ## License
 
-Empneon Core is licensed under Apache 2.0, including commercial use. Revenue may
-come from hosting, production tooling, managed observability, integration, and
-support; use of the Apache-licensed core does not require a commercial license.
+Empneon Core is licensed under Apache 2.0, including commercial use.

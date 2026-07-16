@@ -25,8 +25,8 @@ Install Core first with `py -3.12 -m pip install -e .` from the repository root.
 5. In The Sims 4, enable custom content and script mods, then restart the game. Clicking another
    Sim now shows **Empneon Social** in the pie menu. It opens a native transcript dialog for
    repeated messages and generated replies; progress and errors remain notifications. Safe
-   cancellation still requires the Stage 6.5 validation documented in
-   [the roadmap](../docs/roadmap.md).
+   cancellation and save/reload continuity are documented in the
+   [setup guide](../docs/sims4-setup.md).
 
    The existing diagnostic commands remain available through the cheat console:
 

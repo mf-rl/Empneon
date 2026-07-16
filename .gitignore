@@ -11,7 +11,14 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.pytest-*/
+.test-temp-*/
+output/pytest-*/
+output/audit-pytest-*/
 *.sqlite3
 *.db
 .env
 *.log
+stage*-config.json
+poc/dist/
+.core-publication-test/

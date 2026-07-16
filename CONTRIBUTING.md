@@ -8,8 +8,8 @@ Open an issue before implementing significant changes — avoid wasted effort.
 ## Development setup
 
 ```bash
-git clone https://github.com/PandaBakers/Empneon.git
-cd Empneon
+git clone https://github.com/PandaBakers/EmpneonCore.git
+cd EmpneonCore
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
