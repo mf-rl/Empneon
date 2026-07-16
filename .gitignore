@@ -20,5 +20,6 @@ output/audit-pytest-*/
 .env
 *.log
 stage*-config.json
-poc/dist/
+thesims4/dist/
 .core-publication-test/
+.publication-test-*/

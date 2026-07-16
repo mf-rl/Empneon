@@ -238,7 +238,7 @@ required.
 
 **Stable developer package, 2026-07-15:** Version `0.3.0` uses `empneon.__version__` as its
 single build-version source and declares a small supported top-level API plus the provider
-extension namespace. CI builds a wheel and source distribution. `docs/api.md` defines pre-1.0
+extension namespace. CI builds a wheel and source distribution. `core/docs/api.md` defines pre-1.0
 Semantic Versioning guarantees and keeps database schema versions independent. Database upgrades
 remain transactional and forward-only; newer schemas are rejected, and rollback requires a
 pre-upgrade backup.
@@ -292,7 +292,7 @@ tuple-motive desync when a mod injects a restricted object list. Filterable
 `ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game protocol in
-`docs/sims4-setup.md`. The Stage 2 exit gate passed in a live game across a restart with
+`thesims4/docs/setup.md`. The Stage 2 exit gate passed in a live game across a restart with
 20 persistent Core agents, all 20 participating, 15 successful autonomous results, zero
 pending proposals, and 16 ordered consequences. Stage 2 is complete.
 

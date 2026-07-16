@@ -218,7 +218,7 @@ standard-library bridge. Godot translates one deterministic encounter into the e
 mutation, and confirms it as an `ActionResult`. Godot 4.7 completed the headless round trip
 with `EMPNEON_GODOT_OK` and exit code 0. No Godot concept or import was added to Core. The
 published parametrized contract suite checks both adapters against the same actor, evidence,
-decision-ID, and confirmed-outcome invariants. `docs/adapter-development.md` documents the
+decision-ID, and confirmed-outcome invariants. `core/docs/adapter-development.md` documents the
 in-process and external-engine paths. The canonical exit benchmark below subsequently completed
 Stage 6.
 
