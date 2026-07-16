@@ -327,6 +327,12 @@ ordered action consequences and the actor-to-target relationship strength in Cor
 `1.125.59.1030`, the interaction queued and routed before opening input, a native **Ask About Day**
 completed with `+5` friendship, cancellation before arrival produced no request, and a fresh chat
 after save/reload recalled a retained pizza plan at 7 PM tomorrow. Stage 6.5 is complete.
+Live validation on 2026-07-16 extended that continuity work: optional save-aware memory discarded
+an unsaved codeword after a Main Menu reload, retained `PERSIST-GREEN-963` for Nanami Ito after a
+real save/reload, ignored temporary scratch-slot saves, and kept Save As branches isolated by The
+Sims 4 save-slot ID. With the option disabled, the adapter continues to use one global continuous
+memory. Dialogue grounding now treats player statements and retained memory as factual evidence,
+not unsupported model replies, while allowing moderately richer in-character responses.
 Stage 7 now includes `agent_timeline`, a read-only, newest-first JSON view of one agent's canonical
 events, confirmed decisions and outcomes, and beliefs. It reuses existing Core records and applies
 one global result limit; unconfirmed proposals remain outside the timeline. `replay_action_record`

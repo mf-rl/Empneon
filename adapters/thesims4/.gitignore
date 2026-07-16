@@ -10,6 +10,8 @@ build/
 .pytest-*/
 *.sqlite3
 *.db
+*.empneon-saved*
+*.empneon-session
 .env
 *.log
 stage*-config.json

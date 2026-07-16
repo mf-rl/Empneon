@@ -195,6 +195,16 @@ arrival opened no input and created no backend request or action proposal. After
 was discussed, the game was saved and reloaded; a fresh interaction recalled the retained plan as
 `Pizza at 7 PM tomorrow.` Stage 6.5 is complete.
 
+**Save-aware memory validation, 2026-07-16:** The optional
+`preserve_memory_only_on_game_save` mode passed live Main Menu and save/reload testing. An unsaved
+codeword disappeared after reloading the household, while a real save retained
+`PERSIST-GREEN-963` for Nanami Ito. The save hook ignores The Sims 4 temporary scratch slot and
+checkpoints only successful real saves. Save As branches keep independent narrative databases by
+save-slot ID, so loading an earlier branch cannot see later-branch conversations. When the option
+is disabled, every save continues to share one continuously written global memory. The dialogue
+prompt now asks for moderately richer in-character responses and treats player statements and
+retained memories—not unsupported prior model replies—as factual evidence.
+
 **Exit gate:** Without using the cheat console, a player invokes Empneon on another Sim, sees
 generated dialogue and a native social action, and observes a game-confirmed relationship or
 mood consequence. A second interaction between the same Sims must make a demonstrably different
@@ -405,6 +415,8 @@ with results deferred until its game finishing callback. Retained negative versu
 relationship context changes a later generic autonomous choice. Confirmed native friendship deltas
 also update Core's canonical relationship edge. Save/reload conversation continuity and
 cancellation before arrival passed live validation on The Sims 4 `1.125.59.1030`.
+Optional save-aware memory subsequently passed live unsaved rollback, successful-save retention,
+and per-save-slot branch isolation on 2026-07-16. Continuous mode remains global across slots.
 
 The read-only Stage 7 developer timeline, replay inspection, resource/CLOD telemetry, scenario regression
 runner, and stable 0.3 developer package are complete. The next pending task is recruiting three

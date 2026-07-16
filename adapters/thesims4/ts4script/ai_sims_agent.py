@@ -3,15 +3,18 @@ import os
 import threading
 import traceback
 import urllib.parse
+import uuid
 
 import alarms
 import clock
+import game_services
 import services
 import sims4.commands
 import zone
 from interactions import ParticipantType
 from interactions.base.super_interaction import SuperInteraction
 from interactions.constraints import Anywhere, Circle
+from services.persistence_service import PersistenceService
 from sims.sim import Sim
 from sims4.collections import FrozenAttributeDict
 from sims4.localization import LocalizationHelperTuning
@@ -37,6 +40,8 @@ _AUTONOMY_IN_FLIGHT = False
 _AUTONOMY_RESPONSES = []
 _CHAT_RESPONSES = []
 _AUTONOMY_RESPONSES_LOCK = threading.Lock()
+_GAME_SESSION_ID = uuid.uuid4().hex
+_NEW_GAME_SESSION_PENDING = False
 
 
 def write_marker(text):
@@ -53,6 +58,73 @@ def write_marker(text):
 
 
 write_marker("AI Sims Agent imported")
+
+
+def current_save_slot_id():
+    try:
+        save_slot = services.get_persistence_service().get_save_slot_proto_buff()
+        return str(getattr(save_slot, "slot_id", "") or "")
+    except Exception:
+        return ""
+
+
+def prepare_game_session():
+    global _GAME_SESSION_ID, _NEW_GAME_SESSION_PENDING
+    if _NEW_GAME_SESSION_PENDING:
+        _GAME_SESSION_ID = uuid.uuid4().hex
+        _NEW_GAME_SESSION_PENDING = False
+
+
+def report_game_session_start():
+    prepare_game_session()
+
+    def worker():
+        try:
+            post_json("/game-session/start", {}, timeout=10)
+        except Exception:
+            write_marker(traceback.format_exc())
+
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+
+
+def report_game_session_save():
+    try:
+        post_json("/game-session/save", {}, timeout=10)
+        write_marker("Empneon memory checkpoint saved")
+    except Exception:
+        write_marker(traceback.format_exc())
+
+
+_ORIGINAL_SAVE_GAME_GEN = PersistenceService.save_game_gen
+
+
+def _save_game_gen(self, *args, **kwargs):
+    result = yield from _ORIGINAL_SAVE_GAME_GEN(self, *args, **kwargs)
+    save_game_data = kwargs.get("save_game_data")
+    if save_game_data is None and len(args) > 1:
+        save_game_data = args[1]
+    slot_id = getattr(save_game_data, "slot_id", None)
+    if result == 0 and slot_id not in (None, 0, "0", ""):
+        report_game_session_save()
+    return result
+
+
+PersistenceService.save_game_gen = _save_game_gen
+
+_ORIGINAL_STOP_SERVICES = game_services.stop_services
+
+
+def _stop_services(*args, **kwargs):
+    global _NEW_GAME_SESSION_PENDING
+    manager = getattr(game_services, "service_manager", None)
+    if manager is not None and getattr(manager, "allow_shutdown", False):
+        _NEW_GAME_SESSION_PENDING = True
+    return _ORIGINAL_STOP_SERVICES(*args, **kwargs)
+
+
+game_services.stop_services = _stop_services
 
 
 class EmpneonSocialInteraction(SuperInteraction):
@@ -589,6 +661,7 @@ _ORIGINAL_ZONE_READY = zone.Zone.on_loading_screen_animation_finished
 
 def _on_zone_ready(self, *args, **kwargs):
     result = _ORIGINAL_ZONE_READY(self, *args, **kwargs)
+    report_game_session_start()
     start_autonomy(self)
     return result
 
@@ -612,6 +685,9 @@ def find_sim_info_by_name(name):
 def post_json(path, payload, timeout=90):
     import urllib.request
 
+    payload = dict(payload)
+    payload["_empneon_session_id"] = _GAME_SESSION_ID
+    payload["_empneon_save_slot_id"] = current_save_slot_id()
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         BACKEND_URL + path,

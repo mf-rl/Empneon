@@ -38,6 +38,7 @@ DEFAULT_CONFIG = {
     "debug": True,
     "database": "ai_sims_memory.sqlite3",
     "core_database": "empneon_core.sqlite3",
+    "preserve_memory_only_on_game_save": False,
     "active_agent_limit": 5,
     "agent_wake_timeout_seconds": 60,
     "provider": "lmstudio",
@@ -105,17 +106,21 @@ def load_config():
 
 
 CONFIG = load_config()
+if not isinstance(CONFIG.get("preserve_memory_only_on_game_save"), bool):
+    raise ValueError("preserve_memory_only_on_game_save must be true or false")
 HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
 DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
 CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
 ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 5)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
+PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
 PRIMARY_PROVIDER_CONFIG = CONFIG.get("providers", {}).get(PRIMARY_PROVIDER, {})
 LLM_BASE_URL = str(PRIMARY_PROVIDER_CONFIG.get("endpoint") or "http://127.0.0.1:1234/api/v1").rstrip("/")
 LLM_MODEL = str(PRIMARY_PROVIDER_CONFIG.get("model") or "local-model")
 ACTIVE_DB_PATH = None
+MEMORY_SESSION_LOCK = threading.RLock()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 
 
@@ -156,10 +161,17 @@ Stay grounded in the Sim profile, relationship, current mood, and memories.
 Return one valid JSON object only. No markdown. No schema explanation. No placeholders.
 Do not write a thinking process, analysis, reasoning, or chain-of-thought.
 The first character of your response must be {.
-Keep dialogue under 30 words.
+Normally write 2 to 4 natural sentences totaling about 25 to 60 words. Use a shorter answer only
+when the situation genuinely calls for one. Make the dialogue reflect the Sim's personality,
+emotion, and relationship instead of using generic filler.
+Never invent a past event, shared fact, codeword, promise, plan, date, or name. For factual recall,
+use only player-provided facts and saved memories. If the requested fact is absent, say naturally
+and in character that the Sim does not know or remember it.
+In memory.summary, preserve concrete facts supplied by the player exactly. Never store a guess or
+a fact introduced only by the Sim's generated reply.
 Use this exact shape with concrete values:
 {
-  "dialogue": "short in-character line",
+  "dialogue": "expressive in-character reply",
   "emotion": "tense",
   "intent": "deflect",
   "relationship": {
@@ -258,6 +270,128 @@ def connect_db():
         except sqlite3.Error as exc:
             last_error = exc
     raise last_error
+
+
+def memory_session_paths():
+    database = os.path.abspath(ACTIVE_DB_PATH or DB_PATH)
+    return (
+        database,
+        database + ".empneon-saved",
+        database + ".empneon-session",
+    )
+
+
+def memory_checkpoint_path(database, save_slot_id):
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", save_slot_id):
+        raise ValueError("valid save slot id is required")
+    return database + ".empneon-saved.slot-" + save_slot_id
+
+
+def backup_memory_database(source, destination):
+    temporary = destination + ".tmp"
+    try:
+        os.remove(temporary)
+    except FileNotFoundError:
+        pass
+    with contextlib.closing(sqlite3.connect(source)) as source_db, contextlib.closing(
+        sqlite3.connect(temporary)
+    ) as destination_db:
+        source_db.backup(destination_db)
+    os.replace(temporary, destination)
+
+
+def restore_memory_database(source, destination):
+    with contextlib.closing(sqlite3.connect(source)) as source_db, contextlib.closing(
+        sqlite3.connect(destination)
+    ) as destination_db:
+        source_db.backup(destination_db)
+
+
+def create_empty_memory_checkpoint(destination):
+    temporary = destination + ".tmp"
+    try:
+        os.remove(temporary)
+    except FileNotFoundError:
+        pass
+    with contextlib.closing(sqlite3.connect(temporary)) as checkpoint:
+        checkpoint.row_factory = sqlite3.Row
+        init_db(checkpoint)
+        checkpoint.commit()
+    os.replace(temporary, destination)
+
+
+def read_memory_session(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = json.load(handle)
+            return value if isinstance(value, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def write_memory_session(path, session_id, save_slot_id):
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(
+            {"session_id": session_id, "save_slot_id": save_slot_id},
+            handle,
+        )
+    os.replace(temporary, path)
+
+
+def validate_game_session_id(session_id):
+    value = str(session_id or "").strip()
+    if not value or len(value) > 128:
+        raise ValueError("valid game session id is required")
+    return value
+
+
+def start_memory_session(session_id, save_slot_id=""):
+    if not PRESERVE_MEMORY_ONLY_ON_GAME_SAVE:
+        return {"enabled": False, "status": "continuous"}
+    session_id = validate_game_session_id(session_id)
+    save_slot_id = str(save_slot_id or "").strip()
+    with MEMORY_SESSION_LOCK:
+        database, legacy_saved, session = memory_session_paths()
+        saved = memory_checkpoint_path(database, save_slot_id)
+        previous = read_memory_session(session)
+        if not os.path.exists(saved):
+            previous_slot = previous.get("save_slot_id")
+            if os.path.exists(legacy_saved) and (
+                not previous_slot or previous_slot == save_slot_id
+            ):
+                backup_memory_database(legacy_saved, saved)
+            elif not previous:
+                backup_memory_database(database, saved)
+            else:
+                create_empty_memory_checkpoint(saved)
+        changed = previous.get("session_id") != session_id
+        slot_changed = bool(
+            previous.get("save_slot_id")
+            and previous.get("save_slot_id") != save_slot_id
+        )
+        if changed or slot_changed:
+            restore_memory_database(saved, database)
+        if changed or previous.get("save_slot_id") != save_slot_id:
+            write_memory_session(session, session_id, save_slot_id)
+    return {"enabled": True, "status": "started", "restored": changed or slot_changed}
+
+
+def save_memory_session(session_id, save_slot_id=""):
+    if not PRESERVE_MEMORY_ONLY_ON_GAME_SAVE:
+        return {"enabled": False, "status": "continuous"}
+    session_id = validate_game_session_id(session_id)
+    save_slot_id = str(save_slot_id or "").strip()
+    with MEMORY_SESSION_LOCK:
+        database, _legacy_saved, session = memory_session_paths()
+        saved = memory_checkpoint_path(database, save_slot_id)
+        previous = read_memory_session(session)
+        if previous.get("session_id") not in (None, session_id):
+            if os.path.exists(saved):
+                restore_memory_database(saved, database)
+        backup_memory_database(database, saved)
+        write_memory_session(session, session_id, save_slot_id)
+    return {"enabled": True, "status": "saved"}
 
 
 def ensure_column(conn, table, name, definition):
@@ -1321,9 +1455,20 @@ Location:
 Nearby Sims:
 {nearby}
 
-Recent conversation (source of truth for past facts):
+Recent conversation:
 {recent_conversation}
-When asked about a prior plan or agreement, answer with its exact activity, date, and time from this conversation. Do not merely repeat an earlier reply.
+
+Grounding rules:
+- A fact about shared history is supported only when it appears in Relevant memories, Memory
+  summary, or something the Listener previously said.
+- The Speaker's earlier generated replies provide conversational tone, but are not evidence that
+  a fact is true.
+- When asked for an unsupported fact, do not guess. Say naturally that you do not know or do not
+  remember.
+- When the Listener supplies or corrects a concrete fact, use its exact value and preserve it in
+  memory.summary.
+- When asked about a supported plan or agreement, answer with the exact activity, date, and time
+  available in the evidence.
 
 Player says:
 {message}
@@ -1815,6 +1960,9 @@ class Handler(BaseHTTPRequestHandler):
                         "large": {"provider": large.get("name"), "model": loaded_model_id("large")},
                     },
                     "memory_db": ACTIVE_DB_PATH or DB_PATH,
+                    "preserve_memory_only_on_game_save": (
+                        PRESERVE_MEMORY_ONLY_ON_GAME_SAVE
+                    ),
                     "active_agent_limit": ACTIVE_AGENT_LIMIT,
                     "active_agents": AGENTS.get_active_agents(),
                 },
@@ -1832,7 +1980,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/memories":
             speaker_id = query.get("speaker_id", query.get("sim_id", [""]))[0]
-            listener_id = query.get("listener_id", query.get("target_id", [speaker_id]))[0]
+            listener_id = query.get("listener_id", query.get("target_id", [""]))[0]
             if listener_id:
                 memories = memories_for_pair(speaker_id, listener_id, limit=int(query.get("limit", [20])[0]))
                 summary = memory_summary(speaker_id, listener_id)
@@ -1860,6 +2008,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = self.read_json()
             parsed = urllib.parse.urlparse(self.path)
+            session_id = payload.get("_empneon_session_id")
+            save_slot_id = payload.get("_empneon_save_slot_id") or ""
+            if parsed.path == "/game-session/start":
+                self.send_json(200, start_memory_session(session_id, save_slot_id))
+                return
+            if parsed.path == "/game-session/save":
+                self.send_json(200, save_memory_session(session_id, save_slot_id))
+                return
+            if session_id:
+                start_memory_session(session_id, save_slot_id)
             if parsed.path in ("/chat", "/conversation"):
                 if not payload.get("message"):
                     self.send_json(400, {"error": "message is required"})
