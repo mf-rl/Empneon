@@ -8,7 +8,7 @@ Requires Python 3.11 or newer for the backend and Python 3.7 to build the Sims s
 In the private monorepo, install Core and this adapter first:
 
 ```powershell
-py -3.12 -m pip install -e ..\core -e .
+py -3.12 -m pip install -e ..\..\core -e .
 ```
 
 1. Start LM Studio's local server at `http://127.0.0.1:1234`.

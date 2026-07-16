@@ -8,8 +8,8 @@ on:
       - ".github/publications.toml"
       - ".github/workflows/publish-products.yml"
       - "core/**"
-      - "godot/**"
-      - "thesims4/**"
+      - "adapters/godot/**"
+      - "adapters/thesims4/**"
       - "scripts/export_product.py"
       - "scripts/test_export_products.py"
 

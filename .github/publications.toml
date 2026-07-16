@@ -12,9 +12,9 @@ source = "core"
 repository = "EmpneonCore"
 
 [products.thesims4]
-source = "thesims4"
+source = "adapters/thesims4"
 repository = "EmpneonTheSims4"
 
 [products.godot]
-source = "godot"
+source = "adapters/godot"
 repository = "EmpneonGodot"

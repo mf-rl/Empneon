@@ -15,20 +15,20 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install projects
-        run: pip install -e "core[dev]" -e "thesims4[dev]" -e "godot[dev]"
+        run: pip install -e "core[dev]" -e "adapters/thesims4[dev]" -e "adapters/godot[dev]"
       - name: Lint
-        run: ruff check core/src core/tests thesims4/src thesims4/tests godot/src godot/tests tests scripts
+        run: ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests adapters/godot/src adapters/godot/tests tests scripts
       - name: Type check
-        run: mypy core/src thesims4/src godot/src
+        run: mypy core/src adapters/thesims4/src adapters/godot/src
       - name: Test Core
         run: pytest
         working-directory: core
       - name: Test The Sims 4 adapter
         run: pytest
-        working-directory: thesims4
+        working-directory: adapters/thesims4
       - name: Test Godot adapter
         run: pytest
-        working-directory: godot
+        working-directory: adapters/godot
       - name: Test cross-adapter contracts
         run: pytest tests
       - name: Scenario regressions
@@ -40,7 +40,7 @@ jobs:
         working-directory: core
       - name: Build The Sims 4 adapter
         run: python -m build
-        working-directory: thesims4
+        working-directory: adapters/thesims4
       - name: Build Godot adapter
         run: python -m build
-        working-directory: godot
+        working-directory: adapters/godot

@@ -11,8 +11,8 @@ monetary budgets.
 ## Monorepo Layout
 
 - `core/`: game-agnostic Empneon runtime and contracts
-- `thesims4/`: The Sims 4 adapter, mod, backend, and game-specific validation
-- `godot/`: Godot adapter, bridge, and portability project
+- `adapters/thesims4/`: The Sims 4 adapter, mod, backend, and game-specific validation
+- `adapters/godot/`: Godot adapter, bridge, and portability project
 - `tests/`: private cross-adapter compatibility checks
 - `docs/`: private product and business planning
 
@@ -109,7 +109,7 @@ Initial validation target:
 - The Sims 4 running concurrently with Empneon
 
 No performance claim is accepted without an in-game benchmark. See the
-[SocietyBench results](thesims4/docs/benchmark-results.md).
+[SocietyBench results](adapters/thesims4/docs/benchmark-results.md).
 
 ## Status
 
@@ -200,7 +200,7 @@ latency, with aggregate token totals and p50/p95 latency. The concurrent in-game
 hardware run completed but showed severe pressure:
 87.37 ms p50 Sims frame time and 18.821 s p50 provider latency with 5,918 MiB peak VRAM
 use. These are preliminary measurements, not a performance claim. See
-[SocietyBench results](thesims4/docs/benchmark-results.md).
+[SocietyBench results](adapters/thesims4/docs/benchmark-results.md).
 
 SocietyBench can also measure retained expected identities and contradictory values per
 agent subject; scenario-specific consistency evaluation remains separate from the raw
@@ -299,7 +299,7 @@ with 36 focused-test lines, no Core changes, and no Python dependency changes. C
 and guide publication added 36m26s and 167 lines. These are repository-session measurements,
 not person-hours or production-integration estimates.
 
-The Stage 6 exit gate now passes. `godot/portability/scenario.json` is the single canonical
+The Stage 6 exit gate now passes. `adapters/godot/portability/scenario.json` is the single canonical
 two-agent encounter used by the integration test and the Godot scene. The Sims reference
 adapter and Godot bridge produced the same deterministic Core decision
 `abc780ba-3e2c-501a-95a5-85e289d2a7f5`, preserved its evidence and decision ID, and returned
@@ -349,8 +349,8 @@ published.
 - [Package, API, and compatibility policy](core/docs/api.md)
 - [Adapter development guide](core/docs/adapter-development.md)
 - [Research and innovation program](core/docs/innovations.md)
-- [SocietyBench results](thesims4/docs/benchmark-results.md)
-- [The Sims 4 setup and privacy](thesims4/docs/setup.md)
+- [SocietyBench results](adapters/thesims4/docs/benchmark-results.md)
+- [The Sims 4 setup and privacy](adapters/thesims4/docs/setup.md)
 
 ## License
 

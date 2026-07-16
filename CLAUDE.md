@@ -228,7 +228,7 @@ or Python dependency changes. Publishing the contract suite and guide added 36m2
 lines, for 1h06m08s from selection through publication. These commit windows are not
 person-hours or production estimates.
 
-Stage 6 uses `godot/portability/scenario.json` as one canonical two-agent benchmark. The Sims
+Stage 6 uses `adapters/godot/portability/scenario.json` as one canonical two-agent benchmark. The Sims
 reference adapter and Godot bridge produced the same deterministic Core decision
 `abc780ba-3e2c-501a-95a5-85e289d2a7f5`, preserved its evidence and ID, and confirmed successful
 game-specific results. Godot 4.7 independently consumed the same file headlessly, printed

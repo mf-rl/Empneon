@@ -115,7 +115,7 @@ for this minimal contract proof.
 **Exit gate:** Both adapters run the same benchmark scenario through unchanged core
 contracts.
 
-**Passed 2026-07-13.** `godot/portability/scenario.json` defines the canonical two-agent
+**Passed 2026-07-13.** `adapters/godot/portability/scenario.json` defines the canonical two-agent
 encounter. The integration test constructed its `WorldEvent` and equivalent CLOD 1 requests,
 then used the provider-free Core path with the Sims reference adapter and the Godot bridge.
 Both paths produced decision `abc780ba-3e2c-501a-95a5-85e289d2a7f5`, preserved event evidence
@@ -260,6 +260,9 @@ Begin only after repeated customer demand:
 
 ## Deferred Until Evidence Requires Them
 
+- [ ] Extract a shared multi-game backend only after a second production adapter demonstrates
+  duplicated server logic; keep connection, save-slot, and game-lifecycle translation inside
+  each adapter
 - multiple AI directors
 - broad voice-provider matrix
 - many game adapters
@@ -292,7 +295,7 @@ tuple-motive desync when a mod injects a restricted object list. Filterable
 `ai.socialtunings` diagnostics remain available.
 Provider timeout/OOM
 recovery and the operating guide are complete. Follow the in-game protocol in
-`thesims4/docs/setup.md`. The Stage 2 exit gate passed in a live game across a restart with
+`adapters/thesims4/docs/setup.md`. The Stage 2 exit gate passed in a live game across a restart with
 20 persistent Core agents, all 20 participating, 15 successful autonomous results, zero
 pending proposals, and 16 ordered consequences. Stage 2 is complete.
 

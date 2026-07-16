@@ -6,8 +6,8 @@ buildable and is exported without private Git history:
 | Release tag | Source | Destination |
 |---|---|---|
 | `core-vX.Y.Z` | `core/` | `PandaBakers/EmpneonCore` |
-| `thesims4_vX.Y.Z` | `thesims4/` | `PandaBakers/EmpneonTheSims4` |
-| `godot-vX.Y.Z` | `godot/` | `PandaBakers/EmpneonGodot` |
+| `thesims4_vX.Y.Z` | `adapters/thesims4/` | `PandaBakers/EmpneonTheSims4` |
+| `godot-vX.Y.Z` | `adapters/godot/` | `PandaBakers/EmpneonGodot` |
 
 The exporter strips the product directory prefix and overlays the shared license, contribution
 guide, code of conduct, attributes, and GitHub community templates. It rejects databases,

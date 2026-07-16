@@ -9,7 +9,13 @@ from empneon.core.contracts import CognitiveRequest, StateDelta, WorldEvent
 
 
 def test_same_scenario_runs_through_both_adapters() -> None:
-    path = Path(__file__).parents[2] / "godot" / "portability" / "scenario.json"
+    path = (
+        Path(__file__).parents[2]
+        / "adapters"
+        / "godot"
+        / "portability"
+        / "scenario.json"
+    )
     scenario = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(scenario, dict)
     event_data = scenario["event"]

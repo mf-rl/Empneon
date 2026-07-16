@@ -12,10 +12,10 @@ its reproducible exit-gate procedure.
 - An OpenAI-compatible provider for model-backed conversation; autonomous CLOD 1
   behavior remains provider-free
 
-From the repository root, install Core and its SQLite vector dependency:
+From the private monorepo root, install Core and The Sims 4 adapter:
 
 ```powershell
-py -3.12 -m pip install -e .
+py -3.12 -m pip install -e .\core -e .\adapters\thesims4
 ```
 
 Python 3.12 may be replaced with any installed Python version supported by
@@ -28,7 +28,7 @@ Python 3.12 may be replaced with any installed Python version supported by
 2. Install the script mod and interaction tuning:
 
    ```powershell
-   .\install_mod.ps1
+   .\adapters\thesims4\install_mod.ps1
    ```
 
    The script builds with Python 3.7, copies `AI_Sims_Agent.ts4script` and
@@ -37,7 +37,7 @@ Python 3.12 may be replaced with any installed Python version supported by
 3. Start the backend from the repository root:
 
    ```powershell
-   .\run_backend.ps1
+   .\adapters\thesims4\run_backend.ps1
    ```
 
 4. Restart The Sims 4 and load a household. Clicking another Sim exposes the
