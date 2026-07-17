@@ -245,6 +245,12 @@ deltas now update Core's canonical actor-to-target relationship edge as well as 
 consequences. Live testing on The Sims 4 `1.125.59.1030` confirmed queue-before-input routing, a
 native `+5` friendship result, cancellation without a request, and retained pizza-plan recall
 after save/reload. Custom animation, voice, broad autonomy, and elaborate UI remain deferred.
+Live testing on 2026-07-16 also confirmed optional save-aware narrative memory. Unsaved changes
+were discarded after returning to the Main Menu, a real save retained Nanami Ito's
+`PERSIST-GREEN-963` codeword, temporary scratch-slot saves were ignored, and Save As branches used
+independent checkpoints keyed by the game save-slot ID. The disabled mode remains one continuous
+global memory. Dialogue now requests moderately richer in-character replies and treats only
+player-provided facts and retained memory as evidence for factual recall.
 
 Stage 7 now has a read-only `agent_timeline` query that merges canonical participated events,
 confirmed decisions and outcomes, and beliefs into a deterministic newest-first JSON view without

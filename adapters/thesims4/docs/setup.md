@@ -70,6 +70,7 @@ JSON file. Environment variables override the loaded file.
 | `port`, `AI_SIM_PORT` | Backend port | `8765` |
 | `database`, `AI_SIM_DB` | Adapter profile, memory, relationship, and conversation database | `ai_sims_memory.sqlite3` |
 | `core_database` | Core action and cognition database | `empneon_core.sqlite3` |
+| `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `false` |
 | `active_agent_limit` | Concurrent POC agent sessions and Core admissions | `5` |
 | `agent_wake_timeout_seconds` | Wait for an agent-session slot | `60` |
 | `provider`, `AI_SIM_PROVIDER` | Default provider entry | `lmstudio` |
@@ -103,6 +104,30 @@ Memory settings:
 - `summary_every`: number of pair memories before summarization is attempted
 - `summary_limit`: maximum memories included in a summary request
 
+When `preserve_memory_only_on_game_save` is `false`, adapter memories, conversations,
+emotions, profiles, and relationships are written continuously to one global memory database;
+save slots are ignored. When it is `true`, the backend keeps those changes as the current
+session state and maintains an independent checkpoint for each The Sims 4 save slot.
+The mod checkpoints that state only after The Sims 4 successfully completes `save_game_gen` for
+a real save slot; temporary scratch-slot saves are ignored. This includes any autosave
+implementation that uses the same real-save path. Returning to the Main Menu and loading a save,
+or restarting the game, begins another session and discards changes after the last checkpoint.
+Traveling between lots remains part of the current session. Core usage, decision, and diagnostic
+records are not rolled back.
+
+Dialogue normally uses two to four natural sentences shaped by the Sim's personality, emotion,
+and relationship. Factual recall is grounded only in player-provided facts and retained memory;
+when evidence is absent, the Sim should admit not knowing rather than invent an answer.
+
+Live validation on 2026-07-16 confirmed that an unsaved codeword was removed after returning to
+the Main Menu, a normal save retained `PERSIST-GREEN-963` for Nanami Ito after reload, scratch-slot
+saves did not checkpoint memory, and separate Save As branches restored their own histories.
+
+Checkpoints and the session marker are stored beside the configured adapter database with
+`.empneon-saved.slot-<id>` and `.empneon-session` suffixes. The former single
+`.empneon-saved` checkpoint is migrated to its recorded slot when possible. Preserve these files
+when backing up retained memory. Stop the game and backend before deleting them.
+
 TTS is off by default. Enabling `tts.enabled` and setting `tts.endpoint` sends dialogue,
 voice identifiers, and voice settings to that endpoint.
 
@@ -122,7 +147,8 @@ enabling them.
 
 The adapter backend has no user accounts, encryption layer, retention scheduler, or authenticated
 HTTP API. Keep the backend bound to loopback. To remove retained POC data, stop the game
-and backend, then delete the configured SQLite databases and `logs` files. Back up
+and backend, then delete the configured SQLite databases, Empneon checkpoint/session files,
+and `logs` files. Back up
 save-related data first if continuity matters.
 
 ## Hardware Profiles

@@ -29,7 +29,23 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     alarms.add_alarm = lambda *_args, **_kwargs: object()
     clock = ModuleType("clock")
     clock.interval_in_sim_minutes = lambda minutes: minutes
+    game_services = ModuleType("game_services")
+    game_services.service_manager = SimpleNamespace(allow_shutdown=True)
+    game_services.stop_services = lambda: None
     services = ModuleType("services")
+    persistence_service = ModuleType("services.persistence_service")
+
+    class FakePersistenceService:
+        def get_save_slot_proto_buff(self):
+            return SimpleNamespace(slot_id="slot-1")
+
+        def save_game_gen(self, _timeline=None, _save_game_data=None, result=0):
+            yield "saving"
+            return result
+
+    persistence = FakePersistenceService()
+    persistence_service.PersistenceService = FakePersistenceService
+    services.get_persistence_service = lambda: persistence
 
     interactions = ModuleType("interactions")
     interactions.ParticipantType = SimpleNamespace(Actor="actor")
@@ -181,6 +197,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     for name, module in {
         "alarms": alarms,
         "clock": clock,
+        "game_services": game_services,
         "interactions": interactions,
         "interactions.base": interactions_base,
         "interactions.base.super_interaction": super_interaction,
@@ -189,6 +206,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "interactions.context": context_module,
         "interactions.priority": priority_module,
         "services": services,
+        "services.persistence_service": persistence_service,
         "sims": sims,
         "sims.sim": sim_module,
         "sims4": sims4,
@@ -211,6 +229,43 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert spec and spec.loader
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
+
+    save_reports = []
+    monkeypatch.setattr(
+        agent,
+        "post_json",
+        lambda path, payload, timeout=90: save_reports.append((path, payload, timeout)),
+    )
+    save = persistence.save_game_gen(None, SimpleNamespace(slot_id=2))
+    assert next(save) == "saving"
+    try:
+        next(save)
+    except StopIteration as completed:
+        assert completed.value == 0
+    else:
+        raise AssertionError("save callback ran before the game save completed")
+    assert save_reports == [("/game-session/save", {}, 10)]
+
+    for slot_id, result in ((0, 0), (2, 2)):
+        save = persistence.save_game_gen(None, SimpleNamespace(slot_id=slot_id), result)
+        next(save)
+        try:
+            next(save)
+        except StopIteration:
+            pass
+    assert save_reports == [("/game-session/save", {}, 10)]
+
+    session_id = agent._GAME_SESSION_ID
+    game_services.service_manager.allow_shutdown = False
+    game_services.stop_services()
+    agent.prepare_game_session()
+    assert agent._GAME_SESSION_ID == session_id
+
+    game_services.service_manager.allow_shutdown = True
+    game_services.stop_services()
+    assert agent._GAME_SESSION_ID == session_id
+    agent.prepare_game_session()
+    assert agent._GAME_SESSION_ID != session_id
 
     pie_affordance = type("EmpneonSocialTuning", (), {})
     services.affordance_manager = lambda: SimpleNamespace(

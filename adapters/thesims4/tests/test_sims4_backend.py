@@ -52,7 +52,14 @@ def test_recent_conversation_is_added_to_prompt(monkeypatch) -> None:
     assert "Robin: Let's meet for pizza tomorrow at 7 PM." in prompt
     assert "Travis: Pizza sounds good, let's plan it." in prompt
     assert "Pizza sounds good. Let's plan it." not in prompt
-    assert "source of truth for past facts" in prompt
+    assert "The Speaker's earlier generated replies" in prompt
+    assert "When asked for an unsupported fact, do not guess" in prompt
+    assert "25 to 60 words" in ai_sims_server.SYSTEM_PROMPT
+    assert "Never invent a past event" in ai_sims_server.SYSTEM_PROMPT
+    assert (
+        "preserve concrete facts supplied by the player exactly"
+        in ai_sims_server.SYSTEM_PROMPT
+    )
     assert prompt.index("Recent conversation") < prompt.index("Player says")
 
 def test_lmstudio_chat_disables_reasoning(monkeypatch) -> None:
@@ -181,3 +188,92 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
     assert result["animation"] == "friendly_chat"
     assert proposal is not None
     assert record is None
+
+
+def test_memory_session_requires_game_save(tmp_path, monkeypatch) -> None:
+    memory_db = str(tmp_path / "memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", True)
+    ai_sims_server.connect_db().close()
+
+    ai_sims_server.start_memory_session("session-1", "1")
+    ai_sims_server.add_memory("bella", "mortimer", "Unsaved memory", 0.8)
+    ai_sims_server.start_memory_session("session-2", "1")
+    assert ai_sims_server.memories_for_pair("bella", "mortimer") == []
+
+    ai_sims_server.add_memory("bella", "mortimer", "Save 1 memory", 0.8)
+    ai_sims_server.save_memory_session("session-2", "1")
+    ai_sims_server.add_memory("bella", "mortimer", "Save 2 memory", 0.8)
+    ai_sims_server.save_memory_session("session-2", "2")
+
+    ai_sims_server.start_memory_session("session-3", "1")
+    memories = ai_sims_server.memories_for_pair("bella", "mortimer")
+    assert [memory["summary"] for memory in memories] == ["Save 1 memory"]
+
+    ai_sims_server.start_memory_session("session-4", "2")
+    memories = ai_sims_server.memories_for_pair("bella", "mortimer")
+    assert [memory["summary"] for memory in memories] == [
+        "Save 2 memory",
+        "Save 1 memory",
+    ]
+    assert (tmp_path / "memory.sqlite3.empneon-saved.slot-1").exists()
+    assert (tmp_path / "memory.sqlite3.empneon-saved.slot-2").exists()
+
+
+def test_legacy_memory_checkpoint_is_migrated(tmp_path, monkeypatch) -> None:
+    memory_db = str(tmp_path / "memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", True)
+    ai_sims_server.connect_db().close()
+    ai_sims_server.add_memory("bella", "mortimer", "Legacy memory", 0.8)
+    database, legacy, session = ai_sims_server.memory_session_paths()
+    ai_sims_server.backup_memory_database(database, legacy)
+    ai_sims_server.write_memory_session(session, "old-session", "1")
+
+    ai_sims_server.start_memory_session("new-session", "1")
+
+    assert (tmp_path / "memory.sqlite3.empneon-saved.slot-1").exists()
+    memories = ai_sims_server.memories_for_pair("bella", "mortimer")
+    assert [memory["summary"] for memory in memories] == ["Legacy memory"]
+
+
+def test_memory_is_continuous_when_save_flag_is_disabled(tmp_path, monkeypatch) -> None:
+    memory_db = str(tmp_path / "memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", False)
+    ai_sims_server.connect_db().close()
+
+    ai_sims_server.start_memory_session("session-1", "slot-1")
+    ai_sims_server.add_memory("bella", "mortimer", "Continuous memory", 0.8)
+    ai_sims_server.save_memory_session("session-1", "slot-1")
+    ai_sims_server.start_memory_session("session-2", "slot-2")
+    memories = ai_sims_server.memories_for_pair("bella", "mortimer")
+    assert [memory["summary"] for memory in memories] == ["Continuous memory"]
+    assert list(tmp_path.glob("*.empneon-*")) == []
+
+
+def test_memories_route_without_target_returns_all_sim_memories(monkeypatch) -> None:
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/memories?sim_id=bella&limit=5"
+    responses = []
+    monkeypatch.setattr(
+        ai_sims_server,
+        "memories_for_sim",
+        lambda sim_id, limit: [{"sim_id": sim_id, "limit": limit}],
+    )
+    monkeypatch.setattr(handler, "send_json", lambda status, body: responses.append((status, body)))
+
+    handler.do_GET()
+
+    assert responses == [
+        (
+            200,
+            {
+                "memories": [{"sim_id": "bella", "limit": 5}],
+                "summary": {"summary": "", "updated_at": 0},
+            },
+        )
+    ]

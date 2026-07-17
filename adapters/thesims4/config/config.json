@@ -4,6 +4,7 @@
   "debug": true,
   "database": "ai_sims_memory.sqlite3",
   "core_database": "empneon_core.sqlite3",
+  "preserve_memory_only_on_game_save": false,
   "active_agent_limit": 5,
   "agent_wake_timeout_seconds": 60,
   "provider": "lmstudio",
