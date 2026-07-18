@@ -11,7 +11,6 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,12 +22,14 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 from empneon_thesims4 import Sims4Adapter
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
 from empneon.core.identity.models import Agent
+from empneon.core.memory.documents import DocumentMemoryStore
+from empneon.core.memory.episodic import EpisodicMemoryStore, Event
 from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.db.connection import open_db
-from empneon.providers.llm import ProviderError
+from empneon.providers.llm import ConfiguredProviderRouter, Message, ProviderError
 
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
 
@@ -39,13 +40,17 @@ DEFAULT_CONFIG = {
     "database": "ai_sims_memory.sqlite3",
     "core_database": "empneon_core.sqlite3",
     "preserve_memory_only_on_game_save": False,
-    "active_agent_limit": 5,
+    "active_agent_limit": 1,
     "agent_wake_timeout_seconds": 60,
     "provider": "lmstudio",
     "providers": {
         "lmstudio": {"endpoint": "http://127.0.0.1:1234/api/v1", "model": "local-model"},
         "ollama": {"endpoint": "http://127.0.0.1:11434/v1", "model": "llama3"},
         "openai": {"endpoint": "https://api.openai.com/v1", "model": "gpt-4.1-mini"},
+        "openrouter": {
+            "endpoint": "https://openrouter.ai/api/v1",
+            "model": "openai/gpt-4.1-mini",
+        },
         "llamacpp": {"endpoint": "http://127.0.0.1:8080/v1", "model": "local-model"},
         "koboldcpp": {"endpoint": "http://127.0.0.1:5001/v1", "model": "local-model"},
         "textgenwebui": {"endpoint": "http://127.0.0.1:5000/v1", "model": "local-model"},
@@ -112,15 +117,13 @@ HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
 DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
 CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
-ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 5)
+ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 1)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
-PRIMARY_PROVIDER_CONFIG = CONFIG.get("providers", {}).get(PRIMARY_PROVIDER, {})
-LLM_BASE_URL = str(PRIMARY_PROVIDER_CONFIG.get("endpoint") or "http://127.0.0.1:1234/api/v1").rstrip("/")
-LLM_MODEL = str(PRIMARY_PROVIDER_CONFIG.get("model") or "local-model")
 ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
+LEGACY_MEMORY_CHECKED = set()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 
 
@@ -150,10 +153,6 @@ LOG = setup_logging()
 AGENT_LOG = logging.getLogger("ai_sims.agent_manager")
 PROVIDER_LOG = logging.getLogger("ai_sims.ai_provider")
 MEMORY_LOG = logging.getLogger("ai_sims.memory")
-
-
-class ReasoningOnlyResponse(RuntimeError):
-    pass
 
 
 SYSTEM_PROMPT = """You roleplay one The Sims 4 character.
@@ -273,10 +272,10 @@ def connect_db():
 
 
 def memory_session_paths():
-    database = os.path.abspath(ACTIVE_DB_PATH or DB_PATH)
+    database = os.path.abspath(CORE_DB_PATH)
     return (
         database,
-        database + ".empneon-saved",
+        os.path.abspath(ACTIVE_DB_PATH or DB_PATH) + ".empneon-saved",
         database + ".empneon-session",
     )
 
@@ -313,10 +312,7 @@ def create_empty_memory_checkpoint(destination):
         os.remove(temporary)
     except FileNotFoundError:
         pass
-    with contextlib.closing(sqlite3.connect(temporary)) as checkpoint:
-        checkpoint.row_factory = sqlite3.Row
-        init_db(checkpoint)
-        checkpoint.commit()
+    open_db(temporary).close()
     os.replace(temporary, destination)
 
 
@@ -360,7 +356,10 @@ def start_memory_session(session_id, save_slot_id=""):
             if os.path.exists(legacy_saved) and (
                 not previous_slot or previous_slot == save_slot_id
             ):
-                backup_memory_database(legacy_saved, saved)
+                _import_legacy_memory(
+                    legacy_saved, "legacy-checkpoint-{}".format(save_slot_id)
+                )
+                backup_memory_database(database, saved)
             elif not previous:
                 backup_memory_database(database, saved)
             else:
@@ -645,49 +644,31 @@ def default_profile(sim):
 
 def save_profile(profile):
     timestamp = now()
-    with connect_db() as conn:
-        existing = conn.execute("select created_at from sim_profiles where sim_id = ?", (profile["id"],)).fetchone()
-        conn.execute(
-            """
-            insert or replace into sim_profiles (
-                sim_id, name, identity_json, personality_json, values_json,
-                behavioral_rules_json, knowledge_json, goals_json, voice_json,
-                created_at, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                profile["id"],
-                profile["name"],
-                dumps(profile.get("identity") or {}),
-                dumps(profile.get("personality") or {}),
-                dumps(profile.get("values") or []),
-                dumps(profile.get("behavioral_rules") or []),
-                dumps(profile.get("knowledge") or {}),
-                dumps(profile.get("goals") or []),
-                dumps(profile.get("voice") or {}),
-                existing["created_at"] if existing else timestamp,
-                timestamp,
-            ),
-        )
-        conn.commit()
+    existing = _get_memory("thesims4.profile", str(profile["id"]))
+    value = dict(profile)
+    value["created_at"] = (
+        existing.get("created_at", timestamp) if isinstance(existing, dict) else timestamp
+    )
+    value["updated_at"] = timestamp
+    _set_memory("thesims4.profile", str(profile["id"]), value)
 
 
 def get_profile(sim_or_id):
     sid = sim_id(sim_or_id) if isinstance(sim_or_id, dict) else str(sim_or_id)
-    with connect_db() as conn:
-        row = conn.execute("select * from sim_profiles where sim_id = ?", (sid,)).fetchone()
-        if not row:
-            row = conn.execute("select * from sim_profiles where lower(name) = lower(?) order by updated_at desc limit 1", (sid,)).fetchone()
-    return row_profile(row)
+    profile = _get_memory("thesims4.profile", sid)
+    return profile if isinstance(profile, dict) else get_profile_by_name(sid)
 
 
 def get_profile_by_name(name):
-    with connect_db() as conn:
-        row = conn.execute(
-            "select * from sim_profiles where lower(name) = lower(?) order by updated_at desc limit 1",
-            (str(name or ""),),
-        ).fetchone()
-    return row_profile(row)
+    expected = str(name or "").casefold()
+    return next(
+        (
+            profile
+            for profile in _memory_values("thesims4.profile")
+            if str(profile.get("name") or "").casefold() == expected
+        ),
+        None,
+    )
 
 
 def migrate_agent_id(old_id, new_id):
@@ -695,33 +676,18 @@ def migrate_agent_id(old_id, new_id):
     new_id = str(new_id or "")
     if not old_id or not new_id or old_id == new_id:
         return
-    with connect_db() as conn:
-        existing = conn.execute("select sim_id from sim_profiles where sim_id = ?", (new_id,)).fetchone()
-        if existing:
-            return
-        conn.execute("update sim_profiles set sim_id = ? where sim_id = ?", (new_id, old_id))
-        for table, columns in (
-            ("memories", ("speaker_id", "listener_id", "sim_id", "target_id")),
-            ("memory_summaries", ("sim_id", "target_id")),
-            ("relationships", ("sim_id", "target_id")),
-            ("emotions", ("sim_id",)),
-            ("goals", ("sim_id",)),
-            ("conversations", ("speaker_id", "listener_id")),
-            ("voice_settings", ("sim_id",)),
-        ):
-            for column in columns:
-                conn.execute("update {} set {} = ? where {} = ?".format(table, column, column), (new_id, old_id))
-        conn.commit()
+    profile = _get_memory("thesims4.profile", old_id)
+    if not isinstance(profile, dict) or _get_memory("thesims4.profile", new_id):
+        return
+    profile["id"] = new_id
+    profile.setdefault("identity", {})["sim_id"] = new_id
+    _set_memory("thesims4.profile", new_id, profile)
+    _delete_memory("thesims4.profile", old_id)
     AGENT_LOG.info("migrated agent id old=%s new=%s", old_id, new_id)
 
 
 def list_profiles(limit=100):
-    with connect_db() as conn:
-        rows = conn.execute(
-            "select * from sim_profiles order by updated_at desc limit ?",
-            (int(limit),),
-        ).fetchall()
-    return [row_profile(row) for row in rows]
+    return _memory_values("thesims4.profile")[: int(limit)]
 
 
 def upsert_profile(sim):
@@ -757,14 +723,10 @@ def default_relationship():
 
 
 def get_relationship(sim_id_value, target_id_value):
-    with connect_db() as conn:
-        row = conn.execute(
-            "select * from relationships where sim_id = ? and target_id = ?",
-            (sim_id_value, target_id_value),
-        ).fetchone()
-    if not row:
-        return default_relationship()
-    return {key: row[key] for key in default_relationship()}
+    value = _get_memory(
+        "thesims4.relationship", _pair_key_directional(sim_id_value, target_id_value)
+    )
+    return value if isinstance(value, dict) else default_relationship()
 
 
 def save_relationship(sim_id_value, target_id_value, relationship):
@@ -774,29 +736,11 @@ def save_relationship(sim_id_value, target_id_value, relationship):
             values[key] = value
     for key in values:
         values[key] = clamp_int(values[key], 0, 100)
-    with connect_db() as conn:
-        conn.execute(
-            """
-            insert or replace into relationships (
-                sim_id, target_id, friendship, romance, trust, respect,
-                admiration, jealousy, resentment, fear, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                sim_id_value,
-                target_id_value,
-                values["friendship"],
-                values["romance"],
-                values["trust"],
-                values["respect"],
-                values["admiration"],
-                values["jealousy"],
-                values["resentment"],
-                values["fear"],
-                now(),
-            ),
-        )
-        conn.commit()
+    _set_memory(
+        "thesims4.relationship",
+        _pair_key_directional(sim_id_value, target_id_value),
+        values,
+    )
     return values
 
 
@@ -834,13 +778,8 @@ def default_emotion(mood="neutral"):
 
 
 def get_emotion(sim_id_value):
-    with connect_db() as conn:
-        row = conn.execute("select * from emotions where sim_id = ?", (sim_id_value,)).fetchone()
-    if not row:
-        return default_emotion()
-    emotion = {key: row[key] for key in ("happiness", "anger", "sadness", "stress", "confidence")}
-    emotion["current_mood"] = row["current_mood"]
-    return emotion
+    value = _get_memory("thesims4.emotion", str(sim_id_value))
+    return value if isinstance(value, dict) else default_emotion()
 
 
 def save_emotion(sim_id_value, emotion):
@@ -848,25 +787,7 @@ def save_emotion(sim_id_value, emotion):
     values.update(emotion or {})
     for key in ("happiness", "anger", "sadness", "stress", "confidence"):
         values[key] = clamp_int(values[key], 0, 100)
-    with connect_db() as conn:
-        conn.execute(
-            """
-            insert or replace into emotions (
-                sim_id, happiness, anger, sadness, stress, confidence, current_mood, updated_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                sim_id_value,
-                values["happiness"],
-                values["anger"],
-                values["sadness"],
-                values["stress"],
-                values["confidence"],
-                str(values["current_mood"] or "neutral"),
-                now(),
-            ),
-        )
-        conn.commit()
+    _set_memory("thesims4.emotion", str(sim_id_value), values)
     return values
 
 
@@ -895,42 +816,23 @@ def update_emotion_from_response(sim_id_value, label):
 
 def recent_memories(speaker_id, listener_id, limit=None, topic="", emotion="", location=""):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
-    topic_like = "%{}%".format(topic) if topic else "%"
-    emotion_like = "%{}%".format(emotion) if emotion else "%"
-    location_like = "%{}%".format(location) if location else "%"
-    with connect_db() as conn:
-        rows = conn.execute(
-            """
-            select id, summary, event, emotion, category, topic, location, importance, created_at
-            from memories
-            where (
-                (speaker_id = ? and listener_id = ?)
-                or (speaker_id = ? and listener_id = ?)
-            )
-              and coalesce(topic, '') like ?
-              and coalesce(emotion, '') like ?
-              and coalesce(location, '') like ?
-            order by importance desc, created_at desc
-            limit ?
-            """,
-            (speaker_id, listener_id, listener_id, speaker_id, topic_like, emotion_like, location_like, limit),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    return [
+        item
+        for item in memories_for_pair(speaker_id, listener_id, limit=10_000)
+        if (not topic or topic.casefold() in item["topic"].casefold())
+        and (not emotion or emotion.casefold() in item["emotion"].casefold())
+        and (not location or location.casefold() in item["location"].casefold())
+    ][:limit]
 
 
 def memories_for_sim(speaker_id, limit=10):
-    with connect_db() as conn:
-        rows = conn.execute(
-            """
-            select id, summary, event, emotion, category, topic, location, importance, created_at
-            from memories
-            where speaker_id = ? or listener_id = ? or sim_id = ?
-            order by importance desc, created_at desc
-            limit ?
-            """,
-            (speaker_id, speaker_id, speaker_id, limit),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    memories = _memory_values("thesims4.memory")
+    selected = [
+        item
+        for item in memories
+        if speaker_id in (item["speaker_id"], item["listener_id"], item["sim_id"])
+    ]
+    return _rank_memories(selected, limit)
 
 
 def add_memory(speaker_id, listener_id, summary, importance, emotion="", category="", topic="", location=""):
@@ -938,67 +840,43 @@ def add_memory(speaker_id, listener_id, summary, importance, emotion="", categor
     if not summary:
         return
     category = category or ("long_term" if clamp_float(importance) >= 0.75 else "short_term")
-    with connect_db() as conn:
-        conn.execute(
-            """
-            insert into memories (
-                speaker_id, listener_id, sim_id, target_id, event, summary,
-                emotion, category, topic, location, importance, created_at
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                speaker_id,
-                listener_id,
-                speaker_id,
-                listener_id,
-                summary,
-                summary,
-                str(emotion or ""),
-                str(category or "short_term"),
-                str(topic or ""),
-                str(location or ""),
-                clamp_float(importance),
-                now(),
-            ),
-        )
-        conn.commit()
+    created_at = now()
+    value = {
+        "id": time.time_ns(),
+        "speaker_id": speaker_id,
+        "listener_id": listener_id,
+        "sim_id": speaker_id,
+        "target_id": listener_id,
+        "event": summary,
+        "summary": summary,
+        "emotion": str(emotion or ""),
+        "category": str(category or "short_term"),
+        "topic": str(topic or ""),
+        "location": str(location or ""),
+        "importance": clamp_float(importance),
+        "created_at": created_at,
+    }
+    _set_memory("thesims4.memory", str(value["id"]), value)
     MEMORY_LOG.info("memory saved sim=%s target=%s importance=%s summary=%s", speaker_id, listener_id, importance, summary)
 
 
 def memory_summary(sim_id_value, target_id_value):
-    with connect_db() as conn:
-        row = conn.execute(
-            "select summary, updated_at from memory_summaries where sim_id = ? and target_id = ?",
-            (sim_id_value, target_id_value),
-        ).fetchone()
-    return dict(row) if row else {"summary": "", "updated_at": 0}
+    value = _get_memory("thesims4.summary", _pair_key(sim_id_value, target_id_value))
+    return value or {"summary": "", "updated_at": 0}
 
 
 def save_memory_summary(sim_id_value, target_id_value, summary):
-    with connect_db() as conn:
-        conn.execute(
-            """
-            insert or replace into memory_summaries (sim_id, target_id, summary, updated_at)
-            values (?, ?, ?, ?)
-            """,
-            (sim_id_value, target_id_value, str(summary or "").strip(), now()),
-        )
-        conn.commit()
+    _set_memory(
+        "thesims4.summary",
+        _pair_key(sim_id_value, target_id_value),
+        {"summary": str(summary or "").strip(), "updated_at": now()},
+    )
 
 
 def maybe_summarize_memories(sim_id_value, target_id_value):
     every = int(CONFIG.get("memory", {}).get("summary_every", 10) or 10)
     limit = int(CONFIG.get("memory", {}).get("summary_limit", 30) or 30)
-    with connect_db() as conn:
-        count = conn.execute(
-            """
-            select count(*) as count
-            from memories
-            where (speaker_id = ? and listener_id = ?)
-               or (speaker_id = ? and listener_id = ?)
-            """,
-            (sim_id_value, target_id_value, target_id_value, sim_id_value),
-        ).fetchone()["count"]
+    count = len(memories_for_pair(sim_id_value, target_id_value, limit=10_000))
     if count < every or count % every != 0:
         return memory_summary(sim_id_value, target_id_value)
     memories = memories_for_pair(sim_id_value, target_id_value, limit=limit)
@@ -1021,19 +899,125 @@ def maybe_summarize_memories(sim_id_value, target_id_value):
 
 
 def memories_for_pair(sim_id_value, target_id_value, limit=20):
-    with connect_db() as conn:
-        rows = conn.execute(
-            """
-            select id, summary, event, emotion, category, topic, location, importance, created_at
-            from memories
-            where (speaker_id = ? and listener_id = ?)
-               or (speaker_id = ? and listener_id = ?)
-            order by importance desc, created_at desc
-            limit ?
-            """,
-            (sim_id_value, target_id_value, target_id_value, sim_id_value, int(limit)),
-        ).fetchall()
-    return [dict(row) for row in rows]
+    pair = {str(sim_id_value), str(target_id_value)}
+    selected = [
+        item
+        for item in _memory_values("thesims4.memory")
+        if {str(item["speaker_id"]), str(item["listener_id"])} == pair
+    ]
+    return _rank_memories(selected, int(limit))
+
+
+def _pair_key(first, second):
+    return "\x1f".join(sorted((str(first), str(second))))
+
+
+def _pair_key_directional(first, second):
+    return "{}\x1f{}".format(first, second)
+
+
+def _set_memory(namespace, key, value):
+    _ensure_legacy_memory_imported()
+    with open_db(CORE_DB_PATH) as conn:
+        DocumentMemoryStore(conn).set(namespace, key, value)
+
+
+def _get_memory(namespace, key):
+    _ensure_legacy_memory_imported()
+    with open_db(CORE_DB_PATH) as conn:
+        return DocumentMemoryStore(conn).get(namespace, key)
+
+
+def _delete_memory(namespace, key):
+    _ensure_legacy_memory_imported()
+    with open_db(CORE_DB_PATH) as conn:
+        DocumentMemoryStore(conn).delete(namespace, key)
+
+
+def _memory_values(namespace):
+    _ensure_legacy_memory_imported()
+    with open_db(CORE_DB_PATH) as conn:
+        values = [document.value for document in DocumentMemoryStore(conn).list(namespace)]
+    return [value for value in values if isinstance(value, dict)]
+
+
+def _ensure_legacy_memory_imported():
+    _import_legacy_memory(DB_PATH, "legacy-v1")
+
+
+def _import_legacy_memory(source_path, marker):
+    paths = (os.path.abspath(source_path), os.path.abspath(CORE_DB_PATH), marker)
+    if paths in LEGACY_MEMORY_CHECKED:
+        return
+    LEGACY_MEMORY_CHECKED.add(paths)
+    if paths[0] == paths[1] or not os.path.exists(paths[0]):
+        return
+    try:
+        legacy = sqlite3.connect(paths[0])
+        legacy.row_factory = sqlite3.Row
+        tables = {
+            row["name"]
+            for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        with open_db(paths[1]) as core:
+            store = DocumentMemoryStore(core)
+            if store.get("thesims4.migration", marker) is not None:
+                return
+            if "sim_profiles" in tables:
+                for row in legacy.execute("SELECT * FROM sim_profiles"):
+                    store.set("thesims4.profile", row["sim_id"], row_profile(row))
+            if "memories" in tables:
+                for row in legacy.execute("SELECT * FROM memories"):
+                    store.set("thesims4.memory", str(row["id"]), dict(row))
+            if "memory_summaries" in tables:
+                for row in legacy.execute("SELECT * FROM memory_summaries"):
+                    store.set(
+                        "thesims4.summary",
+                        _pair_key(row["sim_id"], row["target_id"]),
+                        {"summary": row["summary"], "updated_at": row["updated_at"]},
+                    )
+            if "relationships" in tables:
+                for row in legacy.execute("SELECT * FROM relationships"):
+                    store.set(
+                        "thesims4.relationship",
+                        _pair_key_directional(row["sim_id"], row["target_id"]),
+                        {key: row[key] for key in default_relationship()},
+                    )
+            if "emotions" in tables:
+                for row in legacy.execute("SELECT * FROM emotions"):
+                    value = {key: row[key] for key in default_emotion()}
+                    store.set("thesims4.emotion", row["sim_id"], value)
+            if "conversations" in tables:
+                for row in legacy.execute("SELECT * FROM conversations"):
+                    store.set(
+                        "thesims4.conversation",
+                        str(row["id"]),
+                        {
+                            "conversation_id": row["conversation_id"],
+                            "speaker_id": row["speaker_id"],
+                            "listener_id": row["listener_id"],
+                            "message": row["message"],
+                            "response": loads(row["response_json"], {}),
+                            "created_at": row["created_at"],
+                        },
+                    )
+            store.set("thesims4.migration", marker, {"imported": True})
+    except sqlite3.Error as exc:
+        MEMORY_LOG.warning("legacy memory import failed: %s", exc)
+        LEGACY_MEMORY_CHECKED.discard(paths)
+    finally:
+        if "legacy" in locals():
+            legacy.close()
+
+
+def _rank_memories(memories, limit):
+    # ponytail: in-memory scan is adequate for the bounded reference adapter; add indexed Core
+    # queries when profiling shows persistent worlds outgrow it.
+    return sorted(
+        memories,
+        key=lambda item: (item.get("importance", 0), item.get("created_at", 0)),
+        reverse=True,
+    )[: int(limit)]
 
 
 def clamp_int(value, low=-10, high=10):
@@ -1214,161 +1198,36 @@ AGENTS = AgentManager(ACTIVE_AGENT_LIMIT)
 
 
 def task_model_config(task="large"):
-    task_cfg = dict((CONFIG.get("models") or {}).get(task or "large") or {})
-    provider_name = str(task_cfg.get("provider") or PRIMARY_PROVIDER or "lmstudio")
-    provider_cfg = dict((CONFIG.get("providers") or {}).get(provider_name) or {})
-    provider_cfg["name"] = provider_name
-    if task_cfg.get("endpoint"):
-        provider_cfg["endpoint"] = task_cfg.get("endpoint")
-    if task_cfg.get("model"):
-        provider_cfg["model"] = task_cfg.get("model")
-    provider_cfg["temperature"] = task_cfg.get("temperature", provider_cfg.get("temperature", 0.6))
-    provider_cfg["max_tokens"] = task_cfg.get("max_tokens", provider_cfg.get("max_tokens", 350))
-    provider_cfg["endpoint"] = str(provider_cfg.get("endpoint") or LLM_BASE_URL).rstrip("/")
-    provider_cfg["model"] = str(provider_cfg.get("model") or LLM_MODEL)
-    return provider_cfg
+    return provider_router().config_for(task or "large")
 
 
-def api_root(base_url=None):
-    base_url = str(base_url or LLM_BASE_URL).rstrip("/")
-    if base_url.endswith("/api/v1"):
-        return base_url[: -len("/api/v1")]
-    if base_url.endswith("/v1"):
-        return base_url[: -len("/v1")]
-    return base_url
-
-
-def native_models_url(task="large"):
-    cfg = task_model_config(task)
-    return api_root(cfg["endpoint"]) + "/api/v1/models"
-
-
-def chat_base_urls(base_url=None):
-    base_url = str(base_url or LLM_BASE_URL).rstrip("/")
-    root = api_root(base_url)
-    urls = [root + "/v1"]
-    if base_url.endswith("/api/v1"):
-        urls.append(base_url)
-    elif not base_url.endswith("/v1"):
-        urls.append(base_url + "/v1")
-    else:
-        urls.append(base_url)
-    return list(dict.fromkeys(urls))
-
-
-def loaded_model_id(task="large"):
-    cfg = task_model_config(task)
-    model = cfg.get("model") or LLM_MODEL
-    if model != "local-model":
-        return model
-    if cfg.get("name") != "lmstudio":
-        return model
-    try:
-        with urllib.request.urlopen(native_models_url(task), timeout=5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-        for model in data.get("models") or []:
-            loaded = model.get("loaded_instances") or []
-            if loaded:
-                return loaded[0].get("id") or model.get("key") or cfg.get("model") or LLM_MODEL
-    except Exception:
-        pass
-    return model
-
-
-def request_bodies(messages, temperature, schema, schema_name, task="large"):
-    cfg = task_model_config(task)
-    base = {
-        "model": loaded_model_id(task),
-        "messages": messages,
-        "temperature": temperature if temperature is not None else cfg.get("temperature", 0.6),
-        "max_tokens": int(cfg.get("max_tokens") or 350),
-    }
-    if schema:
-        with_schema = dict(base)
-        with_schema["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name,
-                "schema": schema,
-            },
-        }
-        yield json.dumps(with_schema).encode("utf-8")
-    yield json.dumps(base).encode("utf-8")
-
-
-def lmstudio_chat(messages, temperature=None, task="large"):
-    cfg = task_model_config(task)
-    prompt = "\n\n".join(
-        "{}:\n{}".format(str(message.get("role") or "user").upper(), message.get("content") or "")
-        for message in messages
+def provider_router():
+    return ConfiguredProviderRouter(
+        PRIMARY_PROVIDER,
+        CONFIG.get("providers") or {},
+        CONFIG.get("models") or {},
+        api_key_env="AI_SIM_API_KEY",
     )
-    body = json.dumps(
-        {
-            "model": loaded_model_id(task),
-            "input": prompt,
-            "temperature": temperature if temperature is not None else cfg.get("temperature", 0.6),
-            "max_output_tokens": int(cfg.get("max_tokens") or 350),
-            "reasoning": "off",
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(
-        api_root(cfg["endpoint"]) + "/api/v1/chat",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    PROVIDER_LOG.info("chat provider=lmstudio model=%s task=%s", loaded_model_id(task), task)
-    with urllib.request.urlopen(request, timeout=90) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    for item in data.get("output") or []:
-        if item.get("type") == "message" and str(item.get("content") or "").strip():
-            return str(item["content"]).strip()
-    raise RuntimeError("LM Studio returned empty content")
+
+
+def configured_model(task="large"):
+    return str(task_model_config(task)["model"])
 
 
 def llm_chat(messages, temperature=None, schema=None, schema_name="response", task="large"):
-    cfg = task_model_config(task)
-    if cfg.get("name") == "lmstudio":
-        return lmstudio_chat(messages, temperature=temperature, task=task)
-    last_error = None
-    headers = {"Content-Type": "application/json"}
-    api_key = cfg.get("api_key") or os.environ.get("AI_SIM_API_KEY")
-    if api_key:
-        headers["Authorization"] = "Bearer " + str(api_key)
-    for body in request_bodies(messages, temperature, schema, schema_name, task=task):
-        for base_url in chat_base_urls(cfg["endpoint"]):
-            request = urllib.request.Request(
-                base_url + "/chat/completions",
-                data=body,
-                headers=headers,
-                method="POST",
-            )
-            try:
-                PROVIDER_LOG.info("chat provider=%s model=%s url=%s task=%s", cfg.get("name"), loaded_model_id(task), base_url, task)
-                with urllib.request.urlopen(request, timeout=90) as response:
-                    data = json.loads(response.read().decode("utf-8"))
-                choice = data["choices"][0]
-                message = choice.get("message") or {}
-                content = str(message.get("content") or "").strip()
-                if content:
-                    return content
-                reasoning = str(message.get("reasoning_content") or "").strip()
-                if reasoning:
-                    raise ReasoningOnlyResponse(
-                        "model returned only reasoning_content; finish_reason={}".format(choice.get("finish_reason"))
-                    )
-                raise RuntimeError("model returned empty content; finish_reason={}".format(choice.get("finish_reason")))
-            except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", "replace")
-                last_error = RuntimeError("LLM HTTP {} at {}: {}".format(exc.code, base_url, detail[:500]))
-                if exc.code in (400, 404):
-                    continue
-                raise last_error
-            except urllib.error.URLError as exc:
-                last_error = RuntimeError("cannot reach {} at {}: {}".format(cfg.get("name"), base_url, exc.reason))
-                break
-
-    raise last_error
+    del schema_name  # Core providers use the schema itself, not an adapter label.
+    core_messages = tuple(
+        Message(str(message.get("role") or "user"), str(message.get("content") or ""))
+        for message in messages
+    )
+    return asyncio.run(
+        provider_router().generate(
+            task,
+            core_messages,
+            schema=schema,
+            temperature=temperature,
+        )
+    )
 
 
 def build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary):
@@ -1501,35 +1360,35 @@ def response_has_role_confusion(response, context):
     return bool({word for word in speaker - listener if len(word) > 1} & words)
 
 def save_conversation(conversation_id, speaker_id, listener_id, message, response):
-    with connect_db() as conn:
-        conn.execute(
-            """
-            insert into conversations (conversation_id, speaker_id, listener_id, message, response_json, created_at)
-            values (?, ?, ?, ?, ?, ?)
-            """,
-            (conversation_id, speaker_id, listener_id, str(message or ""), dumps(response), now()),
-        )
-        conn.commit()
+    created_at = time.time_ns()
+    _set_memory(
+        "thesims4.conversation",
+        str(created_at),
+        {
+            "conversation_id": conversation_id,
+            "speaker_id": speaker_id,
+            "listener_id": listener_id,
+            "message": str(message or ""),
+            "response": response,
+            "created_at": created_at,
+        },
+    )
 
 
 def recent_conversation(speaker_id, listener_id, limit=None):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
-    with connect_db() as conn:
-        rows = conn.execute(
-            """
-            select speaker_id, listener_id, message, response_json
-            from conversations
-            where (speaker_id = ? and listener_id = ?) or (speaker_id = ? and listener_id = ?)
-            order by id desc limit ?
-            """,
-            (speaker_id, listener_id, listener_id, speaker_id, limit),
-        ).fetchall()
+    pair = {str(speaker_id), str(listener_id)}
+    rows = [
+        value
+        for value in _memory_values("thesims4.conversation")
+        if {str(value["speaker_id"]), str(value["listener_id"])} == pair
+    ][:limit]
     return [
         {
             "speaker_id": row["speaker_id"],
             "listener_id": row["listener_id"],
             "message": row["message"],
-            "dialogue": str(loads(row["response_json"], {}).get("dialogue") or ""),
+            "dialogue": str((row.get("response") or {}).get("dialogue") or ""),
         }
         for row in reversed(rows)
     ]
@@ -1583,19 +1442,15 @@ class HermesRuntime:
     def dialogue(self, payload, context):
         prompt = build_chat_prompt(payload, context)
         for attempt in range(2):
-            try:
-                content = llm_chat(
-                    [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    schema=DIALOGUE_SCHEMA,
-                    schema_name="sims_dialogue",
-                    task="large",
-                )
-            except ReasoningOnlyResponse as exc:
-                PROVIDER_LOG.warning("%s", exc)
-                return reasoning_fallback_response(payload, context)
+            content = llm_chat(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                schema=DIALOGUE_SCHEMA,
+                schema_name="sims_dialogue",
+                task="large",
+            )
             try:
                 response = normalize_response(extract_json(content))
             except (ValueError, json.JSONDecodeError):
@@ -1690,6 +1545,7 @@ def chat(payload):
                 raise ValueError("no supported Sims action available")
             persist_core_agent(conn, speaker)
             persist_core_agent(conn, listener)
+            persist_core_event(conn, event)
             actions.propose(event.id, decision, action)
         result = adapter.response_for(decision)
         result["animation"] = action
@@ -1763,6 +1619,7 @@ def autonomous_action(payload):
             raise ValueError("no supported Sims action available")
         for key in ("speaker", "listener"):
             persist_core_agent(conn, payload.get(key) or {})
+        persist_core_event(conn, event)
         actions.propose(event.id, decision, action)
     return {
         "hook": "Core proposed autonomous action",
@@ -1795,6 +1652,20 @@ def persist_core_agent(conn, sim):
     elif agent.name != name:
         agent.name = name
         store.update(agent, commit=False)
+
+
+def persist_core_event(conn, event):
+    store = EpisodicMemoryStore(conn)
+    if store.get(event.id) is None:
+        store.create(
+            Event(
+                id=event.id,
+                description=event.type,
+                participant_ids=list(event.actor_ids),
+                location=event.location,
+                happened_at=event.happened_at,
+            )
+        )
 
 
 def confirm_action(payload):
@@ -1860,31 +1731,26 @@ def confirm_action(payload):
 def voice_profile(sim_id_value):
     profile = get_profile(sim_id_value) or {"voice": {}}
     voice = dict(profile.get("voice") or {})
-    with connect_db() as conn:
-        row = conn.execute("select * from voice_settings where sim_id = ?", (str(sim_id_value),)).fetchone()
-    if row:
-        voice.update({"voice": row["voice"], "speed": row["speed"], "pitch": row["pitch"], "provider": row["provider"]})
+    stored = _get_memory("thesims4.voice", str(sim_id_value))
+    if isinstance(stored, dict):
+        voice.update(stored)
     return voice
 
 
 def save_voice_profile(sim_id_value, voice):
     voice = voice or {}
-    with connect_db() as conn:
-        conn.execute(
-            """
-            insert or replace into voice_settings (sim_id, voice, speed, pitch, provider, updated_at)
-            values (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(sim_id_value),
-                str(voice.get("voice") or ""),
-                float(voice.get("speed") or 1.0),
-                float(voice.get("pitch") or 0.0),
-                str(voice.get("provider") or CONFIG.get("tts", {}).get("provider") or ""),
-                now(),
+    _set_memory(
+        "thesims4.voice",
+        str(sim_id_value),
+        {
+            "voice": str(voice.get("voice") or ""),
+            "speed": float(voice.get("speed") or 1.0),
+            "pitch": float(voice.get("pitch") or 0.0),
+            "provider": str(
+                voice.get("provider") or CONFIG.get("tts", {}).get("provider") or ""
             ),
-        )
-        conn.commit()
+        },
+    )
     profile = get_profile(sim_id_value)
     if profile:
         profile["voice"] = voice_profile(sim_id_value)
@@ -1950,16 +1816,15 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 {
                     "status": "ok",
-                    "model": loaded_model_id(),
+                    "model": configured_model(),
                     "provider": PRIMARY_PROVIDER,
                     "llm_base_url": large.get("endpoint"),
-                    "native_models_url": native_models_url("large"),
-                    "chat_base_url_candidates": chat_base_urls(large.get("endpoint")),
                     "models": {
-                        "small": {"provider": small.get("name"), "model": loaded_model_id("small")},
-                        "large": {"provider": large.get("name"), "model": loaded_model_id("large")},
+                        "small": {"provider": small.get("name"), "model": configured_model("small")},
+                        "large": {"provider": large.get("name"), "model": configured_model("large")},
                     },
-                    "memory_db": ACTIVE_DB_PATH or DB_PATH,
+                    "memory_db": CORE_DB_PATH,
+                    "legacy_import_db": ACTIVE_DB_PATH or DB_PATH,
                     "preserve_memory_only_on_game_save": (
                         PRESERVE_MEMORY_ONLY_ON_GAME_SAVE
                     ),
@@ -2089,17 +1954,18 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run():
-    connect_db().close()
+    open_db(CORE_DB_PATH).close()
+    _ensure_legacy_memory_imported()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print("AI Sims server on http://{}:{}".format(HOST, PORT))
     print("Provider: {}".format(PRIMARY_PROVIDER))
     print("Endpoint: {}".format(task_model_config("large").get("endpoint")))
-    print("Model: {}".format(loaded_model_id("large")))
+    print("Model: {}".format(configured_model("large")))
     server.serve_forever()
 
 
 def self_test():
-    global DB_PATH, ACTIVE_DB_PATH
+    global DB_PATH, CORE_DB_PATH, ACTIVE_DB_PATH
     parsed = extract_json('```json\n{"dialogue":"hi","relationship":{"friendship_delta":12},"memory":"met"}\n```')
     result = normalize_response(parsed)
     assert result["dialogue"] == "hi"
@@ -2114,14 +1980,14 @@ def self_test():
     }
     assert response_has_role_confusion({"dialogue": "Sure, Sri."}, role_context)
     assert not response_has_role_confusion({"dialogue": "Sure, Robin."}, role_context)
-    assert chat_base_urls("http://x/api/v1") == ["http://x/v1", "http://x/api/v1"]
-    assert native_models_url().endswith("/api/v1/models")
     old_db = DB_PATH
+    old_core_db = CORE_DB_PATH
     old_active = ACTIVE_DB_PATH
     fd, path = tempfile.mkstemp(prefix="ai_sims_self_test_", suffix=".sqlite3")
     os.close(fd)
     try:
         DB_PATH = path
+        CORE_DB_PATH = path + ".core"
         ACTIVE_DB_PATH = None
         sim = {"id": "bella-goth", "name": "Bella Goth", "traits": ["romantic", "family-oriented"]}
         target = {"id": "mauricio", "name": "Mauricio", "traits": ["loyal"]}
@@ -2142,11 +2008,18 @@ def self_test():
         assert fallback["animation"] == "awkward_chat"
     finally:
         DB_PATH = old_db
+        core_path = CORE_DB_PATH
+        CORE_DB_PATH = old_core_db
         ACTIVE_DB_PATH = old_active
         try:
             os.unlink(path)
         except OSError:
             pass
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.unlink(core_path + suffix)
+            except OSError:
+                pass
     print("ok")
 
 

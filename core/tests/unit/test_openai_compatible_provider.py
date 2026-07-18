@@ -5,8 +5,10 @@ from unittest.mock import patch
 import pytest
 
 from empneon.providers.llm import (
+    ConfiguredProviderRouter,
     GenerationRequest,
     GenerationResult,
+    LMStudioProvider,
     Message,
     ModelCapabilities,
     OpenAICompatibleProvider,
@@ -158,3 +160,55 @@ def test_rejects_declared_batching_without_native_method() -> None:
 
     with pytest.raises(ProviderError, match="without generate_batch"):
         asyncio.run(generate_requests(MisconfiguredProvider(), requests))
+
+
+def test_configured_router_selects_provider_without_adapter_logic(monkeypatch) -> None:
+    monkeypatch.setenv("AI_SIM_API_KEY", "secret")
+    router = ConfiguredProviderRouter(
+        "openrouter",
+        {
+            "openrouter": {
+                "endpoint": "https://openrouter.ai/api/v1",
+                "model": "openai/gpt-4.1-mini",
+            }
+        },
+        {"large": {"max_tokens": 120, "temperature": 0.3}},
+        api_key_env="AI_SIM_API_KEY",
+    )
+    provider = router.provider_for("large")
+
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.base_url == "https://openrouter.ai/api/v1"
+    assert provider.model == "openai/gpt-4.1-mini"
+    assert provider.api_key == "secret"
+    assert provider.capabilities.local is False
+    assert router.generation_request(
+        "large", (Message("user", "hello"),)
+    ) == GenerationRequest(
+        (Message("user", "hello"),), max_tokens=120, temperature=0.3
+    )
+
+
+def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning() -> None:
+    models = {"models": [{"key": "gemma", "loaded_instances": [{"id": "gemma-loaded"}]}]}
+    chat = {"output": [{"type": "message", "content": "Hello Robin"}]}
+
+    with patch(
+        "urllib.request.urlopen", side_effect=[Response(models), Response(chat)]
+    ) as urlopen:
+        result = asyncio.run(
+            LMStudioProvider("http://localhost:1234/api/v1", "local-model").generate(
+                GenerationRequest((Message("user", "Hello"),), 120, 0.4)
+            )
+        )
+
+    chat_request = urlopen.call_args_list[1].args[0]
+    assert chat_request.full_url == "http://localhost:1234/api/v1/chat"
+    assert json.loads(chat_request.data) == {
+        "model": "gemma-loaded",
+        "input": "USER:\nHello",
+        "temperature": 0.4,
+        "max_output_tokens": 120,
+        "reasoning": "off",
+    }
+    assert result.content == "Hello Robin"

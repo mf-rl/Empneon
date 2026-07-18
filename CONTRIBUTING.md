@@ -8,11 +8,11 @@ Open an issue before implementing significant changes — avoid wasted effort.
 ## Development setup
 
 ```bash
-git clone https://github.com/PandaBakers/EmpneonCore.git
-cd EmpneonCore
+git clone https://github.com/mf-rl/Empneon.git
+cd Empneon
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e "core[dev]" -e "adapters/thesims4[dev]" -e "adapters/godot[dev]"
 ```
 
 ## Every feature needs
@@ -29,9 +29,9 @@ No exceptions. Performance budgets matter — target hardware is Ryzen 7 4800H +
 ## Before submitting a PR
 
 ```bash
-ruff check src tests   # lint
-mypy src               # type check
-pytest                 # tests
+ruff check core/src core/tests adapters tests
+mypy core/src adapters/thesims4/src adapters/godot/src
+pytest core adapters tests
 ```
 
 All three must pass. CI enforces this.

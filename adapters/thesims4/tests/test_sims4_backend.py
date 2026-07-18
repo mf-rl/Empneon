@@ -1,11 +1,25 @@
 import json
 import sqlite3
+from pathlib import Path
 
 from empneon.core.identity.relationships import RelationshipStore
+from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.runtime import ActionRecordStore
 from empneon.db.connection import open_db
 
 from backend import ai_sims_server
+
+
+def test_openrouter_and_baseline_defaults_are_configured() -> None:
+    config = json.loads(
+        (Path(ai_sims_server.ROOT) / "config" / "config.json").read_text(encoding="utf-8")
+    )
+
+    assert config["active_agent_limit"] == 1
+    assert config["providers"]["openrouter"] == {
+        "endpoint": "https://openrouter.ai/api/v1",
+        "model": "openai/gpt-4.1-mini",
+    }
 
 
 def test_recent_conversation_is_added_to_prompt(monkeypatch) -> None:
@@ -62,53 +76,33 @@ def test_recent_conversation_is_added_to_prompt(monkeypatch) -> None:
     )
     assert prompt.index("Recent conversation") < prompt.index("Player says")
 
-def test_lmstudio_chat_disables_reasoning(monkeypatch) -> None:
+def test_llm_chat_delegates_provider_selection_to_core(monkeypatch) -> None:
     captured = {}
 
-    class Response:
-        def __enter__(self):
-            return self
+    class Router:
+        async def generate(self, task, messages, *, schema=None, temperature=None):
+            captured.update(
+                task=task,
+                messages=messages,
+                schema=schema,
+                temperature=temperature,
+            )
+            return "Hello Robin"
 
-        def __exit__(self, *_args):
-            return None
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
 
-        def read(self):
-            return b'{"output":[{"type":"message","content":"Hello Robin"}]}'
-
-    def urlopen(request, timeout):
-        captured["url"] = request.full_url
-        captured["body"] = json.loads(request.data.decode("utf-8"))
-        captured["timeout"] = timeout
-        return Response()
-
-    monkeypatch.setattr(
-        ai_sims_server,
-        "task_model_config",
-        lambda _task="large": {
-            "name": "lmstudio",
-            "endpoint": "http://127.0.0.1:1234/api/v1",
-            "model": "gemma",
-            "temperature": 0.4,
-            "max_tokens": 120,
-        },
+    result = ai_sims_server.llm_chat(
+        [{"role": "user", "content": "Hello"}],
+        temperature=0.4,
+        schema={"type": "object"},
     )
-    monkeypatch.setattr(ai_sims_server, "loaded_model_id", lambda _task="large": "gemma")
-    monkeypatch.setattr(ai_sims_server.urllib.request, "urlopen", urlopen)
-
-    result = ai_sims_server.llm_chat([{"role": "user", "content": "Hello"}])
 
     assert result == "Hello Robin"
-    assert captured == {
-        "url": "http://127.0.0.1:1234/api/v1/chat",
-        "body": {
-            "model": "gemma",
-            "input": "USER:\nHello",
-            "temperature": 0.4,
-            "max_output_tokens": 120,
-            "reasoning": "off",
-        },
-        "timeout": 90,
-    }
+    assert captured["task"] == "large"
+    assert captured["messages"][0].role == "user"
+    assert captured["messages"][0].content == "Hello"
+    assert captured["schema"] == {"type": "object"}
+    assert captured["temperature"] == 0.4
 
 
 def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -> None:
@@ -190,9 +184,48 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
     assert record is None
 
 
+def test_adapter_memory_is_stored_by_core(tmp_path, monkeypatch) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    legacy_db = str(tmp_path / "legacy.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", legacy_db)
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+
+    ai_sims_server.add_memory("bella", "mortimer", "A greeting", 0.8)
+
+    with open_db(core_db) as conn:
+        documents = DocumentMemoryStore(conn).list("thesims4.memory")
+    assert len(documents) == 1
+    assert documents[0].value["summary"] == "A greeting"
+    assert not Path(legacy_db).exists()
+
+
+def test_legacy_adapter_memory_imports_once_into_core(tmp_path, monkeypatch) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    legacy_db = str(tmp_path / "legacy.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", legacy_db)
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    with ai_sims_server.connect_db() as conn:
+        conn.execute(
+            "INSERT INTO memories"
+            "(speaker_id, listener_id, sim_id, target_id, event, summary, importance, created_at)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            ("bella", "mortimer", "bella", "mortimer", "Legacy", "Legacy", 0.8, 1),
+        )
+        conn.commit()
+
+    assert [
+        item["summary"] for item in ai_sims_server.memories_for_pair("bella", "mortimer")
+    ] == ["Legacy"]
+    assert len(ai_sims_server._memory_values("thesims4.memory")) == 1
+
+
 def test_memory_session_requires_game_save(tmp_path, monkeypatch) -> None:
     memory_db = str(tmp_path / "memory.sqlite3")
+    core_db = str(tmp_path / "core.sqlite3")
     monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", True)
     ai_sims_server.connect_db().close()
@@ -217,13 +250,15 @@ def test_memory_session_requires_game_save(tmp_path, monkeypatch) -> None:
         "Save 2 memory",
         "Save 1 memory",
     ]
-    assert (tmp_path / "memory.sqlite3.empneon-saved.slot-1").exists()
-    assert (tmp_path / "memory.sqlite3.empneon-saved.slot-2").exists()
+    assert (tmp_path / "core.sqlite3.empneon-saved.slot-1").exists()
+    assert (tmp_path / "core.sqlite3.empneon-saved.slot-2").exists()
 
 
 def test_legacy_memory_checkpoint_is_migrated(tmp_path, monkeypatch) -> None:
     memory_db = str(tmp_path / "memory.sqlite3")
+    core_db = str(tmp_path / "core.sqlite3")
     monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", True)
     ai_sims_server.connect_db().close()
@@ -234,14 +269,16 @@ def test_legacy_memory_checkpoint_is_migrated(tmp_path, monkeypatch) -> None:
 
     ai_sims_server.start_memory_session("new-session", "1")
 
-    assert (tmp_path / "memory.sqlite3.empneon-saved.slot-1").exists()
+    assert (tmp_path / "core.sqlite3.empneon-saved.slot-1").exists()
     memories = ai_sims_server.memories_for_pair("bella", "mortimer")
     assert [memory["summary"] for memory in memories] == ["Legacy memory"]
 
 
 def test_memory_is_continuous_when_save_flag_is_disabled(tmp_path, monkeypatch) -> None:
     memory_db = str(tmp_path / "memory.sqlite3")
+    core_db = str(tmp_path / "core.sqlite3")
     monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", False)
     ai_sims_server.connect_db().close()

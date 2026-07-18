@@ -12,7 +12,7 @@ its reproducible exit-gate procedure.
 - An OpenAI-compatible provider for model-backed conversation; autonomous CLOD 1
   behavior remains provider-free
 
-From the private monorepo root, install Core and The Sims 4 adapter:
+From the public monorepo root, install Core and The Sims 4 adapter:
 
 ```powershell
 py -3.12 -m pip install -e .\core -e .\adapters\thesims4
@@ -57,7 +57,7 @@ Python 3.12 may be replaced with any installed Python version supported by
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `ts4script/ai_sims_agent.py` and rebuilding
-the mod. Do not expose the POC HTTP server to another machine; it has no authentication.
+the mod. Do not expose the reference HTTP server to another machine; it has no authentication.
 
 ## Configuration
 
@@ -68,10 +68,10 @@ JSON file. Environment variables override the loaded file.
 |---|---|---|
 | `host`, `AI_SIM_HOST` | Backend bind address | `127.0.0.1` |
 | `port`, `AI_SIM_PORT` | Backend port | `8765` |
-| `database`, `AI_SIM_DB` | Adapter profile, memory, relationship, and conversation database | `ai_sims_memory.sqlite3` |
-| `core_database` | Core action and cognition database | `empneon_core.sqlite3` |
+| `database`, `AI_SIM_DB` | Former adapter database imported once for compatibility | `ai_sims_memory.sqlite3` |
+| `core_database` | Core identity, memory, action, and cognition database | `empneon_core.sqlite3` |
 | `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `false` |
-| `active_agent_limit` | Concurrent POC agent sessions and Core admissions | `5` |
+| `active_agent_limit` | Concurrent reference-adapter sessions and Core admissions | `1` |
 | `agent_wake_timeout_seconds` | Wait for an agent-session slot | `60` |
 | `provider`, `AI_SIM_PROVIDER` | Default provider entry | `lmstudio` |
 | `AI_SIM_LLM_BASE_URL` | Override the selected provider endpoint | provider endpoint |
@@ -79,14 +79,17 @@ JSON file. Environment variables override the loaded file.
 | `AI_SIM_API_KEY` | Authorization bearer token | unset |
 | `debug` | Verbose backend logging | `true` |
 
-Relative database paths resolve from the backend process's working directory. If the
-POC database is not writable and `AI_SIM_DB` is unset, it falls back to the operating
-system's temporary directory. The Core database does not have that fallback.
+Relative database paths resolve from the backend process's working directory. The former
+adapter path is read only for one-time import; current state is written to the Core database.
 
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
 and `models.large` may override `provider`, `endpoint`, `model`, `temperature`, and
 `max_tokens` per task.
+
+For OpenRouter, set `provider` to `openrouter`, optionally replace its configured model,
+and set `AI_SIM_API_KEY`. Core uses `https://openrouter.ai/api/v1` through the
+OpenAI-compatible provider; the game adapter contains no OpenRouter-specific behavior.
 
 ### Native social UI validation
 
@@ -104,16 +107,16 @@ Memory settings:
 - `summary_every`: number of pair memories before summarization is attempted
 - `summary_limit`: maximum memories included in a summary request
 
-When `preserve_memory_only_on_game_save` is `false`, adapter memories, conversations,
-emotions, profiles, and relationships are written continuously to one global memory database;
+When `preserve_memory_only_on_game_save` is `false`, memories, conversations,
+emotions, profiles, and relationships are written continuously to the Core database;
 save slots are ignored. When it is `true`, the backend keeps those changes as the current
 session state and maintains an independent checkpoint for each The Sims 4 save slot.
 The mod checkpoints that state only after The Sims 4 successfully completes `save_game_gen` for
 a real save slot; temporary scratch-slot saves are ignored. This includes any autosave
 implementation that uses the same real-save path. Returning to the Main Menu and loading a save,
 or restarting the game, begins another session and discards changes after the last checkpoint.
-Traveling between lots remains part of the current session. Core usage, decision, and diagnostic
-records are not rolled back.
+Traveling between lots remains part of the current session. Core cognition and memory records
+share the checkpoint and roll back together.
 
 Dialogue normally uses two to four natural sentences shaped by the Sim's personality, emotion,
 and relationship. Factual recall is grounded only in player-provided facts and retained memory;
@@ -123,7 +126,7 @@ Live validation on 2026-07-16 confirmed that an unsaved codeword was removed aft
 the Main Menu, a normal save retained `PERSIST-GREEN-963` for Nanami Ito after reload, scratch-slot
 saves did not checkpoint memory, and separate Save As branches restored their own histories.
 
-Checkpoints and the session marker are stored beside the configured adapter database with
+Checkpoints and the session marker are stored beside the configured Core database with
 `.empneon-saved.slot-<id>` and `.empneon-session` suffixes. The former single
 `.empneon-saved` checkpoint is migrated to its recorded slot when possible. Preserve these files
 when backing up retained memory. Stop the game and backend before deleting them.
@@ -133,9 +136,9 @@ voice identifiers, and voice settings to that endpoint.
 
 ## Privacy and Data Retention
 
-The backend stores Sim identifiers and names, traits, moods, relationships, locations,
+Core stores Sim identifiers and names, traits, moods, relationships, locations,
 conversation text, generated dialogue, memories, decisions, and consequences in its
-SQLite databases. Debug logs are written under `logs`, with an operating system
+SQLite database. Debug logs are written under `logs`, with an operating system
 temporary-directory fallback if that directory is unavailable.
 
 For local providers, prompts remain on the local machine unless that provider performs
@@ -146,8 +149,9 @@ generated dialogue and voice settings. Review those services' retention policies
 enabling them.
 
 The adapter backend has no user accounts, encryption layer, retention scheduler, or authenticated
-HTTP API. Keep the backend bound to loopback. To remove retained POC data, stop the game
-and backend, then delete the configured SQLite databases, Empneon checkpoint/session files,
+HTTP API. Keep the backend bound to loopback. To remove retained reference data, stop the game
+and backend, then delete the configured Core SQLite database, legacy import database,
+Empneon checkpoint/session files,
 and `logs` files. Back up
 save-related data first if continuity matters.
 
@@ -159,13 +163,12 @@ These are conservative operating profiles, not benchmark results:
 |---|---|---|---|
 | Provider-free minimum | None required for CLOD 1 | `active_agent_limit: 1` | Connectivity and deterministic autonomy checks |
 | Baseline validation target | Small local model | `active_agent_limit: 1`, default token limits | Ryzen 7 4800H, RTX 2060 Laptop 6 GB, 16 GB RAM with The Sims 4 running |
-| Hosted-provider test | OpenAI-compatible remote endpoint | `active_agent_limit: 1` | Reduce local model pressure while accepting network privacy, latency, and cost |
+| Remote-provider test | OpenAI-compatible remote endpoint | `active_agent_limit: 1` | Reduce local model pressure while accepting network privacy, latency, and cost |
 
-No recommended hardware profile exists yet. The POC governor has initial admission
+No recommended hardware profile exists yet. The Core governor has initial admission
 structures, but the Sims integration does not yet measure actual process RAM, VRAM, CPU,
 or frame time. Increase concurrency only after observing the game and provider together.
-Do not treat the default limit of five as a validated safe value. Stage 3 must publish raw
-measurements before performance or scalability claims are made.
+Do not increase the default limit of one without a new concurrent in-game measurement.
 
 ## Stage 2 Exit-Gate Test
 
@@ -192,7 +195,6 @@ callback APIs, the result must remain failed and the Stage 2 checklist must stay
    `host`/`port` at `127.0.0.1:8765`. Then set the test paths:
 
    ```powershell
-   $env:AI_SIM_DB = "$PWD\stage2-poc.sqlite3"
    $env:AI_SIM_CONFIG = "$PWD\stage2-config.json"
    ```
 
@@ -239,7 +241,6 @@ def scalar(db, sql):
         return connection.execute(sql).fetchone()[0]
 
 core = "stage2-core.sqlite3"
-poc = "stage2-poc.sqlite3"
 participants = """
     SELECT actor_id AS id FROM action_results
     UNION
@@ -254,9 +255,7 @@ print("action results:", scalar(core, "SELECT COUNT(*) FROM action_results"))
 print("ordered consequences:", scalar(core, "SELECT COUNT(*) FROM action_consequences"))
 print("core relationships:", scalar(core, "SELECT COUNT(*) FROM relationships"))
 print("pending proposals:", scalar(core, "SELECT COUNT(*) FROM action_proposals"))
-print("POC profiles:", scalar(poc, "SELECT COUNT(*) FROM sim_profiles"))
-print("POC relationships:", scalar(poc, "SELECT COUNT(*) FROM relationships"))
-print("POC memories:", scalar(poc, "SELECT COUNT(*) FROM memories"))
+print("memory documents:", scalar(core, "SELECT COUNT(*) FROM memory_documents"))
 '@ | py -3 -
 ```
 
@@ -269,10 +268,10 @@ identify actions that never received a game result.
 ### 5. Save, exit, and reload
 
 1. Save the game under a new name after visible consequences occur.
-2. Exit The Sims 4 completely and stop the backend cleanly. Do not remove either database.
+2. Exit The Sims 4 completely and stop the backend cleanly. Do not remove the Core database.
 3. Restart the backend with the same configuration, launch the game, and reload that save.
 4. Bring the same agents onto the test lot and allow another automatic interval to run.
-5. Verify the same stable Sim IDs are reused, prior Core and POC records are still present,
+5. Verify the same stable Sim IDs are reused, prior Core records are still present,
    and new records append rather than replace the earlier evidence.
 6. Verify at least one earlier relationship, mood, memory, or other visible social
    consequence is still observable after reload.
@@ -300,8 +299,7 @@ failing path before beginning Stage 3.
 The exit gate passed across a game restart using `stage2-5-config.json`: 20 persistent
 Core agents all participated in automatic events, 15 actions succeeded, one failed safely
 with `FinishingType.DISPLACED`, zero proposals remained pending, and Core stored 16
-ordered consequences. The separate POC profile, relationship, and memory counts remained
-zero for this autonomous path. A later 30-sim-minute regression run using
+ordered consequences. A later 30-sim-minute regression run using
 `stage2-6-config.json` completed one automatic NPC social, persisted one ordered
 consequence, and left zero pending proposals without producing a new desync.
 

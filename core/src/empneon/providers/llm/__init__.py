@@ -6,6 +6,8 @@ from empneon.providers.llm.base import (
     ModelCapabilities,
     ProviderError,
 )
+from empneon.providers.llm.configured import ConfiguredProviderRouter
+from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 from empneon.providers.llm.preparation import (
     GenerationPreparation,
@@ -17,8 +19,10 @@ __all__ = [
     "GenerationRequest",
     "GenerationPreparation",
     "GenerationResult",
+    "ConfiguredProviderRouter",
     "LLMProvider",
     "Message",
+    "LMStudioProvider",
     "ModelCapabilities",
     "OpenAICompatibleProvider",
     "ProviderError",

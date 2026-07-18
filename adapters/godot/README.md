@@ -22,4 +22,4 @@ The successful engine output contains `EMPNEON_GODOT_OK`.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [Apache License 2.0](../../LICENSE).

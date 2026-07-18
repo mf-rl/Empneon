@@ -21,10 +21,11 @@ class OpenAICompatibleProvider:
     model: str
     api_key: str | None = None
     timeout_seconds: float = 90
+    local: bool = False
 
     @property
     def capabilities(self) -> ModelCapabilities:
-        return ModelCapabilities(structured_output=True, local=True)
+        return ModelCapabilities(structured_output=True, local=self.local)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
         try:
