@@ -106,7 +106,8 @@ jobs:
         run: python scripts/release.py validate ${{ matrix.component }} ${{ needs.prepare.outputs.version }}
       - name: Test Core
         if: matrix.component == 'core'
-        run: python -m pytest core/tests
+        working-directory: core
+        run: python -m pytest tests
       - name: Test Core scenarios
         if: matrix.component == 'core'
         run: python -m empneon.benchmarks.regression core/scenarios/clod1-regressions.json

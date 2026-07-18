@@ -160,6 +160,10 @@ def test_release_workflow_has_required_contract() -> None:
         assert text in workflow
     for forbidden in ("REPOSITORY_SYNC_TOKEN", "PERSONAL_ACCESS_TOKEN", "secrets.PAT"):
         assert forbidden not in workflow
+    assert """- name: Test Core
+        if: matrix.component == 'core'
+        working-directory: core
+        run: python -m pytest tests""" in workflow
 
 
 def test_monorepo_ci_checks_release_support() -> None:
