@@ -2,9 +2,25 @@
 
 The Sims 4 adapter, script mod, and local bridge for Empneon Core.
 
-## Run
+## Install a release
 
-Requires Python 3.11 or newer for the backend and Python 3.7 to build the Sims script mod.
+Download `Empneon-TheSims4-X.Y.Z.zip` from GitHub Releases and extract it. From the extracted
+directory:
+
+```powershell
+py -3.12 -m pip install (Get-ChildItem .\wheels\*.whl).FullName
+.\install_mod.ps1
+.\run_backend.ps1
+```
+
+The release already contains `Empneon_TheSims4.ts4script` and
+`Empneon_TheSims4.package`; gamers do not need Python 3.7. The installer also removes legacy
+`AI_Sims_Agent.*` files so only one copy of the mod remains.
+
+## Run from source
+
+Requires Python 3.11 or newer for the backend. Python 3.7 is needed only to build the Sims
+script mod from source.
 From the public monorepo, install Core and this adapter first:
 
 ```powershell
@@ -59,5 +75,5 @@ The packaged mod currently requires the backend at `127.0.0.1:8765`.
 - `backend/ai_sims_server.py`: local game bridge; `/chat` and `/autonomous` run through Core
 - `ts4script/ai_sims_agent.py`: Sims 4 interaction, autonomy bridge, and diagnostic commands
 - `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning
-- `build_mod.py`: builds the `.ts4script` and `.package` mod artifacts
+- `build_mod.py`: builds `Empneon_TheSims4.ts4script` and `Empneon_TheSims4.package`
 - `test.py`: smoke test for `/chat`

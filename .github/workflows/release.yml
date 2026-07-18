@@ -1,0 +1,219 @@
+name: Independent releases
+
+on:
+  push:
+    tags:
+      - "core-v*"
+      - "thesims4-v*"
+      - "godot-v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component to release
+        required: true
+        type: choice
+        default: all
+        options: [all, core, thesims4, godot]
+      version:
+        description: Semantic version without the v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'core-v')
+    runs-on: ubuntu-latest
+    outputs:
+      components: ${{ steps.release.outputs.components }}
+      ref: ${{ steps.release.outputs.ref }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: release
+        name: Resolve release request
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REQUESTED_COMPONENT: ${{ inputs.component }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$REQUESTED_VERSION"
+            ref="$GITHUB_SHA"
+            case "$REQUESTED_COMPONENT" in
+              all) components='["core","thesims4","godot"]' ;;
+              core) components='["core"]' ;;
+              thesims4) components='["thesims4"]' ;;
+              godot) components='["godot"]' ;;
+              *) echo "Unsupported component: $REQUESTED_COMPONENT" >&2; exit 1 ;;
+            esac
+          else
+            tag="${RELEASE_TAG:-$GITHUB_REF_NAME}"
+            ref="$tag"
+            component="${tag%%-v*}"
+            version="${tag#*-v}"
+            if [[ "$EVENT_NAME" == "release" ]]; then
+              components='["thesims4","godot"]'
+            elif [[ "$component" == "core" ]]; then
+              components='["core","thesims4","godot"]'
+            elif [[ "$component" == "thesims4" || "$component" == "godot" ]]; then
+              components="[\"$component\"]"
+            else
+              echo "Unsupported tag: $tag" >&2
+              exit 1
+            fi
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Invalid version: $version" >&2
+            exit 1
+          }
+          echo "components=$components" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: true
+      matrix:
+        component: ${{ fromJSON(needs.prepare.outputs.components) }}
+    runs-on: ${{ matrix.component == 'thesims4' && 'windows-2022' || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - name: Set up Python 3.7 for The Sims 4
+        if: matrix.component == 'thesims4'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.7"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build tools and Core
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build pytest twine
+          python -m pip install -e core
+      - name: Validate versions
+        run: python scripts/release.py validate ${{ matrix.component }} ${{ needs.prepare.outputs.version }}
+      - name: Test Core
+        if: matrix.component == 'core'
+        run: python -m pytest core/tests
+      - name: Test Core scenarios
+        if: matrix.component == 'core'
+        run: python -m empneon.benchmarks.regression core/scenarios/clod1-regressions.json
+      - name: Test The Sims 4 adapter
+        if: matrix.component == 'thesims4'
+        working-directory: adapters/thesims4
+        run: |
+          python -m pip install -e .
+          python -m pytest tests
+      - name: Test Godot adapter
+        if: matrix.component == 'godot'
+        working-directory: adapters/godot
+        run: |
+          python -m pip install -e .
+          python -m pytest tests
+      - name: Test cross-adapter contracts
+        if: matrix.component != 'core'
+        run: python -m pytest tests
+      - name: Build Core
+        working-directory: core
+        run: python -m build
+      - name: Build The Sims 4 Python package
+        if: matrix.component == 'thesims4'
+        working-directory: adapters/thesims4
+        run: python -m build
+      - name: Build The Sims 4 game mod
+        if: matrix.component == 'thesims4'
+        run: python adapters/thesims4/build_mod.py
+      - name: Build Godot Python package
+        if: matrix.component == 'godot'
+        working-directory: adapters/godot
+        run: python -m build
+      - name: Validate Core package metadata
+        run: python -m twine check core/dist/*
+      - name: Validate adapter package metadata
+        if: matrix.component != 'core'
+        run: python -m twine check adapters/${{ matrix.component }}/dist/*
+      - name: Create clean installation environment
+        run: python -m venv release-venv
+      - name: Smoke-test clean install on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release-venv/bin/python -m pip install core/dist/*.whl
+          if [[ "${{ matrix.component }}" == "godot" ]]; then
+            release-venv/bin/python -m pip install adapters/godot/dist/*.whl
+            release-venv/bin/python -c "import empneon, empneon_godot"
+          else
+            release-venv/bin/python -c "import empneon"
+          fi
+      - name: Smoke-test clean install on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $coreWheel = (Get-ChildItem core/dist/*.whl).FullName
+          $adapterWheel = (Get-ChildItem adapters/thesims4/dist/*.whl).FullName
+          & .\release-venv\Scripts\python.exe -m pip install $coreWheel $adapterWheel
+          & .\release-venv\Scripts\python.exe -c "import empneon, empneon_thesims4"
+      - name: Package runtime-only release
+        run: python scripts/release.py package ${{ matrix.component }} ${{ needs.prepare.outputs.version }} --output release/${{ matrix.component }}
+      - name: Create release notes
+        run: python scripts/release.py notes ${{ matrix.component }} ${{ needs.prepare.outputs.version }} --output release/${{ matrix.component }}/RELEASE_NOTES.md
+      - name: Confirm checksums
+        run: python -c "from pathlib import Path; assert (Path('release') / '${{ matrix.component }}' / 'SHA256SUMS.txt').is_file()"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.component }}
+          path: release/${{ matrix.component }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [prepare, build]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.prepare.outputs.components) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ matrix.component }}
+          path: release
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPONENT: ${{ matrix.component }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ needs.prepare.outputs.ref }}
+        run: |
+          set -euo pipefail
+          tag="${COMPONENT}-v${VERSION}"
+          mapfile -t assets < <(find release -maxdepth 1 -type f ! -name RELEASE_NOTES.md | sort)
+          mapfile -t local_names < <(printf '%s\n' "${assets[@]##*/}" | sort)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            mapfile -t remote_names < <(gh release view "$tag" --json assets --jq '.assets[].name' | sort)
+            diff <(printf '%s\n' "${local_names[@]}") <(printf '%s\n' "${remote_names[@]}")
+            echo "Release $tag already has the expected assets; skipping."
+            exit 0
+          fi
+          notes="$(cat release/RELEASE_NOTES.md)"
+          gh release create "$tag" "${assets[@]}" \
+            --target "$TARGET" \
+            --title "Empneon ${COMPONENT} ${VERSION}" \
+            --notes "$notes" \
+            --generate-notes

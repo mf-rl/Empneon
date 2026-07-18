@@ -1,19 +1,30 @@
 $ErrorActionPreference = "Stop"
 
-python "$PSScriptRoot\build_mod.py"
+$scriptSource = Join-Path $PSScriptRoot "dist\Empneon_TheSims4.ts4script"
+$tuningSource = Join-Path $PSScriptRoot "dist\Empneon_TheSims4.package"
+if (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource))) {
+    $builder = Join-Path $PSScriptRoot "build_mod.py"
+    if (-not (Test-Path $builder)) {
+        throw "Prebuilt Empneon mod files are missing. Download the complete release ZIP."
+    }
+    python $builder
+}
 
 $game = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Electronic Arts\The Sims 4"
 $mods = Join-Path $game "Mods"
-$old = Join-Path $mods "AI Sims Agent\AI_Sims_Agent.ts4script"
-$target = Join-Path $mods "AI_Sims_Agent.ts4script"
-$tuningTarget = Join-Path $mods "AI_Sims_Agent.package"
-Remove-Item -Force $old -ErrorAction SilentlyContinue
-Remove-Item -Force $target -ErrorAction SilentlyContinue
-Remove-Item -Force $tuningTarget -ErrorAction SilentlyContinue
+$target = Join-Path $mods "Empneon_TheSims4.ts4script"
+$tuningTarget = Join-Path $mods "Empneon_TheSims4.package"
+@(
+    (Join-Path $mods "AI Sims Agent\AI_Sims_Agent.ts4script"),
+    (Join-Path $mods "AI_Sims_Agent.ts4script"),
+    (Join-Path $mods "AI_Sims_Agent.package"),
+    $target,
+    $tuningTarget
+) | ForEach-Object { Remove-Item -Force $_ -ErrorAction SilentlyContinue }
 Remove-Item -Force (Join-Path $game "localthumbcache.package") -ErrorAction SilentlyContinue
 Remove-Item -Force (Join-Path $game "ai_sims_agent_loaded.txt") -ErrorAction SilentlyContinue
-Copy-Item -Force "$PSScriptRoot\dist\AI_Sims_Agent.ts4script" $target
-Copy-Item -Force "$PSScriptRoot\dist\AI_Sims_Agent.package" $tuningTarget
+Copy-Item -Force $scriptSource $target
+Copy-Item -Force $tuningSource $tuningTarget
 $now = Get-Date
 (Get-Item $target).CreationTime = $now
 (Get-Item $target).LastWriteTime = $now

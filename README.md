@@ -54,8 +54,29 @@ The public `mf-rl/Empneon` monorepo is the source of truth:
 - `tests/` — shared adapter-contract tests
 - `docs/` — current open-source roadmap
 
-Each Python project remains independently buildable from its directory. Former publication
-workflows for separate repositories have been removed.
+Each Python project remains independently buildable and releasable from its directory.
+
+## Releases
+
+GitHub Releases use one synchronized version and component-specific tags:
+
+- `core-vX.Y.Z`
+- `thesims4-vX.Y.Z`
+- `godot-vX.Y.Z`
+
+Pushing a Core tag tests and publishes Core plus both adapters. An adapter tag publishes only
+that adapter. Maintainers can also run **Independent releases** manually and select `all`,
+`core`, `thesims4`, or `godot`.
+
+Core releases contain a wheel and source distribution. Download the wheel and install it with:
+
+```bash
+python -m pip install ./empneon-X.Y.Z-py3-none-any.whl
+```
+
+Adapter ZIPs contain their adapter wheel and the matching Core wheel. Every release includes
+`SHA256SUMS.txt`; verify it with `sha256sum -c SHA256SUMS.txt` on Linux or compare it with
+`Get-FileHash -Algorithm SHA256` on Windows.
 
 ## Install for development
 
