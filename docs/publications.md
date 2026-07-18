@@ -1,13 +1,13 @@
 # Product Publication
 
-`PandaBakers/Empneon` is the private monorepo and source of truth. Each product root is independently
+`mf-rl/Empneon` is the private monorepo and source of truth. Each product root is independently
 buildable and is exported without private Git history:
 
 | Release tag | Source | Destination |
 |---|---|---|
-| `core-vX.Y.Z` | `core/` | `PandaBakers/EmpneonCore` |
-| `thesims4_vX.Y.Z` | `adapters/thesims4/` | `PandaBakers/EmpneonTheSims4` |
-| `godot-vX.Y.Z` | `adapters/godot/` | `PandaBakers/EmpneonGodot` |
+| `core-vX.Y.Z` | `core/` | `mf-rl/EmpneonCore` |
+| `thesims4_vX.Y.Z` | `adapters/thesims4/` | `mf-rl/EmpneonTheSims4` |
+| `godot-vX.Y.Z` | `adapters/godot/` | `mf-rl/EmpneonGodot` |
 
 The exporter strips the product directory prefix and overlays the shared license, contribution
 guide, code of conduct, attributes, and GitHub community templates. It rejects databases,
