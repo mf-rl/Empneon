@@ -164,6 +164,11 @@ def test_release_workflow_has_required_contract() -> None:
         if: matrix.component == 'core'
         working-directory: core
         run: python -m pytest tests""" in workflow
+    assert """- name: Test cross-adapter contracts
+        if: matrix.component != 'core'
+        run: |
+          python -m pip install -e adapters/thesims4 -e adapters/godot
+          python -m pytest tests""" in workflow
 
 
 def test_monorepo_ci_checks_release_support() -> None:
