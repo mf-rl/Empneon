@@ -3,7 +3,7 @@
 **Version:** 0.2
 
 This document records hypotheses to implement and test. It does not claim that an
-idea is novel, feasible, or commercially valuable before evidence exists.
+idea is novel, feasible, or practically valuable before evidence exists.
 
 ## Primary Research Contributions
 
@@ -170,11 +170,9 @@ Every research item uses one label:
 - **Benchmarked:** compared against a stated baseline with raw results
 - **Validated:** independently repeatable and improves the target outcome
 
-Current status: all four primary contributions remain hypotheses. Generic contracts, an
-initial resource governor, deterministic 20-agent SocietyBench workloads, and comparable
-one-call-per-agent and fixed-CLOD execution with raw resource, frame-time, token, and
-latency recording are implementation foundations, not in-game benchmarked or validated
-research results. One foreground baseline-hardware run is measured and documents severe
-resource pressure; it is not sufficient to validate a research contribution. Identity
-continuity and generic agent-subject contradiction metrics are implemented for later
-scenario evaluation.
+Current status: adaptive routing is implemented and benchmarked on one synthetic differentiated
+workload; it is not independently validated. Epistemic memory and typed replay are implemented
+with deterministic integration tests but have no player-study evidence. SocietyBench is
+implemented, and one foreground baseline-hardware run documents severe resource pressure rather
+than acceptable performance. None of these results establishes novelty, scalability, or player
+value.

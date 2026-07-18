@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -153,6 +153,16 @@ CREATE TABLE IF NOT EXISTS agent_metadata (
 )
 """
 
+_CREATE_MEMORY_DOCUMENTS = """
+CREATE TABLE IF NOT EXISTS memory_documents (
+    namespace  TEXT    NOT NULL,
+    key        TEXT    NOT NULL,
+    value      TEXT    NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (namespace, key)
+)
+"""
+
 _CREATE_COGNITION_USAGE = """
 CREATE TABLE IF NOT EXISTS cognition_usage (
     id                          TEXT    PRIMARY KEY,
@@ -274,6 +284,7 @@ ALL_DDL: list[str] = [
     _CREATE_GOALS,
     _CREATE_VOICE_PROFILES,
     _CREATE_AGENT_METADATA,
+    _CREATE_MEMORY_DOCUMENTS,
     _CREATE_COGNITION_USAGE,
     _CREATE_ACTION_RESULTS,
     _CREATE_ACTION_CONSEQUENCES,
@@ -409,4 +420,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     8: (_CREATE_BELIEF_PROVENANCE,),
     9: (_CREATE_BELIEF_RELATIONS, _CREATE_IDX_BELIEF_SINGLE_REVISION),
     10: (_ADD_COGNITION_USAGE_SELECTED_CLOD,),
+    11: (_CREATE_MEMORY_DOCUMENTS,),
 }

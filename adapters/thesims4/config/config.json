@@ -5,7 +5,7 @@
   "database": "ai_sims_memory.sqlite3",
   "core_database": "empneon_core.sqlite3",
   "preserve_memory_only_on_game_save": false,
-  "active_agent_limit": 5,
+  "active_agent_limit": 1,
   "agent_wake_timeout_seconds": 60,
   "provider": "lmstudio",
   "providers": {
@@ -20,6 +20,10 @@
     "openai": {
       "endpoint": "https://api.openai.com/v1",
       "model": "gpt-4.1-mini"
+    },
+    "openrouter": {
+      "endpoint": "https://openrouter.ai/api/v1",
+      "model": "openai/gpt-4.1-mini"
     },
     "llamacpp": {
       "endpoint": "http://127.0.0.1:8080/v1",

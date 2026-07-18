@@ -14,10 +14,10 @@ AI reasoning within explicit performance and cost limits.
 - Regression scenarios and benchmarks for validating behavior
 
 Empneon Core is not tied to The Sims 4, a particular game engine, or a particular model vendor.
-Game-specific integrations and hosted services live outside the core runtime.
+Game-specific integrations live in adapters outside the core runtime.
 
 ```text
-game <-> game adapter <-> Empneon Core <-> AI provider adapter <-> model
+game <-> game adapter <-> Empneon Core <-> AI provider <-> model
 ```
 
 ## Status
@@ -46,8 +46,8 @@ empneon-regress scenarios/clod1-regressions.json
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+See [CONTRIBUTING.md](../CONTRIBUTING.md) and the [Code of Conduct](../CODE_OF_CONDUCT.md).
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [Apache License 2.0](../LICENSE).

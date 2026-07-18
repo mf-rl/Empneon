@@ -5,15 +5,16 @@ The Sims 4 adapter, script mod, and local bridge for Empneon Core.
 ## Run
 
 Requires Python 3.11 or newer for the backend and Python 3.7 to build the Sims script mod.
-In the private monorepo, install Core and this adapter first:
+From the public monorepo, install Core and this adapter first:
 
 ```powershell
 py -3.12 -m pip install -e ..\..\core -e .
 ```
 
-1. Start LM Studio's local server at `http://127.0.0.1:1234`.
-2. Load a model in LM Studio. The backend reads `/api/v1/models` and sends chat through
-   `/v1/chat/completions`.
+1. Start LM Studio's local server at `http://127.0.0.1:1234` or select another provider
+   in `config/config.json`.
+2. Load a model when using LM Studio. Core discovers the loaded model and uses LM Studio's
+   native `/api/v1/chat` endpoint.
 3. Run the backend:
 
 ```powershell
@@ -55,7 +56,7 @@ The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files
 
-- `backend/ai_sims_server.py`: local AI backend; `/chat` and `/autonomous` run through Core
+- `backend/ai_sims_server.py`: local game bridge; `/chat` and `/autonomous` run through Core
 - `ts4script/ai_sims_agent.py`: Sims 4 interaction, autonomy bridge, and diagnostic commands
 - `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning
 - `build_mod.py`: builds the `.ts4script` and `.package` mod artifacts
