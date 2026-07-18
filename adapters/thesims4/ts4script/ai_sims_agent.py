@@ -57,7 +57,7 @@ def write_marker(text):
         pass
 
 
-write_marker("AI Sims Agent imported")
+write_marker("Empneon for The Sims 4 imported")
 
 
 def current_save_slot_id():
@@ -907,7 +907,7 @@ def show_chat_result(connection, speaker_name, data):
 @command("ai.help")
 @command("aisims.help")
 def ai_help(_connection=None):
-    out(_connection, "AI Sims Agent script is loaded.")
+    out(_connection, "Empneon for The Sims 4 is loaded.")
     out(_connection, "ai.ping")
     out(_connection, "aiping")
     out(_connection, "ai.chat Bella Goth | Why have you been avoiding me?")
@@ -945,7 +945,7 @@ def ai_social_tunings(*args, _connection=None):
 @command("ailoaded")
 def ai_loaded(_connection=None):
     write_marker("ai.loaded command ran")
-    out(_connection, "AI Sims Agent script is loaded. Backend: {}".format(BACKEND_URL))
+    out(_connection, "Empneon for The Sims 4 is loaded. Backend: {}".format(BACKEND_URL))
 
 
 @command("ai.ping")
@@ -1275,6 +1275,6 @@ def ai_autonomous(_connection=None):
 
 
 try:
-    write_marker("AI Sims Agent commands registered")
+    write_marker("Empneon for The Sims 4 commands registered")
 except Exception:
     write_marker(traceback.format_exc())

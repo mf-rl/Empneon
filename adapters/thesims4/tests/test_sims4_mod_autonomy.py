@@ -7,6 +7,19 @@ from types import ModuleType, SimpleNamespace
 import build_mod
 
 
+def test_build_and_installer_use_empneon_artifact_names() -> None:
+    root = Path(__file__).parents[1]
+    installer = (root / "install_mod.ps1").read_text(encoding="utf-8")
+
+    assert build_mod.TARGET.name == "Empneon_TheSims4.ts4script"
+    assert build_mod.TUNING_TARGET.name == "Empneon_TheSims4.package"
+    assert '"Empneon_TheSims4.ts4script"' in installer
+    assert '"Empneon_TheSims4.package"' in installer
+    assert '"AI_Sims_Agent.ts4script"' in installer
+    assert '"AI_Sims_Agent.package"' in installer
+    assert "if (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource)))" in installer
+
+
 def test_tuning_package_uses_interaction_resource_type() -> None:
     written = []
     target = SimpleNamespace(write_bytes=written.append)

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "empneon-thesims4"
-version = "0.1.0"
+version = "0.3.0"
 description = "The Sims 4 adapter and mod for Empneon Core"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
-    "empneon>=0.3,<0.4",
+    "empneon>=0.3.0,<0.4",
 ]
 
 [project.optional-dependencies]

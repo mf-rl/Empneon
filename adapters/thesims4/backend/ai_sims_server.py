@@ -1957,7 +1957,7 @@ def run():
     open_db(CORE_DB_PATH).close()
     _ensure_legacy_memory_imported()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print("AI Sims server on http://{}:{}".format(HOST, PORT))
+    print("Empneon for The Sims 4 on http://{}:{}".format(HOST, PORT))
     print("Provider: {}".format(PRIMARY_PROVIDER))
     print("Endpoint: {}".format(task_model_config("large").get("endpoint")))
     print("Model: {}".format(configured_model("large")))

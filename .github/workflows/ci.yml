@@ -17,7 +17,7 @@ jobs:
       - name: Install projects
         run: pip install -e "core[dev]" -e "adapters/thesims4[dev]" -e "adapters/godot[dev]"
       - name: Lint
-        run: ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests adapters/godot/src adapters/godot/tests tests
+        run: ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests adapters/godot/src adapters/godot/tests tests scripts/release.py scripts/test_release.py
       - name: Type check
         run: mypy core/src adapters/thesims4/src adapters/godot/src
       - name: Test Core
@@ -31,6 +31,8 @@ jobs:
         working-directory: adapters/godot
       - name: Test cross-adapter contracts
         run: pytest tests
+      - name: Test release packaging
+        run: pytest scripts/test_release.py
       - name: Scenario regressions
         run: empneon-regress core/scenarios/clod1-regressions.json
       - name: Build Core

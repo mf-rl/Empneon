@@ -8,11 +8,22 @@ its reproducible exit-gate procedure.
 - The Sims 4 with **Custom Content and Mods** and **Script Mods Allowed** enabled
 - PowerShell and the Windows Python launcher (`py`)
 - Python 3.11 or newer for Empneon Core and the backend
-- Python 3.7 for compiling the Sims 4 script mod
+- Python 3.7 only when compiling the Sims 4 script mod from source
 - An OpenAI-compatible provider for model-backed conversation; autonomous CLOD 1
   behavior remains provider-free
 
-From the public monorepo root, install Core and The Sims 4 adapter:
+For a gamer installation, download and extract `Empneon-TheSims4-X.Y.Z.zip`, then run:
+
+```powershell
+py -3.12 -m pip install (Get-ChildItem .\wheels\*.whl).FullName
+.\install_mod.ps1
+.\run_backend.ps1
+```
+
+The release includes prebuilt `Empneon_TheSims4.ts4script` and
+`Empneon_TheSims4.package` files, so this path does not require Python 3.7.
+
+For development from the public monorepo, install Core and The Sims 4 adapter:
 
 ```powershell
 py -3.12 -m pip install -e .\core -e .\adapters\thesims4
@@ -31,9 +42,10 @@ Python 3.12 may be replaced with any installed Python version supported by
    .\adapters\thesims4\install_mod.ps1
    ```
 
-   The script builds with Python 3.7, copies `AI_Sims_Agent.ts4script` and
-   `AI_Sims_Agent.package` into the game's `Mods` directory, and clears the Sims thumbnail
-   cache.
+   The script uses the prebuilt release files when present. In a source checkout it builds them
+   with Python 3.7, copies `Empneon_TheSims4.ts4script` and
+   `Empneon_TheSims4.package` into the game's `Mods` directory, removes legacy
+   `AI_Sims_Agent.*` files, and clears the Sims thumbnail cache.
 3. Start the backend from the repository root:
 
    ```powershell

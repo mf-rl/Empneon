@@ -8,9 +8,9 @@ from zipfile import ZIP_STORED, ZipFile
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "ts4script" / "ai_sims_agent.py"
-TARGET = ROOT / "dist" / "AI_Sims_Agent.ts4script"
+TARGET = ROOT / "dist" / "Empneon_TheSims4.ts4script"
 TUNING_SOURCE = ROOT / "tuning" / "empneon_social_interaction.xml"
-TUNING_TARGET = ROOT / "dist" / "AI_Sims_Agent.package"
+TUNING_TARGET = ROOT / "dist" / "Empneon_TheSims4.package"
 INTERACTION_TUNING_TYPE = 0xE882D22F
 EMPNEON_SOCIAL_INTERACTION_ID = 0xEAA1100000000001
 
@@ -51,7 +51,7 @@ def main():
         raise SystemExit("Python launcher not found. Install Python 3.7 and rerun.")
 
     TARGET.parent.mkdir(exist_ok=True)
-    prefix = f"ai-sims-{uuid.uuid4().hex}-"
+    prefix = f"empneon-sims4-{uuid.uuid4().hex}-"
     temp = Path(tempfile.gettempdir())
     files = [
         (SOURCE, temp / (prefix + "ai_sims_agent.pyc"), "ai_sims_agent.pyc"),
