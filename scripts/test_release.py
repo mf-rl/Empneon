@@ -155,10 +155,23 @@ def test_release_workflow_has_required_contract() -> None:
         "scripts/release.py notes",
         "SHA256SUMS.txt",
         "gh release create",
+        "GH_REPO: ${{ github.repository }}",
         "generate-notes",
+        "actions/checkout@v6",
+        "actions/setup-python@v6",
+        "actions/upload-artifact@v7",
+        "actions/download-artifact@v8",
     ):
         assert text in workflow
-    for forbidden in ("REPOSITORY_SYNC_TOKEN", "PERSONAL_ACCESS_TOKEN", "secrets.PAT"):
+    for forbidden in (
+        "REPOSITORY_SYNC_TOKEN",
+        "PERSONAL_ACCESS_TOKEN",
+        "secrets.PAT",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "actions/download-artifact@v4",
+    ):
         assert forbidden not in workflow
     assert """- name: Test Core
         if: matrix.component == 'core'

@@ -33,7 +33,7 @@ jobs:
       ref: ${{ steps.release.outputs.ref }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - id: release
         name: Resolve release request
         shell: bash
@@ -86,15 +86,15 @@ jobs:
         component: ${{ fromJSON(needs.prepare.outputs.components) }}
     runs-on: ${{ matrix.component == 'thesims4' && 'windows-2022' || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.ref }}
       - name: Set up Python 3.7 for The Sims 4
         if: matrix.component == 'thesims4'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.7"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install build tools and Core
@@ -175,7 +175,7 @@ jobs:
         run: python scripts/release.py notes ${{ matrix.component }} ${{ needs.prepare.outputs.version }} --output release/${{ matrix.component }}/RELEASE_NOTES.md
       - name: Confirm checksums
         run: python -c "from pathlib import Path; assert (Path('release') / '${{ matrix.component }}' / 'SHA256SUMS.txt').is_file()"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.component }}
           path: release/${{ matrix.component }}
@@ -192,7 +192,7 @@ jobs:
         component: ${{ fromJSON(needs.prepare.outputs.components) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-${{ matrix.component }}
           path: release
@@ -200,6 +200,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           COMPONENT: ${{ matrix.component }}
           VERSION: ${{ needs.prepare.outputs.version }}
           TARGET: ${{ needs.prepare.outputs.ref }}
