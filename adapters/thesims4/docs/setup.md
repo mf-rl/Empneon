@@ -15,13 +15,14 @@ its reproducible exit-gate procedure.
 For a gamer installation, download and extract `Empneon-TheSims4-X.Y.Z.zip`, then run:
 
 ```powershell
-py -3.12 -m pip install (Get-ChildItem .\wheels\*.whl).FullName
 .\install_mod.ps1
 .\run_backend.ps1
 ```
 
 The release includes prebuilt `Empneon_TheSims4.ts4script` and
 `Empneon_TheSims4.package` files, so this path does not require Python 3.7.
+`run_backend.ps1` creates a local `.venv` and installs the bundled Empneon wheels; its first run
+requires internet access for third-party dependencies.
 
 For development from the public monorepo, install Core and The Sims 4 adapter:
 

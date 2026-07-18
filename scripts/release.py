@@ -152,8 +152,8 @@ def release_notes(component: str, version: str) -> str:
         instructions = "Install the wheel with `python -m pip install ./empneon-*.whl`."
     elif component == "thesims4":
         instructions = (
-            "Extract the ZIP, install both files in `wheels/`, then run `install_mod.ps1` "
-            "and `run_backend.ps1`."
+            "Extract the ZIP, then run `install_mod.ps1` and `run_backend.ps1`. "
+            "The backend script automatically installs the bundled wheels into a local `.venv`."
         )
     elif component == "godot":
         instructions = (

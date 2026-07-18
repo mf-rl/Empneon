@@ -8,14 +8,15 @@ Download `Empneon-TheSims4-X.Y.Z.zip` from GitHub Releases and extract it. From 
 directory:
 
 ```powershell
-py -3.12 -m pip install (Get-ChildItem .\wheels\*.whl).FullName
 .\install_mod.ps1
 .\run_backend.ps1
 ```
 
 The release already contains `Empneon_TheSims4.ts4script` and
 `Empneon_TheSims4.package`; gamers do not need Python 3.7. The installer also removes legacy
-`AI_Sims_Agent.*` files so only one copy of the mod remains.
+`AI_Sims_Agent.*` files so only one copy of the mod remains. On first launch,
+`run_backend.ps1` creates a local `.venv` and installs the bundled Empneon wheels. Python 3.11+
+and an internet connection for third-party dependencies are required.
 
 ## Run from source
 

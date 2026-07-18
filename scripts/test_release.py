@@ -161,6 +161,8 @@ def test_release_workflow_has_required_contract() -> None:
         "actions/setup-python@v6",
         "actions/upload-artifact@v7",
         "actions/download-artifact@v8",
+        "Expand-Archive",
+        "run_backend.ps1 -InstallOnly",
     ):
         assert text in workflow
     for forbidden in (
@@ -198,6 +200,7 @@ def test_release_documentation_matches_artifacts() -> None:
     root_readme = (ROOT / "README.md").read_text(encoding="utf-8")
     sims_readme = (ROOT / "adapters/thesims4/README.md").read_text(encoding="utf-8")
     sims_setup = (ROOT / "adapters/thesims4/docs/setup.md").read_text(encoding="utf-8")
+    sims_runner = (ROOT / "adapters/thesims4/run_backend.ps1").read_text(encoding="utf-8")
     godot_readme = (ROOT / "adapters/godot/README.md").read_text(encoding="utf-8")
 
     for tag in ("core-vX.Y.Z", "thesims4-vX.Y.Z", "godot-vX.Y.Z"):
@@ -205,7 +208,23 @@ def test_release_documentation_matches_artifacts() -> None:
     assert "pip install" in root_readme
     assert "SHA256SUMS.txt" in root_readme
     assert "Empneon-TheSims4-X.Y.Z.zip" in sims_readme
+    assert "creates a local `.venv`" in sims_readme
+    assert "pip install (Get-ChildItem .\\wheels\\*.whl)" not in sims_readme
     assert "Empneon_TheSims4.ts4script" in sims_setup
     assert "prebuilt" in sims_setup.lower()
+    assert "creates a local `.venv`" in sims_setup
+    assert "pip install (Get-ChildItem .\\wheels\\*.whl)" not in sims_setup
+    for text in (
+        "param([switch]$InstallOnly)",
+        'Join-Path $PSScriptRoot ".venv\\Scripts\\python.exe"',
+        'Join-Path $PSScriptRoot "wheels"',
+        "-m pip install",
+        "import empneon, empneon_thesims4",
+    ):
+        assert text in sims_runner
+    assert "..\\..\\core\\src" not in sims_runner
     assert "Empneon-Godot-X.Y.Z.zip" in godot_readme
     assert "wheels/" in godot_readme
+
+    sims_notes = release.release_notes("thesims4", "0.3.0")
+    assert "automatically installs the bundled wheels" in sims_notes

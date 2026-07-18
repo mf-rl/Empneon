@@ -171,6 +171,13 @@ jobs:
           & .\release-venv\Scripts\python.exe -c "import empneon, empneon_thesims4"
       - name: Package runtime-only release
         run: python scripts/release.py package ${{ matrix.component }} ${{ needs.prepare.outputs.version }} --output release/${{ matrix.component }}
+      - name: Smoke-test packaged The Sims 4 release
+        if: matrix.component == 'thesims4'
+        shell: pwsh
+        run: |
+          $archive = (Get-ChildItem release/thesims4/Empneon-TheSims4-*.zip).FullName
+          Expand-Archive $archive release-smoke
+          & .\release-smoke\run_backend.ps1 -InstallOnly
       - name: Create release notes
         run: python scripts/release.py notes ${{ matrix.component }} ${{ needs.prepare.outputs.version }} --output release/${{ matrix.component }}/RELEASE_NOTES.md
       - name: Confirm checksums
