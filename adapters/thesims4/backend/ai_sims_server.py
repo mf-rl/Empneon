@@ -13,6 +13,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -1363,7 +1364,7 @@ def save_conversation(conversation_id, speaker_id, listener_id, message, respons
     created_at = time.time_ns()
     _set_memory(
         "thesims4.conversation",
-        str(created_at),
+        uuid.uuid4().hex,
         {
             "conversation_id": conversation_id,
             "speaker_id": speaker_id,

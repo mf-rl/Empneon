@@ -22,11 +22,14 @@ def test_openrouter_and_baseline_defaults_are_configured() -> None:
     }
 
 
-def test_recent_conversation_is_added_to_prompt(monkeypatch) -> None:
+def test_recent_conversation_is_added_to_prompt(monkeypatch, tmp_path) -> None:
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     ai_sims_server.init_db(connection)
     monkeypatch.setattr(ai_sims_server, "connect_db", lambda: connection)
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", str(tmp_path / "core.db"))
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "legacy.db"))
+    monkeypatch.setattr(ai_sims_server.time, "time_ns", lambda: 1)
     ai_sims_server.save_conversation(
         "travis-robin",
         "travis",
