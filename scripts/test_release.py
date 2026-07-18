@@ -169,6 +169,10 @@ def test_release_workflow_has_required_contract() -> None:
         run: |
           python -m pip install -e adapters/thesims4 -e adapters/godot
           python -m pytest tests""" in workflow
+    assert (
+        "python -m twine check adapters/${{ matrix.component }}/dist/*.whl "
+        "adapters/${{ matrix.component }}/dist/*.tar.gz"
+    ) in workflow
 
 
 def test_monorepo_ci_checks_release_support() -> None:

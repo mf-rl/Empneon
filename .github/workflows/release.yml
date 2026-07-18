@@ -146,7 +146,7 @@ jobs:
         run: python -m twine check core/dist/*
       - name: Validate adapter package metadata
         if: matrix.component != 'core'
-        run: python -m twine check adapters/${{ matrix.component }}/dist/*
+        run: python -m twine check adapters/${{ matrix.component }}/dist/*.whl adapters/${{ matrix.component }}/dist/*.tar.gz
       - name: Create clean installation environment
         run: python -m venv release-venv
       - name: Smoke-test clean install on Linux
