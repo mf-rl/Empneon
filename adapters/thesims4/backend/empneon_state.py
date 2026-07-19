@@ -1,10 +1,23 @@
 import contextlib
 import dataclasses
+import json
 import shutil
 import sqlite3
+import time
+import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from empneon.core.identity.emotions import EmotionalState, EmotionalStateStore
+from empneon.core.identity.goals import GOAL_ACTIVE, GOAL_COMPLETED, Goal, GoalStore
+from empneon.core.identity.models import Agent
+from empneon.core.identity.personality import Personality, PersonalityStore
+from empneon.core.identity.relationships import Relationship, RelationshipStore
+from empneon.core.identity.serialization import IdentityStores
+from empneon.core.identity.store import AgentStore
+from empneon.core.identity.voice import VoiceProfile, VoiceProfileStore
+from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.db.connection import open_db
 
 
@@ -46,6 +59,469 @@ def prepare_database(target: str, legacy_core: str, legacy_adapter: str) -> Migr
 
 def open_memory(target: str) -> sqlite3.Connection:
     return open_db(target)
+
+
+def identity_stores(conn: sqlite3.Connection) -> IdentityStores:
+    return IdentityStores(
+        AgentStore(conn),
+        PersonalityStore(conn),
+        RelationshipStore(conn),
+        EmotionalStateStore(conn),
+        GoalStore(conn),
+        VoiceProfileStore(conn),
+    )
+
+
+def sync_sim(conn: sqlite3.Connection, sim: Mapping[str, object]) -> dict[str, object]:
+    profile = _sync_sim(conn, sim)
+    conn.commit()
+    return profile
+
+
+def profile_for(conn: sqlite3.Connection, agent_id: str) -> dict[str, object] | None:
+    agent = AgentStore(conn).get(str(agent_id))
+    return None if agent is None else _profile(conn, agent, [])
+
+
+def profile_by_name(conn: sqlite3.Connection, name: str) -> dict[str, object] | None:
+    expected = str(name).casefold()
+    agent = next(
+        (item for item in AgentStore(conn).list_by_adapter("sims4") if item.name.casefold() == expected),
+        None,
+    )
+    return None if agent is None else _profile(conn, agent, [])
+
+
+def profiles(conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, object]]:
+    return [
+        _profile(conn, agent, [])
+        for agent in AgentStore(conn).list_by_adapter("sims4")[: max(0, int(limit))]
+    ]
+
+
+def relationship_view(
+    conn: sqlite3.Connection, agent_id: str, target_id: str
+) -> dict[str, int]:
+    relationship = RelationshipStore(conn).get(str(agent_id), str(target_id))
+    if relationship is None:
+        return _default_relationship()
+    values = _default_relationship()
+    values["friendship"] = round(_clamp(relationship.strength, -1.0, 1.0) * 100)
+    values["trust"] = round(_clamp(relationship.trust) * 100)
+    return values
+
+
+def save_relationship(
+    conn: sqlite3.Connection,
+    agent_id: str,
+    target_id: str,
+    values: Mapping[str, object],
+) -> dict[str, int]:
+    _ensure_agent(conn, str(agent_id))
+    _ensure_agent(conn, str(target_id))
+    current = relationship_view(conn, str(agent_id), str(target_id))
+    for name in current:
+        raw = values.get(name)
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            current[name] = round(max(-100 if name == "friendship" else 0, min(100, raw)))
+    relationship = RelationshipStore(conn).get(str(agent_id), str(target_id)) or Relationship(
+        str(agent_id), str(target_id), "acquaintance", id=_stable_id(str(agent_id), "relationship", str(target_id))
+    )
+    relationship.strength = current["friendship"] / 100
+    relationship.trust = current["trust"] / 100
+    if current["romance"] > 0:
+        relationship.relationship_type = "romantic"
+    RelationshipStore(conn).set(relationship)
+    return current
+
+
+def apply_relationship_deltas(
+    conn: sqlite3.Connection,
+    agent_id: str,
+    target_id: str,
+    deltas: Mapping[str, object],
+) -> dict[str, int]:
+    current = relationship_view(conn, agent_id, target_id)
+    for name in current:
+        raw = deltas.get(name + "_delta")
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            current[name] += round(raw)
+    saved = save_relationship(conn, agent_id, target_id, current)
+    reverse = relationship_view(conn, target_id, agent_id)
+    for name in ("friendship", "romance", "trust", "respect"):
+        reverse[name] = max(reverse[name], saved[name])
+    save_relationship(conn, target_id, agent_id, reverse)
+    return saved
+
+
+def emotion_view(conn: sqlite3.Connection, agent_id: str) -> dict[str, object]:
+    values: dict[str, object] = {
+        "happiness": 50,
+        "anger": 0,
+        "sadness": 0,
+        "stress": 20,
+        "confidence": 50,
+        "current_mood": "neutral",
+    }
+    states = EmotionalStateStore(conn).get_all(str(agent_id))
+    for state in states:
+        if state.emotion in values:
+            values[state.emotion] = round(_clamp(state.value) * 100)
+    if states:
+        values["current_mood"] = max(states, key=lambda state: state.value).emotion
+    return values
+
+
+def save_emotion(
+    conn: sqlite3.Connection, agent_id: str, values: Mapping[str, object]
+) -> dict[str, object]:
+    _ensure_agent(conn, str(agent_id))
+    store = EmotionalStateStore(conn)
+    for name in ("happiness", "anger", "sadness", "stress", "confidence"):
+        raw = values.get(name)
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            store.set(EmotionalState(str(agent_id), name, _clamp(float(raw) / 100)), commit=False)
+    mood = str(values.get("current_mood") or "").strip().casefold()
+    if mood and mood != "neutral":
+        canonical = {"happy": "happiness", "angry": "anger", "sad": "sadness", "tense": "stress"}.get(mood, mood)
+        if store.get(str(agent_id), canonical) is None:
+            store.set(EmotionalState(str(agent_id), canonical, 0.75), commit=False)
+    conn.commit()
+    return emotion_view(conn, str(agent_id))
+
+
+def voice_view(conn: sqlite3.Connection, agent_id: str) -> dict[str, object]:
+    voice = VoiceProfileStore(conn).get(str(agent_id))
+    if voice is None:
+        return {"voice": "", "speed": 1.0, "pitch": 1.0, "provider": ""}
+    return {
+        "voice": voice.voice_id or "",
+        "speed": voice.speed,
+        "pitch": voice.pitch,
+        "provider": voice.provider or "",
+        "settings": voice.settings,
+    }
+
+
+def save_voice(
+    conn: sqlite3.Connection, agent_id: str, values: Mapping[str, object]
+) -> dict[str, object]:
+    _ensure_agent(conn, str(agent_id))
+    VoiceProfileStore(conn).set(_voice_profile(str(agent_id), values))
+    return voice_view(conn, str(agent_id))
+
+
+def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
+    marker_namespace = "thesims4.migration"
+    marker_key = "legacy-adapter-identity-v1"
+    if DocumentMemoryStore(conn).get(marker_namespace, marker_key) is not None:
+        return False
+    source_file = Path(source_path).resolve()
+    if not source_file.exists():
+        return False
+    _backup(source_file)
+    savepoint = "legacy_adapter_identity"
+    conn.execute("SAVEPOINT " + savepoint)
+    try:
+        with contextlib.closing(
+            sqlite3.connect(source_file.as_uri() + "?mode=ro", uri=True)
+        ) as source:
+            source.row_factory = sqlite3.Row
+            _import_profiles(conn, source)
+            _import_goals(conn, source)
+            _import_relationships(conn, source)
+            _import_emotions(conn, source)
+            _import_voices(conn, source)
+        conn.execute(
+            "INSERT INTO memory_documents(namespace,key,value,updated_at) VALUES (?,?,?,?)",
+            (marker_namespace, marker_key, json.dumps({"source": str(source_file)}), time.time_ns()),
+        )
+    except Exception:
+        conn.execute("ROLLBACK TO " + savepoint)
+        conn.execute("RELEASE " + savepoint)
+        raise
+    else:
+        conn.execute("RELEASE " + savepoint)
+        conn.commit()
+        return True
+
+
+def _sync_sim(
+    conn: sqlite3.Connection, sim: Mapping[str, object]
+) -> dict[str, object]:
+    agent_id = str(sim.get("id") or "").strip()
+    if not agent_id:
+        raise ValueError("observed Sim id is required")
+    stores = identity_stores(conn)
+    name = str(sim.get("name") or agent_id)
+    career = str(sim.get("career") or "").strip()
+    occupation = None if not career or career.casefold() == "unknown" else career
+    agent = stores.agents.get(agent_id)
+    if agent is None:
+        agent = Agent(agent_id, name, occupation=occupation, game_id=agent_id, adapter="sims4")
+        stores.agents.create(agent, commit=False)
+    else:
+        agent.name = name
+        agent.occupation = occupation or agent.occupation
+        agent.game_id = agent_id
+        agent.adapter = "sims4"
+        stores.agents.update(agent, commit=False)
+
+    traits = [str(value) for value in sim.get("traits", []) if str(value).strip()]
+    personality = _personality(agent_id, traits)
+    stores.personality.set(personality, commit=False)
+    _sync_goals(stores.goals, agent_id, sim)
+    _sync_emotion(stores.emotions, agent_id, sim)
+    voice = sim.get("voice")
+    if isinstance(voice, Mapping):
+        stores.voice.set(_voice_profile(agent_id, voice), commit=False)
+    return _profile(conn, agent, traits)
+
+
+def _personality(agent_id: str, traits: list[str]) -> Personality:
+    values = {
+        "openness": 0.5,
+        "conscientiousness": 0.5,
+        "extraversion": 0.5,
+        "agreeableness": 0.5,
+        "neuroticism": 0.5,
+    }
+    adjustments = {
+        "creative": {"openness": 0.25},
+        "genius": {"openness": 0.2, "conscientiousness": 0.15},
+        "ambitious": {"conscientiousness": 0.3},
+        "lazy": {"conscientiousness": -0.25},
+        "outgoing": {"extraversion": 0.3},
+        "loner": {"extraversion": -0.3},
+        "good": {"agreeableness": 0.25},
+        "evil": {"agreeableness": -0.25},
+        "hot-headed": {"neuroticism": 0.3},
+        "cheerful": {"neuroticism": -0.2},
+    }
+    text = " ".join(traits).casefold()
+    for trait, changes in adjustments.items():
+        if trait in text:
+            for name, delta in changes.items():
+                values[name] = _clamp(values[name] + delta)
+    return Personality(agent_id, **values)
+
+
+def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> None:
+    aspiration = str(sim.get("aspiration") or "").strip()
+    if aspiration and aspiration.casefold() != "unknown":
+        goal_id = _stable_id(agent_id, "aspiration", aspiration)
+        for goal in store.get_all(agent_id, GOAL_ACTIVE):
+            if goal.description.startswith("Aspiration: ") and goal.id != goal_id:
+                goal.status = GOAL_COMPLETED
+                store.set(goal, commit=False)
+        existing = store.get(goal_id)
+        store.set(
+            existing
+            or Goal(
+                agent_id,
+                "Aspiration: " + aspiration,
+                priority=0.8,
+                id=goal_id,
+            ),
+            commit=False,
+        )
+    needs = sim.get("needs")
+    if isinstance(needs, Mapping):
+        for name, raw in needs.items():
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                continue
+            need = str(name).strip().casefold()
+            goal_id = _stable_id(agent_id, "need", need)
+            existing = store.get(goal_id)
+            if float(raw) <= 25:
+                goal = existing or Goal(
+                    agent_id,
+                    "Restore " + need,
+                    priority=_clamp((25 - float(raw)) / 25, 0.6, 1.0),
+                    id=goal_id,
+                )
+                goal.status = GOAL_ACTIVE
+                store.set(goal, commit=False)
+            elif existing is not None and existing.status == GOAL_ACTIVE:
+                existing.status = GOAL_COMPLETED
+                store.set(existing, commit=False)
+
+
+def _sync_emotion(
+    store: EmotionalStateStore, agent_id: str, sim: Mapping[str, object]
+) -> None:
+    mood = str(sim.get("current_mood") or "").strip().casefold()
+    if not mood or mood == "unknown":
+        return
+    emotion = {
+        "happy": "happiness",
+        "angry": "anger",
+        "sad": "sadness",
+        "tense": "stress",
+        "stressed": "stress",
+        "confident": "confidence",
+    }.get(mood, mood)
+    store.set(EmotionalState(agent_id, emotion, 0.75), commit=False)
+
+
+def _voice_profile(agent_id: str, voice: Mapping[str, object]) -> VoiceProfile:
+    return VoiceProfile(
+        agent_id,
+        provider=str(voice.get("provider") or "") or None,
+        voice_id=str(voice.get("voice_id") or voice.get("voice") or "") or None,
+        speed=float(voice.get("speed") or 1.0),
+        pitch=float(voice.get("pitch") or 1.0),
+        settings=dict(voice.get("settings") or {}),
+    )
+
+
+def _profile(conn: sqlite3.Connection, agent: Agent, traits: list[str]) -> dict[str, object]:
+    stores = identity_stores(conn)
+    personality = stores.personality.get(agent.id)
+    voice = stores.voice.get(agent.id)
+    return {
+        "id": agent.id,
+        "name": agent.name,
+        "identity": {"traits": traits, "career": agent.occupation or "unknown"},
+        "personality": dataclasses.asdict(personality) if personality else {},
+        "values": [],
+        "behavioral_rules": [],
+        "knowledge": {},
+        "goals": [goal.description for goal in stores.goals.get_all(agent.id, GOAL_ACTIVE)],
+        "voice": dataclasses.asdict(voice) if voice else {},
+    }
+
+
+def _import_profiles(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
+    for row in _rows(source, "sim_profiles"):
+        identity = _json(row, "identity_json", {})
+        voice = _json(row, "voice_json", {})
+        sim = {
+            "id": row["sim_id"],
+            "name": row["name"],
+            "traits": identity.get("traits", []) if isinstance(identity, dict) else [],
+            "career": identity.get("career", "unknown") if isinstance(identity, dict) else "unknown",
+            "voice": voice,
+        }
+        _sync_sim(conn, sim)
+
+
+def _import_goals(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
+    store = GoalStore(conn)
+    for row in _rows(source, "goals"):
+        description = str(row["goal"] or "").strip()
+        if not description:
+            continue
+        agent_id = str(row["sim_id"])
+        _ensure_agent(conn, agent_id)
+        status = str(row["status"] or GOAL_ACTIVE)
+        if status not in (GOAL_ACTIVE, GOAL_COMPLETED, "abandoned"):
+            status = GOAL_ACTIVE
+        store.set(
+            Goal(
+                agent_id,
+                description,
+                priority=_clamp(float(row["importance"] or 0.5)),
+                status=status,
+                id=_stable_id(agent_id, "legacy-goal", description),
+            ),
+            commit=False,
+        )
+
+
+def _import_relationships(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
+    store = RelationshipStore(conn)
+    for row in _rows(source, "relationships"):
+        agent_id, target_id = str(row["sim_id"]), str(row["target_id"])
+        _ensure_agent(conn, agent_id)
+        _ensure_agent(conn, target_id)
+        store.set(
+            Relationship(
+                agent_id,
+                target_id,
+                "legacy",
+                strength=_clamp(float(row["friendship"] or 0) / 100, -1.0, 1.0),
+                trust=_clamp(float(row["trust"] or 50) / 100),
+                id=_stable_id(agent_id, "relationship", target_id),
+            ),
+            commit=False,
+        )
+
+
+def _import_emotions(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
+    store = EmotionalStateStore(conn)
+    for row in _rows(source, "emotions"):
+        agent_id = str(row["sim_id"])
+        _ensure_agent(conn, agent_id)
+        for legacy, canonical in (
+            ("happiness", "happiness"),
+            ("anger", "anger"),
+            ("sadness", "sadness"),
+            ("stress", "stress"),
+            ("confidence", "confidence"),
+        ):
+            store.set(
+                EmotionalState(agent_id, canonical, _clamp(float(row[legacy] or 0) / 100)),
+                commit=False,
+            )
+
+
+def _import_voices(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
+    store = VoiceProfileStore(conn)
+    for row in _rows(source, "voice_settings"):
+        agent_id = str(row["sim_id"])
+        _ensure_agent(conn, agent_id)
+        store.set(
+            VoiceProfile(
+                agent_id,
+                provider=str(row["provider"] or "") or None,
+                voice_id=str(row["voice"] or "") or None,
+                speed=float(row["speed"] or 1.0),
+                pitch=float(row["pitch"] or 1.0),
+            ),
+            commit=False,
+        )
+
+
+def _ensure_agent(conn: sqlite3.Connection, agent_id: str) -> None:
+    store = AgentStore(conn)
+    if store.get(agent_id) is None:
+        store.create(Agent(agent_id, agent_id, game_id=agent_id, adapter="sims4"), commit=False)
+
+
+def _default_relationship() -> dict[str, int]:
+    return {
+        "friendship": 0,
+        "romance": 0,
+        "trust": 50,
+        "respect": 50,
+        "admiration": 0,
+        "jealousy": 0,
+        "resentment": 0,
+        "fear": 0,
+    }
+
+
+def _rows(source: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
+    exists = source.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return [] if exists is None else source.execute("SELECT * FROM " + table).fetchall()
+
+
+def _json(row: sqlite3.Row, name: str, default: object) -> object:
+    try:
+        return json.loads(row[name] or "")
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return default
+
+
+def _stable_id(agent_id: str, kind: str, value: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"empneon:sims4:{agent_id}:{kind}:{value}"))
+
+
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
 
 
 def _backup(source: Path) -> Path:

@@ -4,7 +4,11 @@ from pathlib import Path
 
 from empneon.core.identity.relationships import RelationshipStore
 from empneon.core.identity.models import Agent
+from empneon.core.identity.emotions import EmotionalStateStore
+from empneon.core.identity.goals import GoalStore
+from empneon.core.identity.personality import PersonalityStore
 from empneon.core.identity.store import AgentStore
+from empneon.core.identity.voice import VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.runtime import ActionRecordStore
 from empneon.db.connection import open_db
@@ -38,6 +42,81 @@ def test_prepare_database_adopts_legacy_core_without_modifying_it(tmp_path) -> N
     assert old.read_bytes() == before
     assert status.active_path == str(new.resolve())
     assert status.completed is True
+
+
+def test_sync_sim_populates_canonical_identity_stores(tmp_path) -> None:
+    state = ai_sims_server.empneon_state
+    assert hasattr(state, "sync_sim")
+
+    with open_db(tmp_path / "memory.db") as conn:
+        profile = state.sync_sim(
+            conn,
+            {
+                "id": "bella",
+                "name": "Bella",
+                "traits": ["Outgoing", "Good"],
+                "current_mood": "happy",
+                "aspiration": "Successful Lineage",
+                "needs": {"hunger": 20},
+                "career": "Secret Agent",
+                "voice": {
+                    "provider": "piper",
+                    "voice": "bella",
+                    "speed": 1.1,
+                    "pitch": 0.9,
+                },
+            },
+        )
+
+        assert AgentStore(conn).get("bella").occupation == "Secret Agent"
+        assert PersonalityStore(conn).get("bella").extraversion > 0.5
+        assert EmotionalStateStore(conn).get("bella", "happiness").value > 0
+        assert {
+            goal.description for goal in GoalStore(conn).get_all("bella", "active")
+        } == {"Aspiration: Successful Lineage", "Restore hunger"}
+        assert VoiceProfileStore(conn).get("bella").voice_id == "bella"
+        assert profile["id"] == "bella"
+
+
+def test_legacy_adapter_import_is_idempotent_and_read_only(tmp_path) -> None:
+    legacy = tmp_path / "ai_sims_memory.sqlite3"
+    connection = sqlite3.connect(legacy)
+    connection.row_factory = sqlite3.Row
+    ai_sims_server.init_db(connection)
+    connection.execute(
+        "INSERT INTO sim_profiles VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "bella",
+            "Bella",
+            json.dumps({"traits": ["Good"], "career": "Painter"}),
+            "{}",
+            "[]",
+            "[]",
+            "{}",
+            "[]",
+            json.dumps({"provider": "piper", "voice": "bella"}),
+            1,
+            1,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO goals(sim_id, goal, status, importance, updated_at)"
+        " VALUES ('bella','Protect family','active',0.8,1)"
+    )
+    connection.commit()
+    connection.close()
+    before = legacy.read_bytes()
+
+    with open_db(tmp_path / "empneon_core_memory.sqlite3") as conn:
+        assert hasattr(ai_sims_server.empneon_state, "import_legacy_adapter")
+        assert ai_sims_server.empneon_state.import_legacy_adapter(conn, str(legacy)) is True
+        assert ai_sims_server.empneon_state.import_legacy_adapter(conn, str(legacy)) is False
+        assert AgentStore(conn).get("bella").occupation == "Painter"
+        assert [goal.description for goal in GoalStore(conn).get_all("bella")] == [
+            "Protect family"
+        ]
+        assert VoiceProfileStore(conn).get("bella").voice_id == "bella"
+    assert legacy.read_bytes() == before
 
 
 def test_openrouter_and_baseline_defaults_are_configured() -> None:

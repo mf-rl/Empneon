@@ -652,32 +652,29 @@ def default_profile(sim):
 
 
 def save_profile(profile):
-    timestamp = now()
-    existing = _get_memory("thesims4.profile", str(profile["id"]))
-    value = dict(profile)
-    value["created_at"] = (
-        existing.get("created_at", timestamp) if isinstance(existing, dict) else timestamp
-    )
-    value["updated_at"] = timestamp
-    _set_memory("thesims4.profile", str(profile["id"]), value)
+    identity = profile.get("identity") or {}
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.sync_sim(
+            conn,
+            {
+                "id": profile["id"],
+                "name": profile.get("name"),
+                "traits": identity.get("traits") or [],
+                "career": identity.get("career") or "unknown",
+                "voice": profile.get("voice") or {},
+            },
+        )
 
 
 def get_profile(sim_or_id):
     sid = sim_id(sim_or_id) if isinstance(sim_or_id, dict) else str(sim_or_id)
-    profile = _get_memory("thesims4.profile", sid)
-    return profile if isinstance(profile, dict) else get_profile_by_name(sid)
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.profile_for(conn, sid) or empneon_state.profile_by_name(conn, sid)
 
 
 def get_profile_by_name(name):
-    expected = str(name or "").casefold()
-    return next(
-        (
-            profile
-            for profile in _memory_values("thesims4.profile")
-            if str(profile.get("name") or "").casefold() == expected
-        ),
-        None,
-    )
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.profile_by_name(conn, str(name or ""))
 
 
 def migrate_agent_id(old_id, new_id):
@@ -696,26 +693,13 @@ def migrate_agent_id(old_id, new_id):
 
 
 def list_profiles(limit=100):
-    return _memory_values("thesims4.profile")[: int(limit)]
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.profiles(conn, int(limit))
 
 
 def upsert_profile(sim):
-    profile = get_profile(sim)
-    if not profile:
-        named_profile = get_profile_by_name(sim_name(sim))
-        new_id = sim_id(sim)
-        if named_profile and named_profile["id"] != new_id:
-            migrate_agent_id(named_profile["id"], new_id)
-            profile = get_profile(new_id)
-        else:
-            profile = default_profile(sim)
-    else:
-        profile["name"] = sim_name(sim)
-        profile["identity"].update(default_profile(sim)["identity"])
-        profile["knowledge"].update({"career": sim.get("career") or profile["knowledge"].get("career", "unknown")})
-        profile["knowledge"]["skills"] = sim.get("skills") or profile["knowledge"].get("skills") or {}
-    save_profile(profile)
-    return profile
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.sync_sim(conn, sim)
 
 
 def default_relationship():
@@ -732,47 +716,29 @@ def default_relationship():
 
 
 def get_relationship(sim_id_value, target_id_value):
-    value = _get_memory(
-        "thesims4.relationship", _pair_key_directional(sim_id_value, target_id_value)
-    )
-    return value if isinstance(value, dict) else default_relationship()
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.relationship_view(conn, sim_id_value, target_id_value)
 
 
 def save_relationship(sim_id_value, target_id_value, relationship):
-    values = default_relationship()
-    for key, value in (relationship or {}).items():
-        if key in values:
-            values[key] = value
-    for key in values:
-        values[key] = clamp_int(values[key], 0, 100)
-    _set_memory(
-        "thesims4.relationship",
-        _pair_key_directional(sim_id_value, target_id_value),
-        values,
-    )
-    return values
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_relationship(
+            conn, sim_id_value, target_id_value, relationship or {}
+        )
 
 
 def apply_relationship_delta(sim_id_value, target_id_value, deltas):
-    relationship = get_relationship(sim_id_value, target_id_value)
-    for key in default_relationship():
-        delta = deltas.get(key + "_delta", 0) if isinstance(deltas, dict) else 0
-        relationship[key] = clamp_int(relationship.get(key, 0) + delta, 0, 100)
-    saved = save_relationship(sim_id_value, target_id_value, relationship)
-    reverse = get_relationship(target_id_value, sim_id_value)
-    for key in ("friendship", "romance", "trust", "respect"):
-        reverse[key] = max(reverse.get(key, 0), saved[key])
-    save_relationship(target_id_value, sim_id_value, reverse)
-    return saved
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.apply_relationship_deltas(
+            conn, sim_id_value, target_id_value, deltas or {}
+        )
 
 
 def relationship_with_payload(sim_id_value, target_id_value, payload_relationship):
-    relationship = get_relationship(sim_id_value, target_id_value)
-    for key, value in (payload_relationship or {}).items():
-        if key in relationship:
-            relationship[key] = clamp_int(value, 0, 100)
-    save_relationship(sim_id_value, target_id_value, relationship)
-    return relationship
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_relationship(
+            conn, sim_id_value, target_id_value, payload_relationship or {}
+        )
 
 
 def default_emotion(mood="neutral"):
@@ -787,17 +753,13 @@ def default_emotion(mood="neutral"):
 
 
 def get_emotion(sim_id_value):
-    value = _get_memory("thesims4.emotion", str(sim_id_value))
-    return value if isinstance(value, dict) else default_emotion()
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.emotion_view(conn, sim_id_value)
 
 
 def save_emotion(sim_id_value, emotion):
-    values = default_emotion((emotion or {}).get("current_mood"))
-    values.update(emotion or {})
-    for key in ("happiness", "anger", "sadness", "stress", "confidence"):
-        values[key] = clamp_int(values[key], 0, 100)
-    _set_memory("thesims4.emotion", str(sim_id_value), values)
-    return values
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_emotion(conn, sim_id_value, emotion or {})
 
 
 def emotion_from_label(label):
@@ -1738,33 +1700,15 @@ def confirm_action(payload):
 
 
 def voice_profile(sim_id_value):
-    profile = get_profile(sim_id_value) or {"voice": {}}
-    voice = dict(profile.get("voice") or {})
-    stored = _get_memory("thesims4.voice", str(sim_id_value))
-    if isinstance(stored, dict):
-        voice.update(stored)
-    return voice
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.voice_view(conn, sim_id_value)
 
 
 def save_voice_profile(sim_id_value, voice):
-    voice = voice or {}
-    _set_memory(
-        "thesims4.voice",
-        str(sim_id_value),
-        {
-            "voice": str(voice.get("voice") or ""),
-            "speed": float(voice.get("speed") or 1.0),
-            "pitch": float(voice.get("pitch") or 0.0),
-            "provider": str(
-                voice.get("provider") or CONFIG.get("tts", {}).get("provider") or ""
-            ),
-        },
-    )
-    profile = get_profile(sim_id_value)
-    if profile:
-        profile["voice"] = voice_profile(sim_id_value)
-        save_profile(profile)
-    return voice_profile(sim_id_value)
+    values = dict(voice or {})
+    values.setdefault("provider", CONFIG.get("tts", {}).get("provider") or "")
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_voice(conn, sim_id_value, values)
 
 
 def tts_generate(payload):
@@ -1968,6 +1912,8 @@ def run():
     )
     if not migration.completed:
         raise RuntimeError("Empneon memory migration failed: {}".format(migration.error))
+    with open_db(MEMORY_DB_PATH) as conn:
+        empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
     _ensure_legacy_memory_imported()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
