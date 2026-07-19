@@ -770,3 +770,59 @@ def test_memories_route_without_target_returns_all_sim_memories(monkeypatch) -> 
             },
         )
     ]
+
+
+def test_diagnostics_sim_returns_canonical_state_without_secrets(
+    tmp_path, monkeypatch
+) -> None:
+    database = str(tmp_path / "memory.db")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    with open_db(database) as conn:
+        ai_sims_server.empneon_state.sync_sim(
+            conn, {"id": "bella", "name": "Bella", "traits": ["Good"]}
+        )
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/diagnostics/sim?sim_id=bella"
+    responses = []
+    monkeypatch.setattr(
+        handler, "send_json", lambda status, body: responses.append((status, body))
+    )
+
+    handler.do_GET()
+
+    status, body = responses[0]
+    assert status == 200
+    assert body["agent"]["name"] == "Bella"
+    assert "api_key" not in json.dumps(body).casefold()
+
+
+def test_diagnostics_require_identifiers_and_report_missing_records(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", str(tmp_path / "memory.db"))
+    for path, expected in (
+        ("/diagnostics/sim", 400),
+        ("/diagnostics/replay?decision_id=missing", 404),
+    ):
+        handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+        handler.path = path
+        responses = []
+        monkeypatch.setattr(
+            handler, "send_json", lambda status, body: responses.append((status, body))
+        )
+        handler.do_GET()
+        assert responses[0][0] == expected
+
+
+def test_identity_import_route_rejects_non_object(monkeypatch) -> None:
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/identity/import"
+    responses = []
+    monkeypatch.setattr(handler, "read_json", lambda: [])
+    monkeypatch.setattr(
+        handler, "send_json", lambda status, body: responses.append((status, body))
+    )
+
+    handler.do_POST()
+
+    assert responses[0][0] == 400

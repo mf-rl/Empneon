@@ -238,6 +238,24 @@ def import_identity(conn: sqlite3.Connection, data: dict[str, object]) -> Agent:
     return agent
 
 
+def sim_diagnostics(conn: sqlite3.Connection, agent_id: str) -> dict[str, object]:
+    identity = export_identity(conn, agent_id)
+    observations = ObservationStore(conn).get_for_agent(agent_id)
+    events = EpisodicMemoryStore(conn)
+    return {
+        **identity,
+        "observations": [dataclasses.asdict(item) for item in observations],
+        "beliefs": [
+            dataclasses.asdict(item) for item in BeliefStore(conn).get_for_agent(agent_id)
+        ],
+        "accessible_memories": [
+            dataclasses.asdict(event)
+            for observation in observations
+            if (event := events.get(observation.event_id)) is not None
+        ],
+    }
+
+
 def apply_confirmed_consequences(
     conn: sqlite3.Connection, proposal: ActionProposal, result: ActionResult
 ) -> None:

@@ -1394,6 +1394,89 @@ def ai_autonomous(_connection=None):
     out(_connection, "action: {}".format(data.get("suggested_action", "")))
 
 
+def active_diagnostic(path, connection):
+    sim = active_sim(connection)
+    if sim is None:
+        out(connection, "No active Sim.")
+        return None
+    try:
+        return query_json(path, {"sim_id": sim_payload(sim)["id"]})
+    except Exception as exc:
+        out(connection, "Empneon diagnostic error: {}".format(exc))
+        return None
+
+
+@command("empneon.status")
+def empneon_status(_connection=None):
+    data = active_diagnostic("/diagnostics/sim", _connection)
+    if data is None:
+        return
+    agent = data.get("agent") or {}
+    out(
+        _connection,
+        "Empneon: {} | goals={} beliefs={} memories={}".format(
+            agent.get("name", "Unknown Sim"),
+            len(data.get("goals") or []),
+            len(data.get("beliefs") or []),
+            len(data.get("accessible_memories") or []),
+        ),
+    )
+
+
+@command("empneon.timeline")
+def empneon_timeline(_connection=None):
+    data = active_diagnostic("/diagnostics/timeline", _connection)
+    if data is None:
+        return
+    entries = data.get("entries") or []
+    out(_connection, "Timeline entries: {}".format(len(entries)))
+    for entry in entries[:5]:
+        out(_connection, "- {} {}".format(entry.get("type", ""), entry.get("id", "")))
+
+
+@command("empneon.beliefs")
+def empneon_beliefs(_connection=None):
+    data = active_diagnostic("/diagnostics/sim", _connection)
+    if data is None:
+        return
+    beliefs = data.get("beliefs") or []
+    out(_connection, "Beliefs: {}".format(len(beliefs)))
+    for belief in beliefs[:5]:
+        out(_connection, "- {}".format(belief.get("statement", "")))
+
+
+@command("empneon.goals")
+def empneon_goals(_connection=None):
+    data = active_diagnostic("/diagnostics/sim", _connection)
+    if data is None:
+        return
+    goals = data.get("goals") or []
+    out(_connection, "Goals: {}".format(len(goals)))
+    for goal in goals[:5]:
+        out(
+            _connection,
+            "- [{}] {}".format(goal.get("status", ""), goal.get("description", "")),
+        )
+
+
+@command("empneon.usage")
+def empneon_usage(_connection=None):
+    data = active_diagnostic("/diagnostics/usage", _connection)
+    if data is None:
+        return
+    actual = data.get("actual") or {}
+    out(
+        _connection,
+        "Usage: requests={} CLOD={} prompt={} completion={} latency={}ms".format(
+            data.get("requests", 0),
+            data.get("by_clod") or {},
+            actual.get("prompt_tokens", 0),
+            actual.get("completion_tokens", 0),
+            actual.get("latency_ms", 0),
+        ),
+    )
+
+
 try:
     write_marker("Empneon for The Sims 4 commands registered")
 except Exception:

@@ -26,6 +26,7 @@ from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
+from empneon.core.replay import replay_action_record
 from empneon.core.timeline import agent_timeline
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineExceeded
@@ -156,6 +157,9 @@ MEMORY_SESSION_LOCK = threading.RLock()
 LEGACY_MEMORY_CHECKED = set()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 GENERATION_CONTEXT = threading.local()
+MIGRATION_STATUS = empneon_state.MigrationStatus(
+    os.path.abspath(MEMORY_DB_PATH), completed=False, error="not started"
+)
 
 
 def setup_logging():
@@ -1911,6 +1915,23 @@ def tts_generate(payload):
     return data
 
 
+class DiagnosticInputError(ValueError):
+    pass
+
+
+class DiagnosticNotFound(ValueError):
+    pass
+
+
+def diagnostic_identifier(query, name):
+    value = str(query.get(name, [""])[0]).strip()
+    if not value:
+        raise DiagnosticInputError("{} is required".format(name))
+    if len(value) > 128:
+        raise DiagnosticInputError("{} is too long".format(name))
+    return value
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -1934,6 +1955,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
+        if parsed.path.startswith("/diagnostics/") or parsed.path == "/identity/export":
+            try:
+                self._send_diagnostic(parsed.path, query)
+            except DiagnosticInputError as exc:
+                self.send_json(400, {"error": str(exc)})
+            except DiagnosticNotFound as exc:
+                self.send_json(404, {"error": str(exc)})
+            except Exception:
+                LOG.exception("diagnostic request failed")
+                self.send_json(500, {"error": "diagnostic request failed"})
+            return
         if parsed.path == "/health":
             small = task_model_config("small")
             large = task_model_config("large")
@@ -1994,10 +2026,57 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(404, {"error": "not found"})
 
+    def _send_diagnostic(self, path, query):
+        if path == "/diagnostics/migration":
+            body = MIGRATION_STATUS.as_dict()
+            with open_db(CORE_DB_PATH) as conn:
+                body["completion_markers"] = [
+                    document.key
+                    for document in DocumentMemoryStore(conn).list(
+                        "thesims4.migration"
+                    )
+                ]
+            self.send_json(200, body)
+            return
+        name = "decision_id" if path == "/diagnostics/replay" else "sim_id"
+        identifier = diagnostic_identifier(query, name)
+        with open_db(CORE_DB_PATH) as conn:
+            if path == "/diagnostics/replay":
+                try:
+                    body = replay_action_record(conn, identifier)
+                except ValueError as exc:
+                    raise DiagnosticNotFound(str(exc)) from exc
+            else:
+                if AgentStore(conn).get(identifier) is None:
+                    raise DiagnosticNotFound("Sim does not exist")
+                if path == "/diagnostics/sim":
+                    body = empneon_state.sim_diagnostics(conn, identifier)
+                elif path == "/diagnostics/timeline":
+                    body = agent_timeline(conn, identifier)
+                elif path == "/diagnostics/usage":
+                    body = UsageStore(conn).telemetry(identifier)
+                elif path == "/identity/export":
+                    body = empneon_state.export_identity(conn, identifier)
+                else:
+                    raise DiagnosticNotFound("diagnostic route does not exist")
+        self.send_json(200, body)
+
     def do_POST(self):
         try:
             payload = self.read_json()
             parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/identity/import":
+                if not isinstance(payload, dict):
+                    self.send_json(400, {"error": "identity must be a JSON object"})
+                    return
+                try:
+                    with open_db(CORE_DB_PATH) as conn:
+                        agent = empneon_state.import_identity(conn, payload)
+                except (KeyError, TypeError, ValueError) as exc:
+                    self.send_json(400, {"error": str(exc)})
+                    return
+                self.send_json(200, {"agent": {"id": agent.id, "name": agent.name}})
+                return
             session_id = payload.get("_empneon_session_id")
             save_slot_id = payload.get("_empneon_save_slot_id") or ""
             if parsed.path == "/game-session/start":
@@ -2075,15 +2154,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not found"})
         except Exception as exc:
             LOG.exception("request failed")
-            self.send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": "request failed"})
 
 
 def run():
-    migration = empneon_state.prepare_database(
+    global MIGRATION_STATUS
+    MIGRATION_STATUS = empneon_state.prepare_database(
         MEMORY_DB_PATH, LEGACY_CORE_DB_PATH, LEGACY_ADAPTER_DB_PATH
     )
-    if not migration.completed:
-        raise RuntimeError("Empneon memory migration failed: {}".format(migration.error))
+    if not MIGRATION_STATUS.completed:
+        raise RuntimeError(
+            "Empneon memory migration failed: {}".format(MIGRATION_STATUS.error)
+        )
     with open_db(MEMORY_DB_PATH) as conn:
         empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
