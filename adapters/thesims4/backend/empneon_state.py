@@ -10,11 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from empneon.core.identity.emotions import EmotionalState, EmotionalStateStore
-from empneon.core.identity.goals import GOAL_ACTIVE, GOAL_COMPLETED, Goal, GoalStore
+from empneon.core.identity.goals import (
+    GOAL_ACTIVE,
+    GOAL_COMPLETED,
+    Goal,
+    GoalStore,
+)
 from empneon.core.identity.models import Agent
 from empneon.core.identity.personality import Personality, PersonalityStore
 from empneon.core.identity.relationships import Relationship, RelationshipStore
-from empneon.core.identity.serialization import IdentityStores
+from empneon.core.identity.serialization import IdentityStores, export_agent, import_agent
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfile, VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
@@ -221,6 +226,78 @@ def save_voice(
     _ensure_agent(conn, str(agent_id))
     VoiceProfileStore(conn).set(_voice_profile(str(agent_id), values))
     return voice_view(conn, str(agent_id))
+
+
+def export_identity(conn: sqlite3.Connection, agent_id: str) -> dict[str, object]:
+    return export_agent(str(agent_id), identity_stores(conn))
+
+
+def import_identity(conn: sqlite3.Connection, data: dict[str, object]) -> Agent:
+    agent = import_agent(data, identity_stores(conn))
+    conn.commit()
+    return agent
+
+
+def apply_confirmed_consequences(
+    conn: sqlite3.Connection, proposal: ActionProposal, result: ActionResult
+) -> None:
+    if result.status != "succeeded":
+        return
+    actor_id = proposal.decision.actor_id
+    target_id = proposal.decision.target_id
+    relationships = RelationshipStore(conn)
+    emotions = EmotionalStateStore(conn)
+    goals = GoalStore(conn)
+    for change in result.applied_changes:
+        parts = change.path.split(".")
+        if parts[0] == "relationship":
+            if not target_id:
+                raise ValueError("relationship consequence requires a target Sim")
+            relationship = relationships.get(actor_id, target_id) or Relationship(
+                actor_id,
+                target_id,
+                "acquaintance",
+                id=_stable_id(actor_id, "relationship", target_id),
+            )
+            amount = float(change.value) / 100
+            if parts[1] == "friendship":
+                relationship.strength = _clamp(relationship.strength + amount, -1.0, 1.0)
+            elif parts[1] == "trust":
+                relationship.trust = _clamp(relationship.trust + amount)
+            elif parts[1] == "romance" and amount > 0:
+                relationship.relationship_type = "romantic"
+            relationships.set(relationship, commit=False)
+        elif parts[0] == "emotion":
+            current = emotions.get(actor_id, parts[1])
+            value = float(change.value) / 100
+            if change.operation == "increment":
+                value += current.value if current else 0.0
+            emotions.set(
+                EmotionalState(actor_id, parts[1], _clamp(value)), commit=False
+            )
+        elif parts[0] == "need":
+            need = parts[1].casefold()
+            goal_id = _stable_id(actor_id, "need", need)
+            goal = goals.get(goal_id)
+            value = float(change.value)
+            if value <= 25:
+                goal = goal or Goal(
+                    actor_id,
+                    "Restore " + need,
+                    priority=_clamp((25 - value) / 25, 0.6, 1.0),
+                    id=goal_id,
+                )
+                goal.status = GOAL_ACTIVE
+                goals.set(goal, commit=False)
+            elif goal is not None:
+                goal.status = GOAL_COMPLETED
+                goals.set(goal, commit=False)
+        elif parts[0] == "goal":
+            goal = goals.get(parts[1])
+            if goal is None or goal.agent_id != actor_id:
+                raise ValueError("confirmed goal does not belong to acting Sim")
+            goal.status = str(change.value)
+            goals.set(goal, commit=False)
 
 
 def record_observed_event(

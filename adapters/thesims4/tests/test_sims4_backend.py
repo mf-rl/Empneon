@@ -12,8 +12,10 @@ from empneon.core.identity.goals import GoalStore
 from empneon.core.identity.personality import PersonalityStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfileStore
+from empneon.core.identity.serialization import export_agent
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import Event
+from empneon.core.replay import replay_action_record
 from empneon.core.runtime import ActionRecordStore
 from empneon.core.scheduler.usage import UsageStore
 from empneon.db.connection import open_db
@@ -437,6 +439,101 @@ def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -
     assert record.result.status == "succeeded"
     assert usage["by_clod"] == {"1": 1}
     assert usage["actual"]["prompt_tokens"] == 0
+
+
+def test_failed_action_records_replay_but_applies_no_consequences(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    proposal = ai_sims_server.autonomous_action(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "event": {"type": "autonomous_social", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+
+    ai_sims_server.confirm_action(
+        {
+            "decision_id": proposal["decision_id"],
+            "action": "friendly_chat",
+            "status": "failed",
+            "reason": "cancelled",
+        }
+    )
+
+    with open_db(core_db) as conn:
+        replay = replay_action_record(conn, proposal["decision_id"])
+        relationship = RelationshipStore(conn).get("bella", "mortimer")
+    assert replay["result"]["status"] == "failed"
+    assert relationship is None
+
+
+def test_successful_confirmation_applies_validated_identity_consequences(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    proposal = ai_sims_server.autonomous_action(
+        {
+            "speaker": {
+                "id": "bella",
+                "name": "Bella",
+                "aspiration": "MasterChef",
+                "needs": {"Hunger": 10},
+            },
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "event": {"type": "autonomous_social", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    with open_db(core_db) as conn:
+        goals = GoalStore(conn).get_all("bella")
+        aspiration = next(goal for goal in goals if goal.description.startswith("Aspiration:"))
+        hunger = next(goal for goal in goals if goal.description == "Restore hunger")
+
+    ai_sims_server.confirm_action(
+        {
+            "decision_id": proposal["decision_id"],
+            "action": "friendly_chat",
+            "status": "succeeded",
+            "changes": [
+                {"path": "relationship.romance", "operation": "increment", "value": 5},
+                {"path": "relationship.trust", "operation": "increment", "value": 10},
+                {"path": "emotion.happiness", "operation": "set", "value": 80},
+                {"path": "need.Hunger", "operation": "set", "value": 60},
+                {"path": f"goal.{aspiration.id}.status", "operation": "set", "value": "completed"},
+            ],
+        }
+    )
+
+    with open_db(core_db) as conn:
+        relationship = RelationshipStore(conn).get("bella", "mortimer")
+        emotion = EmotionalStateStore(conn).get("bella", "happiness")
+        goals = GoalStore(conn)
+        replay = replay_action_record(conn, proposal["decision_id"])
+        timeline = ai_sims_server.agent_timeline(conn, "bella")
+    assert relationship.relationship_type == "romantic"
+    assert relationship.trust == 0.6
+    assert emotion.value == 0.8
+    assert goals.get(hunger.id).status == "completed"
+    assert goals.get(aspiration.id).status == "completed"
+    assert replay["consequence_integrity"] is True
+    assert any(entry["id"] == proposal["decision_id"] for entry in timeline["entries"])
+
+
+def test_identity_export_import_round_trip_uses_unified_database(tmp_path) -> None:
+    with open_db(tmp_path / "source.db") as source:
+        ai_sims_server.empneon_state.sync_sim(
+            source, {"id": "bella", "name": "Bella", "traits": ["Good"]}
+        )
+        exported = ai_sims_server.empneon_state.export_identity(source, "bella")
+    with open_db(tmp_path / "target.db") as target:
+        imported = ai_sims_server.empneon_state.import_identity(target, exported)
+        assert imported.id == "bella"
+        assert export_agent("bella", ai_sims_server.empneon_state.identity_stores(target)) == exported
 
 
 def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:

@@ -22,12 +22,11 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from empneon_thesims4 import Sims4Adapter, cognition_priority
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
-from empneon.core.identity.models import Agent
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event
-from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
+from empneon.core.timeline import agent_timeline
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineExceeded
 from empneon.core.scheduler.selection import CognitionRoute
@@ -1767,25 +1766,7 @@ def autonomous_action(payload):
 
 
 def persist_core_agent(conn, sim):
-    agent_id = str(sim.get("id") or "").strip()
-    if not agent_id:
-        raise ValueError("observed Sim id is required")
-    store = AgentStore(conn)
-    agent = store.get(agent_id)
-    name = str(sim.get("name") or agent_id)
-    if agent is None:
-        store.create(
-            Agent(
-                id=agent_id,
-                name=name,
-                game_id=agent_id,
-                adapter="sims4",
-            ),
-            commit=False,
-        )
-    elif agent.name != name:
-        agent.name = name
-        store.update(agent, commit=False)
+    return empneon_state.sync_sim(conn, sim)
 
 
 def persist_core_event(conn, event):
@@ -1835,40 +1816,52 @@ def confirm_action(payload):
             path = str(change.get("path") or "")
             operation = str(change.get("operation") or "")
             value = change.get("value")
-            if path not in ("relationship.friendship", "relationship.romance"):
-                raise ValueError("unsupported confirmed consequence")
-            if (
-                operation != "increment"
-                or isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not -100 <= value <= 100
+            parts = path.split(".")
+            numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+            valid = False
+            if path in (
+                "relationship.friendship",
+                "relationship.romance",
+                "relationship.trust",
             ):
-                raise ValueError("invalid confirmed consequence")
-            changes.append(StateDelta(path, "increment", value))
+                valid = operation == "increment" and numeric and -100 <= value <= 100
+            elif len(parts) == 2 and parts[0] == "emotion" and re.fullmatch(
+                r"[a-zA-Z0-9_-]{1,64}", parts[1]
+            ):
+                valid = (
+                    operation in ("set", "increment")
+                    and numeric
+                    and (-100 <= value <= 100 if operation == "increment" else 0 <= value <= 100)
+                )
+            elif len(parts) == 2 and parts[0] == "need" and re.fullmatch(
+                r"[a-zA-Z0-9 _-]{1,64}", parts[1]
+            ):
+                valid = operation == "set" and numeric and 0 <= value <= 100
+            elif len(parts) == 3 and parts[0] == "goal" and parts[2] == "status":
+                try:
+                    uuid.UUID(parts[1])
+                except (ValueError, AttributeError):
+                    valid = False
+                else:
+                    valid = operation == "set" and value in (
+                        "active",
+                        "completed",
+                        "abandoned",
+                    )
+            if not valid:
+                raise ValueError("invalid or unsupported confirmed consequence")
+            changes.append(StateDelta(path, operation, value))
+    elif payload.get("changes"):
+        raise ValueError("unsuccessful action cannot apply consequences")
     result = ActionResult(decision_id, status, tuple(changes), reason)
     with open_db(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(decision_id)
-        friendship_delta = sum(
-            float(change.value)
-            for change in changes
-            if change.path == "relationship.friendship"
-        )
-        if proposal is not None and proposal.decision.target_id and friendship_delta:
-            relationships = RelationshipStore(conn)
-            relationship = relationships.get(
-                proposal.decision.actor_id,
-                proposal.decision.target_id,
-            ) or Relationship(
-                proposal.decision.actor_id,
-                proposal.decision.target_id,
-                "acquaintance",
-            )
-            relationship.strength = max(
-                -1.0,
-                min(1.0, relationship.strength + friendship_delta / 100.0),
-            )
-            relationships.set(relationship, commit=False)
+        if proposal is None:
+            raise ValueError("unknown or already confirmed action proposal")
+        if proposal.adapter_action != action:
+            raise ValueError("confirmed action does not match its proposal")
+        empneon_state.apply_confirmed_consequences(conn, proposal, result)
         record = actions.confirm(result, action)
         empneon_state.record_confirmed_experience(conn, proposal, result)
     return {
