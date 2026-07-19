@@ -18,7 +18,7 @@ def test_empneon_diagnostic_commands_are_registered() -> None:
         "empneon.goals",
         "empneon.usage",
     ):
-        assert '@command("{}")'.format(command) in source
+        assert f'@command("{command}")' in source
 
 
 def test_build_and_installer_use_empneon_artifact_names() -> None:

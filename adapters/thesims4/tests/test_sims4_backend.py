@@ -5,14 +5,14 @@ import time
 from pathlib import Path
 
 from empneon.core.contracts import CognitiveRequest, WorldEvent
-from empneon.core.identity.relationships import RelationshipStore
-from empneon.core.identity.models import Agent
 from empneon.core.identity.emotions import EmotionalStateStore
 from empneon.core.identity.goals import GoalStore
+from empneon.core.identity.models import Agent
 from empneon.core.identity.personality import PersonalityStore
+from empneon.core.identity.relationships import RelationshipStore
+from empneon.core.identity.serialization import export_agent
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfileStore
-from empneon.core.identity.serialization import export_agent
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import Event
 from empneon.core.replay import replay_action_record
@@ -533,7 +533,10 @@ def test_identity_export_import_round_trip_uses_unified_database(tmp_path) -> No
     with open_db(tmp_path / "target.db") as target:
         imported = ai_sims_server.empneon_state.import_identity(target, exported)
         assert imported.id == "bella"
-        assert export_agent("bella", ai_sims_server.empneon_state.identity_stores(target)) == exported
+        restored = export_agent(
+            "bella", ai_sims_server.empneon_state.identity_stores(target)
+        )
+        assert restored == exported
 
 
 def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:

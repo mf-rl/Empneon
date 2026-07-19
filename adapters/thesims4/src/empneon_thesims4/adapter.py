@@ -49,6 +49,14 @@ def feature_hash(text: str, dimensions: int = 384) -> list[float]:
     return [value / norm for value in vector] if norm else vector
 
 
+def _mapping(value: object) -> dict[object, object]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _items(value: object) -> list[object]:
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
 def cognition_priority(
     payload: Mapping[str, object],
     *,
@@ -113,15 +121,15 @@ class Sims4Adapter:
                         if item
                     },
                     "relationship": dict(relationship_data),
-                    "needs": dict(sim_data.get("needs") or {}),
-                    "moodlets": list(sim_data.get("moodlets") or []),
+                    "needs": _mapping(sim_data.get("needs")),
+                    "moodlets": _items(sim_data.get("moodlets")),
                     "aspiration": str(sim_data.get("aspiration") or "unknown"),
                     "career": str(sim_data.get("career") or "unknown"),
-                    "skills": dict(sim_data.get("skills") or {}),
-                    "household": dict(sim_data.get("household") or {}),
-                    "nearby_sims": list(self._payload.get("nearby_sims") or []),
-                    "available_actions": list(
-                        self._payload.get("available_actions") or []
+                    "skills": _mapping(sim_data.get("skills")),
+                    "household": _mapping(sim_data.get("household")),
+                    "nearby_sims": _items(self._payload.get("nearby_sims")),
+                    "available_actions": _items(
+                        self._payload.get("available_actions")
                     ),
                 },
             ),

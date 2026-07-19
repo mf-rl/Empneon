@@ -1,5 +1,4 @@
 import pytest
-
 from empneon.core.clod import resolve_clod1
 from empneon.core.contracts import CognitiveRequest, Decision, StateDelta
 
@@ -45,6 +44,29 @@ def test_old_payload_has_neutral_optional_cognition_facts() -> None:
     assert event.facts["skills"] == {}
     assert event.facts["household"] == {}
     assert event.facts["nearby_sims"] == []
+
+
+def test_malformed_optional_cognition_facts_are_neutral() -> None:
+    event = Sims4Adapter(
+        {
+            "speaker": {
+                "id": "bella",
+                "needs": "invalid",
+                "moodlets": 1,
+                "skills": "invalid",
+                "household": "invalid",
+            },
+            "nearby_sims": "invalid",
+            "available_actions": "invalid",
+        }
+    ).observe()[0]
+
+    assert event.facts["needs"] == {}
+    assert event.facts["moodlets"] == []
+    assert event.facts["skills"] == {}
+    assert event.facts["household"] == {}
+    assert event.facts["nearby_sims"] == []
+    assert event.facts["available_actions"] == []
 
 
 def test_conversation_response_becomes_validated_sims_action() -> None:
