@@ -31,6 +31,7 @@ from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.db.connection import open_db
 from empneon.providers.llm import ConfiguredProviderRouter, Message, ProviderError
+from backend import empneon_state
 
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
 
@@ -40,6 +41,7 @@ DEFAULT_CONFIG = {
     "debug": True,
     "database": "ai_sims_memory.sqlite3",
     "core_database": "empneon_core.sqlite3",
+    "memory_database": "empneon_core_memory.sqlite3",
     "preserve_memory_only_on_game_save": False,
     "active_agent_limit": 1,
     "agent_wake_timeout_seconds": 60,
@@ -103,7 +105,9 @@ def load_config():
         for task in ("small", "large"):
             config.setdefault("models", {}).setdefault(task, {})["model"] = os.environ["AI_SIM_MODEL"]
     if os.environ.get("AI_SIM_DB"):
-        config["database"] = os.environ["AI_SIM_DB"]
+        config["memory_database"] = os.environ["AI_SIM_DB"]
+    if os.environ.get("AI_SIM_MEMORY_DB"):
+        config["memory_database"] = os.environ["AI_SIM_MEMORY_DB"]
     if os.environ.get("AI_SIM_PORT"):
         config["port"] = int(os.environ["AI_SIM_PORT"])
     if os.environ.get("AI_SIM_HOST"):
@@ -116,8 +120,12 @@ if not isinstance(CONFIG.get("preserve_memory_only_on_game_save"), bool):
     raise ValueError("preserve_memory_only_on_game_save must be true or false")
 HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
-DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
-CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
+MEMORY_DB_PATH = str(CONFIG.get("memory_database") or "empneon_core_memory.sqlite3")
+LEGACY_ADAPTER_DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
+LEGACY_CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
+# Compatibility aliases while legacy table access is removed in Task 2.
+DB_PATH = MEMORY_DB_PATH
+CORE_DB_PATH = MEMORY_DB_PATH
 ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 1)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
@@ -1955,6 +1963,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run():
+    migration = empneon_state.prepare_database(
+        MEMORY_DB_PATH, LEGACY_CORE_DB_PATH, LEGACY_ADAPTER_DB_PATH
+    )
+    if not migration.completed:
+        raise RuntimeError("Empneon memory migration failed: {}".format(migration.error))
     open_db(CORE_DB_PATH).close()
     _ensure_legacy_memory_imported()
     server = ThreadingHTTPServer((HOST, PORT), Handler)

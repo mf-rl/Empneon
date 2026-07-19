@@ -3,11 +3,41 @@ import sqlite3
 from pathlib import Path
 
 from empneon.core.identity.relationships import RelationshipStore
+from empneon.core.identity.models import Agent
+from empneon.core.identity.store import AgentStore
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.runtime import ActionRecordStore
 from empneon.db.connection import open_db
 
 from backend import ai_sims_server
+
+
+def test_unified_database_is_the_only_active_default() -> None:
+    path = getattr(ai_sims_server, "MEMORY_DB_PATH", "")
+
+    assert path.endswith("empneon_core_memory.sqlite3")
+
+
+def test_prepare_database_adopts_legacy_core_without_modifying_it(tmp_path) -> None:
+    old = tmp_path / "empneon_core.sqlite3"
+    new = tmp_path / "empneon_core_memory.sqlite3"
+    with open_db(old) as conn:
+        AgentStore(conn).create(
+            Agent("bella", "Bella", game_id="bella", adapter="sims4")
+        )
+    before = old.read_bytes()
+    state = getattr(ai_sims_server, "empneon_state", None)
+
+    assert state is not None
+    status = state.prepare_database(
+        str(new), str(old), str(tmp_path / "ai_sims_memory.sqlite3")
+    )
+
+    with open_db(new) as conn:
+        assert AgentStore(conn).get("bella").name == "Bella"
+    assert old.read_bytes() == before
+    assert status.active_path == str(new.resolve())
+    assert status.completed is True
 
 
 def test_openrouter_and_baseline_defaults_are_configured() -> None:
