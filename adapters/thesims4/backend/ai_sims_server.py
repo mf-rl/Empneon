@@ -790,58 +790,38 @@ def recent_memories(speaker_id, listener_id, limit=None, topic="", emotion="", l
     return [
         item
         for item in memories_for_pair(speaker_id, listener_id, limit=10_000)
-        if (not topic or topic.casefold() in item["topic"].casefold())
-        and (not emotion or emotion.casefold() in item["emotion"].casefold())
-        and (not location or location.casefold() in item["location"].casefold())
+        if (not topic or topic.casefold() in str(item.get("summary") or "").casefold())
+        and (not emotion or emotion.casefold() in str(item.get("summary") or "").casefold())
+        and (not location or location.casefold() in str(item.get("location") or "").casefold())
     ][:limit]
 
 
 def memories_for_sim(speaker_id, limit=10):
-    memories = _memory_values("thesims4.memory")
-    selected = [
-        item
-        for item in memories
-        if speaker_id in (item["speaker_id"], item["listener_id"], item["sim_id"])
-    ]
-    return _rank_memories(selected, limit)
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.relevant_memories(conn, speaker_id, "", int(limit))
 
 
 def add_memory(speaker_id, listener_id, summary, importance, emotion="", category="", topic="", location=""):
     summary = str(summary or "").strip()
     if not summary:
         return
-    category = category or ("long_term" if clamp_float(importance) >= 0.75 else "short_term")
-    created_at = now()
-    value = {
-        "id": time.time_ns(),
-        "speaker_id": speaker_id,
-        "listener_id": listener_id,
-        "sim_id": speaker_id,
-        "target_id": listener_id,
-        "event": summary,
-        "summary": summary,
-        "emotion": str(emotion or ""),
-        "category": str(category or "short_term"),
-        "topic": str(topic or ""),
-        "location": str(location or ""),
-        "importance": clamp_float(importance),
-        "created_at": created_at,
-    }
-    _set_memory("thesims4.memory", str(value["id"]), value)
+    with open_db(CORE_DB_PATH) as conn:
+        empneon_state.add_experience(
+            conn, speaker_id, listener_id, summary, location=str(location or "")
+        )
     MEMORY_LOG.info("memory saved sim=%s target=%s importance=%s summary=%s", speaker_id, listener_id, importance, summary)
 
 
 def memory_summary(sim_id_value, target_id_value):
-    value = _get_memory("thesims4.summary", _pair_key(sim_id_value, target_id_value))
-    return value or {"summary": "", "updated_at": 0}
+    memories = memories_for_pair(sim_id_value, target_id_value, limit=4)
+    return {
+        "summary": "; ".join(item["summary"] for item in memories),
+        "updated_at": max((item.get("created_at", 0) for item in memories), default=0),
+    }
 
 
 def save_memory_summary(sim_id_value, target_id_value, summary):
-    _set_memory(
-        "thesims4.summary",
-        _pair_key(sim_id_value, target_id_value),
-        {"summary": str(summary or "").strip(), "updated_at": now()},
-    )
+    add_memory(sim_id_value, target_id_value, summary, 1.0, category="summary")
 
 
 def maybe_summarize_memories(sim_id_value, target_id_value):
@@ -871,11 +851,14 @@ def maybe_summarize_memories(sim_id_value, target_id_value):
 
 def memories_for_pair(sim_id_value, target_id_value, limit=20):
     pair = {str(sim_id_value), str(target_id_value)}
-    selected = [
-        item
-        for item in _memory_values("thesims4.memory")
-        if {str(item["speaker_id"]), str(item["listener_id"])} == pair
-    ]
+    with open_db(CORE_DB_PATH) as conn:
+        selected = [
+            item
+            for item in empneon_state.relevant_memories(
+                conn, sim_id_value, "", max(int(limit), 20)
+            )
+            if set(item.get("participant_ids") or ()) == pair
+        ]
     return _rank_memories(selected, int(limit))
 
 
@@ -1331,38 +1314,18 @@ def response_has_role_confusion(response, context):
     return bool({word for word in speaker - listener if len(word) > 1} & words)
 
 def save_conversation(conversation_id, speaker_id, listener_id, message, response):
-    created_at = time.time_ns()
-    _set_memory(
-        "thesims4.conversation",
-        uuid.uuid4().hex,
-        {
-            "conversation_id": conversation_id,
-            "speaker_id": speaker_id,
-            "listener_id": listener_id,
-            "message": str(message or ""),
-            "response": response,
-            "created_at": created_at,
-        },
-    )
+    with open_db(CORE_DB_PATH) as conn:
+        empneon_state.record_conversation(
+            conn, conversation_id, speaker_id, listener_id, str(message or ""), response
+        )
 
 
 def recent_conversation(speaker_id, listener_id, limit=None):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
-    pair = {str(speaker_id), str(listener_id)}
-    rows = [
-        value
-        for value in _memory_values("thesims4.conversation")
-        if {str(value["speaker_id"]), str(value["listener_id"])} == pair
-    ][:limit]
-    return [
-        {
-            "speaker_id": row["speaker_id"],
-            "listener_id": row["listener_id"],
-            "message": row["message"],
-            "dialogue": str((row.get("response") or {}).get("dialogue") or ""),
-        }
-        for row in reversed(rows)
-    ]
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.recent_conversations(
+            conn, speaker_id, listener_id, limit
+        )
 
 
 def reasoning_fallback_response(payload, context):
@@ -1520,21 +1483,9 @@ def chat(payload):
             actions.propose(event.id, decision, action)
         result = adapter.response_for(decision)
         result["animation"] = action
-    memory = result["memory"]
-    if memory["summary"] and memory["importance"] >= 0.2:
-        add_memory(
-            speaker_id,
-            listener_id,
-            memory["summary"],
-            memory["importance"],
-            emotion=result.get("emotion", ""),
-            topic=payload.get("topic") or "",
-            location=payload.get("location") or "",
-        )
-    relationship_state = apply_relationship_delta(speaker_id, listener_id, result.get("relationship") or {})
-    emotion_state = update_emotion_from_response(speaker_id, result.get("emotion"))
-    summary = maybe_summarize_memories(speaker_id, listener_id)
-    save_conversation(conversation_id, speaker_id, listener_id, payload.get("message") or "", result)
+    relationship_state = get_relationship(speaker_id, listener_id)
+    emotion_state = get_emotion(speaker_id)
+    summary = memory_summary(speaker_id, listener_id)
     result["relationship_state"] = relationship_state
     result["emotion_state"] = emotion_state
     result["memory_summary"] = summary
@@ -1626,17 +1577,32 @@ def persist_core_agent(conn, sim):
 
 
 def persist_core_event(conn, event):
-    store = EpisodicMemoryStore(conn)
-    if store.get(event.id) is None:
-        store.create(
-            Event(
-                id=event.id,
-                description=event.type,
-                participant_ids=list(event.actor_ids),
-                location=event.location,
-                happened_at=event.happened_at,
-            )
-        )
+    message = str(event.facts.get("message") or "")
+    description = dumps(
+        {
+            "kind": "observed_interaction",
+            "type": event.type,
+            "source": event.facts.get("source") or "sims4",
+            "message": message,
+            "summary": message or event.type,
+        }
+    )
+    perceptions = {
+        agent_id: message or "Observed {}".format(event.type)
+        for agent_id in event.actor_ids
+    }
+    empneon_state.record_observed_event(
+        conn,
+        Event(
+            id=event.id,
+            description=description,
+            participant_ids=list(event.actor_ids),
+            location=event.location,
+            happened_at=event.happened_at,
+        ),
+        perceptions,
+        factual_statement=message or None,
+    )
 
 
 def confirm_action(payload):
@@ -1692,6 +1658,7 @@ def confirm_action(payload):
             )
             relationships.set(relationship, commit=False)
         record = actions.confirm(result, action)
+        empneon_state.record_confirmed_experience(conn, proposal, result)
     return {
         "decision_id": record.decision.id,
         "status": record.result.status,

@@ -18,7 +18,19 @@ from empneon.core.identity.serialization import IdentityStores
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfile, VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
+from empneon.core.memory.episodic import (
+    Belief,
+    BeliefStore,
+    EpisodicMemoryStore,
+    Event,
+    Observation,
+    ObservationStore,
+)
+from empneon.core.memory.vector import VectorMemoryStore
+from empneon.core.runtime import ActionProposal
+from empneon.core.contracts import ActionResult
 from empneon.db.connection import open_db
+from empneon_thesims4.adapter import feature_hash
 
 
 @dataclass(frozen=True)
@@ -211,10 +223,220 @@ def save_voice(
     return voice_view(conn, str(agent_id))
 
 
+def record_observed_event(
+    conn: sqlite3.Connection,
+    event: Event,
+    perceptions: Mapping[str, str],
+    factual_statement: str | None = None,
+) -> Event:
+    for agent_id in {*event.participant_ids, *map(str, perceptions)}:
+        _ensure_agent(conn, agent_id)
+    conn.commit()
+    events = EpisodicMemoryStore(conn)
+    if events.get(event.id) is None:
+        events.create(event)
+    observations = ObservationStore(conn)
+    existing_agents = {item.agent_id for item in observations.get_for_event(event.id)}
+    for agent_id, perception in perceptions.items():
+        if agent_id in existing_agents or not str(perception).strip():
+            continue
+        observation = Observation(
+            event.id,
+            str(agent_id),
+            str(perception),
+            id=_stable_id(str(agent_id), "observation", event.id),
+        )
+        observations.create(observation)
+        if factual_statement and str(factual_statement).strip():
+            belief = Belief(
+                str(agent_id),
+                str(factual_statement).strip(),
+                "observation",
+                observation.id,
+                0.9,
+                "Directly observed in The Sims 4",
+                id=_stable_id(str(agent_id), "belief", event.id),
+            )
+            if BeliefStore(conn).get(belief.id) is None:
+                BeliefStore(conn).create(belief)
+    try:
+        VectorMemoryStore(conn).upsert(event.id, feature_hash(event.description))
+    except (ImportError, OSError, RuntimeError, sqlite3.Error):
+        pass
+    return event
+
+
+def add_experience(
+    conn: sqlite3.Connection,
+    agent_id: str,
+    target_id: str,
+    summary: str,
+    *,
+    location: str = "",
+    happened_at: int | None = None,
+    event_id: str | None = None,
+) -> Event:
+    participants = [str(agent_id)]
+    if target_id and str(target_id) != str(agent_id):
+        participants.append(str(target_id))
+    event = Event(
+        json.dumps(
+            {
+                "kind": "memory",
+                "speaker_id": str(agent_id),
+                "listener_id": str(target_id),
+                "summary": str(summary),
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+        ),
+        participants,
+        location=location or None,
+        happened_at=int(happened_at or time.time()),
+        id=event_id or str(uuid.uuid4()),
+    )
+    return record_observed_event(
+        conn, event, {participant: str(summary) for participant in participants}
+    )
+
+
+def record_conversation(
+    conn: sqlite3.Connection,
+    conversation_id: str,
+    speaker_id: str,
+    listener_id: str,
+    message: str,
+    response: Mapping[str, object],
+) -> Event:
+    dialogue = str(response.get("dialogue") or "")
+    payload = {
+        "kind": "conversation",
+        "conversation_id": str(conversation_id),
+        "speaker_id": str(speaker_id),
+        "listener_id": str(listener_id),
+        "message": str(message),
+        "dialogue": dialogue,
+        "summary": "{} {}".format(str(message), dialogue).strip(),
+    }
+    participants = [str(speaker_id), str(listener_id)]
+    event = Event(
+        json.dumps(payload, ensure_ascii=True, sort_keys=True),
+        participants,
+    )
+    return record_observed_event(
+        conn,
+        event,
+        {participant: str(payload["summary"]) for participant in participants},
+    )
+
+
+def recent_conversations(
+    conn: sqlite3.Connection, speaker_id: str, listener_id: str, limit: int = 6
+) -> list[dict[str, object]]:
+    pair = {str(speaker_id), str(listener_id)}
+    rows = []
+    for event in EpisodicMemoryStore(conn).get_for_agent(str(speaker_id)):
+        data = _event_data(event.description)
+        if data.get("kind") not in ("conversation", "confirmed_interaction"):
+            continue
+        if {str(data.get("speaker_id") or ""), str(data.get("listener_id") or "")} != pair:
+            continue
+        rows.append(
+            {
+                "speaker_id": str(data.get("speaker_id") or ""),
+                "listener_id": str(data.get("listener_id") or ""),
+                "message": str(data.get("message") or ""),
+                "dialogue": str(data.get("dialogue") or ""),
+            }
+        )
+        if len(rows) >= int(limit):
+            break
+    rows.reverse()
+    return rows
+
+
+def relevant_memories(
+    conn: sqlite3.Connection, agent_id: str, query: str, limit: int = 6
+) -> list[dict[str, object]]:
+    observed = {item.event_id for item in ObservationStore(conn).get_for_agent(str(agent_id))}
+    if not observed:
+        return []
+    event_ids: list[str] = []
+    try:
+        # ponytail: bounded oversampling; add filtered vector queries if private corpora grow large.
+        matches = VectorMemoryStore(conn).search(feature_hash(query), max(20, limit * 5))
+        event_ids.extend(event_id for event_id, _distance in matches if event_id in observed)
+    except (ImportError, OSError, RuntimeError, sqlite3.Error):
+        pass
+    if len(event_ids) < limit:
+        event_ids.extend(
+            event.id
+            for event in EpisodicMemoryStore(conn).get_for_agent(str(agent_id))
+            if event.id not in event_ids
+        )
+    memories = []
+    events = EpisodicMemoryStore(conn)
+    for event_id in event_ids[:limit]:
+        event = events.get(event_id)
+        if event is not None:
+            memories.append(
+                {
+                    "id": event.id,
+                    "summary": _event_summary(event.description),
+                    "location": event.location or "",
+                    "created_at": event.happened_at,
+                    "participant_ids": list(event.participant_ids),
+                }
+            )
+    return memories
+
+
+def record_confirmed_experience(
+    conn: sqlite3.Connection, proposal: ActionProposal, result: ActionResult
+) -> Event | None:
+    if result.status != "succeeded":
+        return None
+    values = {change.path: change.value for change in proposal.decision.state_changes}
+    memory = values.get("memory")
+    summary = (
+        str(memory.get("summary") or "")
+        if isinstance(memory, Mapping)
+        else str(values.get("dialogue") or proposal.decision.intent)
+    )
+    source_event = EpisodicMemoryStore(conn).get(proposal.event_id)
+    source = _event_data(source_event.description) if source_event is not None else {}
+    payload = {
+        "kind": "confirmed_interaction",
+        "speaker_id": proposal.decision.actor_id,
+        "listener_id": proposal.decision.target_id or "",
+        "message": str(source.get("message") or ""),
+        "dialogue": str(values.get("dialogue") or ""),
+        "summary": summary,
+    }
+    participants = [proposal.decision.actor_id]
+    if proposal.decision.target_id:
+        participants.append(proposal.decision.target_id)
+    event = Event(
+        json.dumps(payload, ensure_ascii=True, sort_keys=True),
+        participants,
+        id=proposal.decision.id + ":confirmed",
+    )
+    return record_observed_event(
+        conn,
+        event,
+        {agent_id: summary for agent_id in participants},
+    )
+
+
 def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
     marker_namespace = "thesims4.migration"
-    marker_key = "legacy-adapter-identity-v1"
-    if DocumentMemoryStore(conn).get(marker_namespace, marker_key) is not None:
+    identity_marker = "legacy-adapter-identity-v1"
+    memory_marker = "legacy-adapter-episodic-v1"
+    documents = DocumentMemoryStore(conn)
+    if (
+        documents.get(marker_namespace, identity_marker) is not None
+        and documents.get(marker_namespace, memory_marker) is not None
+    ):
         return False
     source_file = Path(source_path).resolve()
     if not source_file.exists():
@@ -232,16 +454,25 @@ def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
             _import_relationships(conn, source)
             _import_emotions(conn, source)
             _import_voices(conn, source)
-        conn.execute(
-            "INSERT INTO memory_documents(namespace,key,value,updated_at) VALUES (?,?,?,?)",
-            (marker_namespace, marker_key, json.dumps({"source": str(source_file)}), time.time_ns()),
-        )
-    except Exception:
-        conn.execute("ROLLBACK TO " + savepoint)
         conn.execute("RELEASE " + savepoint)
+        conn.commit()
+        with contextlib.closing(
+            sqlite3.connect(source_file.as_uri() + "?mode=ro", uri=True)
+        ) as source:
+            source.row_factory = sqlite3.Row
+            _import_episodic(conn, source)
+        marker_value = json.dumps({"source": str(source_file)})
+        for marker_key in (identity_marker, memory_marker):
+            conn.execute(
+                "INSERT OR REPLACE INTO memory_documents(namespace,key,value,updated_at)"
+                " VALUES (?,?,?,?)",
+                (marker_namespace, marker_key, marker_value, time.time_ns()),
+            )
+    except Exception:
+        if conn.in_transaction:
+            conn.rollback()
         raise
     else:
-        conn.execute("RELEASE " + savepoint)
         conn.commit()
         return True
 
@@ -483,6 +714,50 @@ def _import_voices(conn: sqlite3.Connection, source: sqlite3.Connection) -> None
         )
 
 
+def _import_episodic(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
+    for row in _rows(source, "memories"):
+        agent_id = str(row["sim_id"] or row["speaker_id"] or "").strip()
+        target_id = str(row["target_id"] or row["listener_id"] or "").strip()
+        summary = str(row["summary"] or row["event"] or "").strip()
+        if agent_id and summary:
+            add_experience(
+                conn,
+                agent_id,
+                target_id,
+                summary,
+                location=str(row["location"] or ""),
+                happened_at=int(row["created_at"] or 0),
+                event_id=_stable_id(agent_id, "legacy-memory", str(row["id"])),
+            )
+    for row in _rows(source, "memory_summaries"):
+        agent_id = str(row["sim_id"] or "").strip()
+        summary = str(row["summary"] or "").strip()
+        if agent_id and summary:
+            add_experience(
+                conn,
+                agent_id,
+                str(row["target_id"] or ""),
+                summary,
+                happened_at=int(row["updated_at"] or 0),
+                event_id=_stable_id(agent_id, "legacy-summary", str(row["target_id"])),
+            )
+    for row in _rows(source, "conversations"):
+        agent_id = str(row["speaker_id"] or "").strip()
+        target_id = str(row["listener_id"] or "").strip()
+        response = _json(row, "response_json", {})
+        dialogue = str(response.get("dialogue") or "") if isinstance(response, dict) else ""
+        summary = "{} {}".format(str(row["message"] or ""), dialogue).strip()
+        if agent_id and summary:
+            add_experience(
+                conn,
+                agent_id,
+                target_id,
+                summary,
+                happened_at=int(row["created_at"] or 0),
+                event_id=_stable_id(agent_id, "legacy-conversation", str(row["id"])),
+            )
+
+
 def _ensure_agent(conn: sqlite3.Connection, agent_id: str) -> None:
     store = AgentStore(conn)
     if store.get(agent_id) is None:
@@ -518,6 +793,21 @@ def _json(row: sqlite3.Row, name: str, default: object) -> object:
 
 def _stable_id(agent_id: str, kind: str, value: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"empneon:sims4:{agent_id}:{kind}:{value}"))
+
+
+def _event_summary(description: str) -> str:
+    value = _event_data(description)
+    if not value:
+        return description
+    return str(value.get("summary") or value.get("message") or value.get("dialogue") or description)
+
+
+def _event_data(description: str) -> dict[str, object]:
+    try:
+        value = json.loads(description)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:

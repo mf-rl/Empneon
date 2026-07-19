@@ -1,7 +1,21 @@
+import pytest
+
 from empneon.core.clod import resolve_clod1
 from empneon.core.contracts import CognitiveRequest, Decision, StateDelta
 
+import empneon_thesims4
 from empneon_thesims4 import Sims4Adapter
+
+
+def test_feature_hash_is_deterministic_and_normalized() -> None:
+    assert hasattr(empneon_thesims4, "feature_hash")
+    feature_hash = empneon_thesims4.feature_hash
+    first = feature_hash("Bella remembers a secret garden")
+    second = feature_hash("Bella remembers a secret garden")
+
+    assert first == second
+    assert len(first) == 384
+    assert sum(value * value for value in first) == pytest.approx(1.0)
 
 
 def test_conversation_response_becomes_validated_sims_action() -> None:

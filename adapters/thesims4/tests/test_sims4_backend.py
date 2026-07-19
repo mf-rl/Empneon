@@ -10,6 +10,7 @@ from empneon.core.identity.personality import PersonalityStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
+from empneon.core.memory.episodic import Event
 from empneon.core.runtime import ActionRecordStore
 from empneon.db.connection import open_db
 
@@ -119,6 +120,26 @@ def test_legacy_adapter_import_is_idempotent_and_read_only(tmp_path) -> None:
     assert legacy.read_bytes() == before
 
 
+def test_vector_retrieval_never_leaks_an_unobserved_secret(tmp_path) -> None:
+    state = ai_sims_server.empneon_state
+    assert hasattr(state, "record_observed_event")
+    assert hasattr(state, "relevant_memories")
+
+    with open_db(tmp_path / "memory.db") as conn:
+        state.sync_sim(conn, {"id": "bella", "name": "Bella"})
+        state.sync_sim(conn, {"id": "mortimer", "name": "Mortimer"})
+        event = Event("A key is hidden in the garden", ["bella"])
+        state.record_observed_event(
+            conn,
+            event,
+            {"bella": "I saw the garden key"},
+            factual_statement="The key is in the garden",
+        )
+
+        assert state.relevant_memories(conn, "bella", "garden key")
+        assert state.relevant_memories(conn, "mortimer", "garden key") == []
+
+
 def test_openrouter_and_baseline_defaults_are_configured() -> None:
     config = json.loads(
         (Path(ai_sims_server.ROOT) / "config" / "config.json").read_text(encoding="utf-8")
@@ -153,6 +174,8 @@ def test_recent_conversation_is_added_to_prompt(monkeypatch, tmp_path) -> None:
         "When and why did we agree to meet?",
         {"dialogue": "Pizza sounds good. Let's plan it."},
     )
+    with open_db(tmp_path / "core.db") as conn:
+        assert DocumentMemoryStore(conn).list("thesims4.conversation") == []
 
     context = ai_sims_server.build_context(
         {"speaker": {}, "listener": {}, "message": "When are we meeting?"},
@@ -296,6 +319,61 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
     assert record is None
 
 
+def test_generated_memory_is_episodic_only_after_game_confirmation(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "memory.sqlite3"))
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(
+        ai_sims_server.HERMES,
+        "dialogue",
+        lambda _payload, _context: {
+            "dialogue": "Hello.",
+            "emotion": "happy",
+            "intent": "greet",
+            "relationship": {
+                "friendship_delta": 2,
+                "romance_delta": 0,
+                "trust_delta": 0,
+            },
+            "memory": {"importance": 0.8, "summary": "Bella greeted Mortimer."},
+            "animation": "friendly_chat",
+        },
+    )
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "message": "Hello",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+
+    with open_db(core_db) as conn:
+        before = ai_sims_server.empneon_state.relevant_memories(
+            conn, "bella", "greeted Mortimer"
+        )
+    assert "Bella greeted Mortimer." not in {item["summary"] for item in before}
+
+    ai_sims_server.confirm_action(
+        {
+            "decision_id": result["decision_id"],
+            "action": result["animation"],
+            "status": "succeeded",
+            "changes": [],
+        }
+    )
+
+    with open_db(core_db) as conn:
+        after = ai_sims_server.empneon_state.relevant_memories(
+            conn, "bella", "greeted Mortimer"
+        )
+    assert "Bella greeted Mortimer." in {item["summary"] for item in after}
+
+
 def test_adapter_memory_is_stored_by_core(tmp_path, monkeypatch) -> None:
     core_db = str(tmp_path / "core.sqlite3")
     legacy_db = str(tmp_path / "legacy.sqlite3")
@@ -307,8 +385,11 @@ def test_adapter_memory_is_stored_by_core(tmp_path, monkeypatch) -> None:
 
     with open_db(core_db) as conn:
         documents = DocumentMemoryStore(conn).list("thesims4.memory")
-    assert len(documents) == 1
-    assert documents[0].value["summary"] == "A greeting"
+        memories = ai_sims_server.empneon_state.relevant_memories(
+            conn, "bella", "greeting"
+        )
+    assert documents == []
+    assert [memory["summary"] for memory in memories] == ["A greeting"]
     assert not Path(legacy_db).exists()
 
 
@@ -327,10 +408,13 @@ def test_legacy_adapter_memory_imports_once_into_core(tmp_path, monkeypatch) -> 
         )
         conn.commit()
 
-    assert [
-        item["summary"] for item in ai_sims_server.memories_for_pair("bella", "mortimer")
-    ] == ["Legacy"]
-    assert len(ai_sims_server._memory_values("thesims4.memory")) == 1
+    with open_db(core_db) as conn:
+        assert ai_sims_server.empneon_state.import_legacy_adapter(conn, legacy_db) is True
+        memories = ai_sims_server.empneon_state.relevant_memories(
+            conn, "bella", "Legacy"
+        )
+        assert DocumentMemoryStore(conn).list("thesims4.memory") == []
+    assert [item["summary"] for item in memories] == ["Legacy"]
 
 
 def test_memory_session_requires_game_save(tmp_path, monkeypatch) -> None:

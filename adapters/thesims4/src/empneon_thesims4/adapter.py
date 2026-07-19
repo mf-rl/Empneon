@@ -1,5 +1,8 @@
 """Translate between The Sims 4 observations and Empneon Core contracts."""
 
+import hashlib
+import math
+import re
 from collections.abc import Mapping
 
 from empneon.core.contracts import ActionResult, Decision, StateDelta, WorldEvent
@@ -33,6 +36,17 @@ INTENT_ACTIONS = {
     "respond": "friendly_chat",
     "set_boundary": "awkward_chat",
 }
+
+
+def feature_hash(text: str, dimensions: int = 384) -> list[float]:
+    vector = [0.0] * dimensions
+    for token in re.findall(r"\w+", text.casefold()):
+        raw = int.from_bytes(
+            hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest(), "big"
+        )
+        vector[raw % dimensions] += -1.0 if raw & 1 else 1.0
+    norm = math.sqrt(sum(value * value for value in vector))
+    return [value / norm for value in vector] if norm else vector
 
 
 class Sims4Adapter:
