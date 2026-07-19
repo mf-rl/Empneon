@@ -1,7 +1,10 @@
 import json
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
+from empneon.core.contracts import CognitiveRequest, WorldEvent
 from empneon.core.identity.relationships import RelationshipStore
 from empneon.core.identity.models import Agent
 from empneon.core.identity.emotions import EmotionalStateStore
@@ -12,9 +15,60 @@ from empneon.core.identity.voice import VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import Event
 from empneon.core.runtime import ActionRecordStore
+from empneon.core.scheduler.usage import UsageStore
 from empneon.db.connection import open_db
+from empneon.providers.llm import GenerationResult, ModelCapabilities
 
 from backend import ai_sims_server
+
+
+def test_cognition_queue_prioritizes_waiting_player_work() -> None:
+    assert hasattr(ai_sims_server, "CognitionQueue")
+    queue = ai_sims_server.CognitionQueue(1, 4)
+    blocker_started = threading.Event()
+    release_blocker = threading.Event()
+    order = []
+
+    def request(name, urgency):
+        return CognitiveRequest(
+            name,
+            1,
+            WorldEvent("test", (name,)),
+            urgency=urgency,
+            deadline_ms=5_000,
+        )
+
+    def block():
+        blocker_started.set()
+        release_blocker.wait(2)
+        order.append("blocker")
+
+    threads = [
+        threading.Thread(target=lambda: queue.run(request("blocker", 0.5), block)),
+        threading.Thread(
+            target=lambda: queue.run(
+                request("ambient", 0.35), lambda: order.append("ambient")
+            )
+        ),
+        threading.Thread(
+            target=lambda: queue.run(
+                request("player", 1.0), lambda: order.append("player")
+            )
+        ),
+    ]
+    threads[0].start()
+    assert blocker_started.wait(1)
+    threads[1].start()
+    while len(queue) < 1:
+        time.sleep(0.001)
+    threads[2].start()
+    while len(queue) < 2:
+        time.sleep(0.001)
+    release_blocker.set()
+    for thread in threads:
+        thread.join(2)
+
+    assert order == ["blocker", "player", "ambient"]
 
 
 def test_unified_database_is_the_only_active_default() -> None:
@@ -240,6 +294,74 @@ def test_llm_chat_delegates_provider_selection_to_core(monkeypatch) -> None:
     assert captured["temperature"] == 0.4
 
 
+def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
+    tmp_path, monkeypatch
+) -> None:
+    content = json.dumps(
+        {
+            "dialogue": "Hello.",
+            "emotion": "happy",
+            "intent": "greet",
+            "relationship": {
+                "friendship_delta": 0,
+                "romance_delta": 0,
+                "trust_delta": 0,
+            },
+            "memory": {"importance": 0.2, "summary": "A greeting."},
+            "animation": "friendly_chat",
+        }
+    )
+
+    class Provider:
+        capabilities = ModelCapabilities(structured_output=True, local=True)
+
+    class Router:
+        def config_for(self, _task):
+            return {
+                "name": "test",
+                "model": "stub",
+                "max_tokens": 300,
+                "context_tokens": 4096,
+                "latency_ms": 1000,
+                "ram_mb": 64,
+                "vram_mb": 0,
+            }
+
+        def provider_for(self, _task):
+            return Provider()
+
+        async def generate_result(self, *_args, **_kwargs):
+            return GenerationResult(content, 20, 8, 30)
+
+        async def generate(self, *_args, **_kwargs):
+            return content
+
+    core_db = str(tmp_path / "empneon_core_memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", core_db)
+
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "message": "Hello",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+
+    with open_db(core_db) as conn:
+        telemetry = UsageStore(conn).telemetry("bella")
+    assert result["selected_clod"] == 3
+    assert telemetry["by_clod"] == {"3": 1}
+    assert telemetry["actual"] == {
+        "prompt_tokens": 20,
+        "completion_tokens": 8,
+        "latency_ms": 30,
+    }
+
+
 def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -> None:
     core_db = str(tmp_path / "core.sqlite3")
     monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
@@ -270,10 +392,13 @@ def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -
     with open_db(core_db) as conn:
         relationship = RelationshipStore(conn).get("bella", "mortimer")
         record = ActionRecordStore(conn).get(proposal["decision_id"])
+        usage = UsageStore(conn).telemetry("bella")
     assert relationship is not None
     assert relationship.strength == 0.05
     assert record is not None
     assert record.result.status == "succeeded"
+    assert usage["by_clod"] == {"1": 1}
+    assert usage["actual"]["prompt_tokens"] == 0
 
 
 def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:

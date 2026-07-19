@@ -18,6 +18,21 @@ def test_feature_hash_is_deterministic_and_normalized() -> None:
     assert sum(value * value for value in first) == pytest.approx(1.0)
 
 
+def test_player_dialogue_receives_high_dynamic_cognition_value() -> None:
+    assert hasattr(empneon_thesims4, "cognition_priority")
+
+    urgency, preferred_clod, value = empneon_thesims4.cognition_priority(
+        {"event": {"type": "player_conversation"}},
+        novel=True,
+        emotion_intensity=0.5,
+        goal_relevant=True,
+    )
+
+    assert urgency == 1.0
+    assert preferred_clod == 3
+    assert value == pytest.approx(0.9)
+
+
 def test_conversation_response_becomes_validated_sims_action() -> None:
     adapter = Sims4Adapter(
         {

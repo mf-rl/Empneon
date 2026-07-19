@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from empneon_thesims4 import Sims4Adapter
+from empneon_thesims4 import Sims4Adapter, cognition_priority
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
 from empneon.core.identity.models import Agent
 from empneon.core.memory.documents import DocumentMemoryStore
@@ -29,8 +29,16 @@ from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
+from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineExceeded
+from empneon.core.scheduler.selection import CognitionRoute
+from empneon.core.scheduler.usage import UsageStore
 from empneon.db.connection import open_db
-from empneon.providers.llm import ConfiguredProviderRouter, Message, ProviderError
+from empneon.providers.llm import (
+    ConfiguredProviderRouter,
+    GenerationResult,
+    Message,
+    ProviderError,
+)
 from backend import empneon_state
 
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
@@ -59,8 +67,22 @@ DEFAULT_CONFIG = {
         "textgenwebui": {"endpoint": "http://127.0.0.1:5000/v1", "model": "local-model"},
     },
     "models": {
-        "small": {"temperature": 0.4, "max_tokens": 300},
-        "large": {"temperature": 0.6, "max_tokens": 500},
+        "small": {
+            "temperature": 0.4,
+            "max_tokens": 120,
+            "context_tokens": 2048,
+            "latency_ms": 30000,
+            "ram_mb": 64,
+            "vram_mb": 0,
+        },
+        "large": {
+            "temperature": 0.6,
+            "max_tokens": 300,
+            "context_tokens": 4096,
+            "latency_ms": 90000,
+            "ram_mb": 128,
+            "vram_mb": 0,
+        },
     },
     "memory": {
         "recent_limit": 6,
@@ -134,6 +156,7 @@ ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
 LEGACY_MEMORY_CHECKED = set()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
+GENERATION_CONTEXT = threading.local()
 
 
 def setup_logging():
@@ -1087,10 +1110,61 @@ def fallback_response(text):
     )
 
 
+class CognitionQueue:
+    def __init__(self, workers, max_queue_size):
+        self._scheduler = PriorityScheduler(max_queue_size)
+        self._jobs = {}
+        self._condition = threading.Condition()
+        for index in range(max(1, int(workers))):
+            worker = threading.Thread(
+                target=self._work,
+                name="empneon-cognition-{}".format(index),
+                daemon=True,
+            )
+            worker.start()
+
+    def __len__(self):
+        return len(self._scheduler)
+
+    def run(self, request, work):
+        job = {"work": work, "done": threading.Event(), "result": None, "error": None}
+        with self._condition:
+            self._jobs[request.id] = job
+            self._scheduler.submit(request)
+            self._condition.notify()
+        if not job["done"].wait(request.deadline_ms / 1000):
+            with self._condition:
+                self._jobs.pop(request.id, None)
+            raise RequestDeadlineExceeded("cognitive request deadline exceeded")
+        if job["error"] is not None:
+            raise job["error"]
+        return job["result"]
+
+    def _work(self):
+        while True:
+            with self._condition:
+                while len(self._scheduler) == 0:
+                    self._condition.wait()
+                try:
+                    request = self._scheduler.pop()
+                except RequestDeadlineExceeded:
+                    continue
+                job = self._jobs.get(request.id)
+            if job is None:
+                continue
+            try:
+                job["result"] = job["work"]()
+            except Exception as exc:
+                job["error"] = exc
+            finally:
+                with self._condition:
+                    self._jobs.pop(request.id, None)
+                job["done"].set()
+
+
 class AgentManager:
     def __init__(self, limit):
         self.limit = max(1, int(limit or 1))
-        self._semaphore = threading.BoundedSemaphore(self.limit)
         self._lock = threading.RLock()
         self._active = {}
 
@@ -1104,9 +1178,6 @@ class AgentManager:
                 AGENT_LOG.info("agent reused sim=%s reason=%s refs=%s", sid, reason, self._active[sid]["refs"])
                 return profile
 
-        acquired = self._semaphore.acquire(timeout=AGENT_WAKE_TIMEOUT if timeout is None else timeout)
-        if not acquired:
-            raise RuntimeError("active agent limit reached; request timed out")
         with self._lock:
             self._active[sid] = {
                 "sim_id": sid,
@@ -1131,7 +1202,6 @@ class AgentManager:
                 self._active.pop(str(sim_id_value), None)
                 release = True
         if release:
-            self._semaphore.release()
             AGENT_LOG.info("agent slept sim=%s reason=%s", sim_id_value, reason)
         return True
 
@@ -1149,6 +1219,7 @@ class AgentManager:
 
 
 AGENTS = AgentManager(ACTIVE_AGENT_LIMIT)
+COGNITION_QUEUE = CognitionQueue(ACTIVE_AGENT_LIMIT, max(8, ACTIVE_AGENT_LIMIT * 4))
 
 
 def task_model_config(task="large"):
@@ -1170,18 +1241,62 @@ def configured_model(task="large"):
 
 def llm_chat(messages, temperature=None, schema=None, schema_name="response", task="large"):
     del schema_name  # Core providers use the schema itself, not an adapter label.
+    task = str(getattr(GENERATION_CONTEXT, "task", task) or task)
     core_messages = tuple(
         Message(str(message.get("role") or "user"), str(message.get("content") or ""))
         for message in messages
     )
-    return asyncio.run(
-        provider_router().generate(
-            task,
-            core_messages,
-            schema=schema,
-            temperature=temperature,
+    router = provider_router()
+    if hasattr(router, "generate_result"):
+        result = asyncio.run(
+            router.generate_result(
+                task,
+                core_messages,
+                schema=schema,
+                temperature=temperature,
+            )
         )
-    )
+    else:
+        result = GenerationResult(
+            asyncio.run(
+                router.generate(
+                    task,
+                    core_messages,
+                    schema=schema,
+                    temperature=temperature,
+                )
+            )
+        )
+    attempts = getattr(GENERATION_CONTEXT, "attempts", None)
+    if isinstance(attempts, list):
+        attempts.append((task, router.config_for(task), result))
+    return result.content
+
+
+def cognition_routes(resolvers):
+    router = provider_router()
+    routes = []
+    for task, clod in (("small", 2), ("large", 3), ("deep", 4)):
+        if task == "deep" and task not in (CONFIG.get("models") or {}):
+            continue
+        config = router.config_for(task)
+        estimate = ResourceEstimate(
+            ram_mb=int(config.get("ram_mb") or 64),
+            vram_mb=int(config.get("vram_mb") or 0),
+            context_tokens=int(config.get("context_tokens") or 4096),
+            completion_tokens=int(config.get("max_tokens") or 300),
+            latency_ms=int(config.get("latency_ms") or 3000),
+        )
+        routes.append(
+            CognitionRoute(
+                str(config["name"]),
+                clod,
+                router.provider_for(task).capabilities,
+                estimate,
+                resolvers[task],
+            )
+        )
+    return tuple(routes)
 
 
 def build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary):
@@ -1450,30 +1565,66 @@ def chat(payload):
         context["listener_id"] = listener_id
         adapter = Sims4Adapter(payload)
         event = adapter.observe()[0]
+        numeric_emotions = [
+            float(value) / 100
+            for key, value in emotions.items()
+            if key != "current_mood" and isinstance(value, (int, float))
+        ]
+        urgency, preferred_clod, deeper_value = cognition_priority(
+            payload,
+            novel=not memories,
+            emotion_intensity=max(numeric_emotions, default=0.0),
+            goal_relevant=bool(speaker_profile.get("goals")),
+        )
+        model_config = task_model_config("large")
         request = CognitiveRequest(
             speaker_id,
-            3,
+            preferred_clod,
             event,
-            max_tokens=int(task_model_config("large").get("max_tokens") or 350),
+            urgency=urgency,
+            max_tokens=int(model_config.get("max_tokens") or 350),
+            max_context_tokens=int(model_config.get("context_tokens") or 4096),
+            deadline_ms=int(model_config.get("latency_ms") or 3000),
         )
+        generations = []
+        selected = {"clod": 1, "task": "core-rules"}
 
-        async def resolve_dialogue(_request):
-            try:
-                response = HERMES.dialogue(payload, context)
-            except RuntimeError as exc:
-                raise ProviderError("Sims dialogue provider failed") from exc
-            return adapter.decision_from_response(response, event.id)
+        def resolver(task):
+            async def resolve_dialogue(current):
+                def invoke():
+                    GENERATION_CONTEXT.task = task
+                    GENERATION_CONTEXT.attempts = []
+                    try:
+                        return HERMES.dialogue(payload, context)
+                    finally:
+                        generated = list(GENERATION_CONTEXT.attempts)
+                        generations.extend(generated)
+                        GENERATION_CONTEXT.task = None
+                        GENERATION_CONTEXT.attempts = None
 
-        prompt = build_chat_prompt(payload, context)
-        estimate = ResourceEstimate(
-            context_tokens=max(1, len(prompt) // 4),
-            completion_tokens=request.max_tokens,
-            latency_ms=request.deadline_ms,
-        )
+                try:
+                    response = await asyncio.to_thread(invoke)
+                except RuntimeError as exc:
+                    raise ProviderError("Sims dialogue provider failed") from exc
+                selected.update(clod=current.preferred_clod, task=task)
+                return adapter.decision_from_response(response, event.id)
+
+            return resolve_dialogue
+
+        resolvers = {task: resolver(task) for task in ("small", "large", "deep")}
         with open_db(CORE_DB_PATH) as conn:
             actions = ActionRecordStore(conn)
             runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
-            decision = asyncio.run(runtime.decide(request, resolve_dialogue, estimate))
+            decision = COGNITION_QUEUE.run(
+                request,
+                lambda: asyncio.run(
+                    runtime.decide_dynamic(
+                        request,
+                        cognition_routes(resolvers),
+                        deeper_value,
+                    )
+                ),
+            )
             action = adapter.action_for(decision)
             if action is None:
                 raise ValueError("no supported Sims action available")
@@ -1481,6 +1632,32 @@ def chat(payload):
             persist_core_agent(conn, listener)
             persist_core_event(conn, event)
             actions.propose(event.id, decision, action)
+            usage = UsageStore(conn)
+            if generations:
+                for task, config, generation in generations:
+                    usage.record(
+                        request,
+                        ResourceEstimate(
+                            ram_mb=int(config.get("ram_mb") or 64),
+                            vram_mb=int(config.get("vram_mb") or 0),
+                            context_tokens=int(config.get("context_tokens") or 4096),
+                            completion_tokens=int(config.get("max_tokens") or 300),
+                            latency_ms=int(config.get("latency_ms") or 3000),
+                        ),
+                        str(config["name"]),
+                        str(config["model"]),
+                        generation,
+                        int(selected["clod"]),
+                    )
+            else:
+                usage.record(
+                    request,
+                    ResourceEstimate(),
+                    "core-rules" if selected["clod"] == 1 else "test-double",
+                    "clod1" if selected["clod"] == 1 else str(selected["task"]),
+                    GenerationResult("", 0, 0, 0),
+                    int(selected["clod"]),
+                )
         result = adapter.response_for(decision)
         result["animation"] = action
     relationship_state = get_relationship(speaker_id, listener_id)
@@ -1492,6 +1669,7 @@ def chat(payload):
     result["agent"] = {"id": speaker_id, "state": "dormant"}
     result["decision_id"] = decision.id
     result["action_status"] = "proposed"
+    result["selected_clod"] = int(selected["clod"])
     return result
 
 
@@ -1535,7 +1713,9 @@ def autonomous_action(payload):
     with open_db(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
-        decision = asyncio.run(runtime.decide(request, unused_resolver))
+        decision = COGNITION_QUEUE.run(
+            request, lambda: asyncio.run(runtime.decide(request, unused_resolver))
+        )
         action = adapter.action_for(decision)
         if action is None:
             raise ValueError("no supported Sims action available")
@@ -1543,6 +1723,14 @@ def autonomous_action(payload):
             persist_core_agent(conn, payload.get(key) or {})
         persist_core_event(conn, event)
         actions.propose(event.id, decision, action)
+        UsageStore(conn).record(
+            request,
+            ResourceEstimate(),
+            "core-rules",
+            "clod1",
+            GenerationResult("", 0, 0, 0),
+            1,
+        )
     return {
         "hook": "Core proposed autonomous action",
         "target": decision.target_id or "",
@@ -1550,6 +1738,7 @@ def autonomous_action(payload):
         "decision_id": decision.id,
         "status": "proposed",
         "activation": "empneon_core",
+        "selected_clod": 1,
         "agent_state": "dormant",
     }
 

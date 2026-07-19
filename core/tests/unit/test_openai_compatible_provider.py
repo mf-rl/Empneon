@@ -189,6 +189,29 @@ def test_configured_router_selects_provider_without_adapter_logic(monkeypatch) -
     )
 
 
+def test_configured_router_exposes_generation_result_without_breaking_generate(
+    monkeypatch,
+) -> None:
+    expected = GenerationResult("hello", 10, 3, 25)
+
+    class Provider:
+        async def generate(self, _request):
+            return expected
+
+    router = ConfiguredProviderRouter(
+        "test",
+        {"test": {"endpoint": "http://localhost", "model": "stub"}},
+        {"large": {}},
+    )
+    monkeypatch.setattr(router, "provider_for", lambda _task: Provider())
+
+    assert hasattr(router, "generate_result")
+    assert asyncio.run(
+        router.generate_result("large", (Message("user", "hi"),))
+    ) == expected
+    assert asyncio.run(router.generate("large", (Message("user", "hi"),))) == "hello"
+
+
 def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning() -> None:
     models = {"models": [{"key": "gemma", "loaded_instances": [{"id": "gemma-loaded"}]}]}
     chat = {"output": [{"type": "message", "content": "Hello Robin"}]}

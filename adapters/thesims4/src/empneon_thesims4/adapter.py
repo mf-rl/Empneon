@@ -49,6 +49,33 @@ def feature_hash(text: str, dimensions: int = 384) -> list[float]:
     return [value / norm for value in vector] if norm else vector
 
 
+def cognition_priority(
+    payload: Mapping[str, object],
+    *,
+    novel: bool = False,
+    emotion_intensity: float = 0.0,
+    goal_relevant: bool = False,
+) -> tuple[float, int, float]:
+    event = payload.get("event")
+    event_data = event if isinstance(event, Mapping) else {}
+    event_type = str(event_data.get("type") or "")
+    if event_type == "player_conversation":
+        urgency, preferred_clod = 1.0, 3
+    elif event_type in ("crisis", "critical_need"):
+        urgency, preferred_clod = 0.85, 3
+    elif goal_relevant:
+        urgency, preferred_clod = 0.65, 2
+    else:
+        urgency, preferred_clod = 0.35, 1
+    value = (
+        (0.4 if event_type == "player_conversation" else 0.0)
+        + (0.2 if novel else 0.0)
+        + 0.2 * max(0.0, min(1.0, float(emotion_intensity)))
+        + (0.2 if goal_relevant else 0.0)
+    )
+    return urgency, preferred_clod, min(1.0, value)
+
+
 class Sims4Adapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
         self._payload = payload
