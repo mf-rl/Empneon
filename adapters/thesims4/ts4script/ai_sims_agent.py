@@ -258,14 +258,122 @@ def sim_mood(sim_info):
         return "unknown"
 
 
+def _tracker_items(tracker):
+    for attr in ("get_all_commodities", "statistics", "values"):
+        try:
+            source = getattr(tracker, attr, None)
+            if source is None:
+                continue
+            items = source() if callable(source) else source
+            if isinstance(items, dict):
+                items = items.values()
+            return list(items or [])[:20]
+        except Exception:
+            pass
+    return []
+
+
+def _stat_values(tracker):
+    result = {}
+    for stat in _tracker_items(tracker):
+        try:
+            name = short_trait_name(getattr(stat, "stat_type", stat))
+            getter = getattr(stat, "get_value", None)
+            value = getter() if callable(getter) else getattr(stat, "value", None)
+            if name and isinstance(value, (int, float)):
+                result[name] = int(round(max(0, min(100, value))))
+        except Exception:
+            pass
+    return result
+
+
+def sim_needs(sim_info):
+    tracker = getattr(sim_info, "commodity_tracker", None)
+    if tracker is None:
+        try:
+            tracker = getattr(sim_info.get_sim_instance(), "commodity_tracker", None)
+        except Exception:
+            pass
+    return _stat_values(tracker)
+
+
+def sim_moodlets(sim_info):
+    component = getattr(sim_info, "buff_component", None)
+    if component is None:
+        try:
+            component = getattr(sim_info.get_sim_instance(), "buff_component", None)
+        except Exception:
+            pass
+    try:
+        source = getattr(component, "get_all_buffs", None)
+        buffs = source() if callable(source) else source or []
+        return [
+            name
+            for name in (
+                short_trait_name(getattr(buff, "buff_type", buff))
+                for buff in list(buffs)[:20]
+            )
+            if name
+        ]
+    except Exception:
+        return []
+
+
+def sim_aspiration(sim_info):
+    tracker = getattr(sim_info, "aspiration_tracker", None)
+    for attr in ("active_aspiration", "primary_aspiration"):
+        name = short_trait_name(getattr(tracker, attr, None))
+        if name:
+            return name
+    return "unknown"
+
+
+def sim_career(sim_info):
+    tracker = getattr(sim_info, "career_tracker", None)
+    try:
+        careers = getattr(tracker, "careers", {}) or {}
+        values = careers.values() if isinstance(careers, dict) else careers
+        for career in list(values)[:20]:
+            name = short_trait_name(
+                getattr(career, "current_track_tuning", None) or career
+            )
+            if name:
+                return name
+    except Exception:
+        pass
+    return "unknown"
+
+
+def sim_skills(sim_info):
+    tracker = getattr(sim_info, "skill_tracker", None) or getattr(
+        sim_info, "statistic_skill_tracker", None
+    )
+    return _stat_values(tracker)
+
+
+def sim_household(sim_info):
+    household = getattr(sim_info, "household", None)
+    if household is None:
+        return {}
+    household_id = getattr(household, "id", None) or getattr(
+        sim_info, "household_id", None
+    )
+    name = text_value(getattr(household, "name", None), "")
+    return {"id": str(household_id or ""), "name": name}
+
+
 def sim_info_payload(sim_info):
     return {
         "id": str(getattr(sim_info, "sim_id", sim_full_name(sim_info))),
         "name": sim_full_name(sim_info),
         "traits": sim_traits(sim_info),
         "current_mood": sim_mood(sim_info),
-        "career": "unknown",
-        "skills": {},
+        "needs": sim_needs(sim_info),
+        "moodlets": sim_moodlets(sim_info),
+        "aspiration": sim_aspiration(sim_info),
+        "career": sim_career(sim_info),
+        "skills": sim_skills(sim_info),
+        "household": sim_household(sim_info),
     }
 
 
@@ -354,6 +462,15 @@ def instanced_npc_infos():
     return result
 
 
+def nearby_sim_payloads(*excluded):
+    excluded_ids = {str(value) for value in excluded}
+    return [
+        sim_info_payload(info)
+        for info in instanced_npc_infos()[:20]
+        if str(getattr(info, "sim_id", "")) not in excluded_ids
+    ]
+
+
 def autonomous_tick(_alarm_handle):
     global _AUTONOMY_CURSOR, _AUTONOMY_IN_FLIGHT
     if _AUTONOMY_IN_FLIGHT:
@@ -389,6 +506,7 @@ def autonomous_tick(_alarm_handle):
         "listener": sim_info_payload(listener),
         "relationship": relationship_payload(speaker, listener),
         "location": current_location(),
+        "nearby_sims": nearby_sim_payloads(speaker.sim_id, listener.sim_id),
         "event": {"type": "autonomous_social", "source": "sim_alarm"},
         "available_actions": AVAILABLE_ACTIONS,
     }
@@ -968,6 +1086,7 @@ def chat_payload_for_target(active, target_info, message, source):
         "listener": player,
         "relationship": relationship_payload(target_info, active.sim_info),
         "location": current_location(),
+        "nearby_sims": nearby_sim_payloads(npc["id"], player["id"]),
         "event": {"type": "player_conversation", "source": source},
         "available_actions": AVAILABLE_ACTIONS,
         "message": message,
@@ -984,6 +1103,7 @@ def chat_payload(active, target_name, message):
         "listener": player,
         "relationship": relationship_payload(active.sim_info, None),
         "location": current_location(),
+        "nearby_sims": nearby_sim_payloads(player["id"]),
         "event": {"type": "player_conversation", "source": "cheat_console"},
         "available_actions": AVAILABLE_ACTIONS,
         "message": message,

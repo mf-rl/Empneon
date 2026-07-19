@@ -1314,6 +1314,14 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
         "message": payload.get("message") or "",
         "speaker_traits": speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or [],
         "listener_traits": listener.get("traits") or listener_profile.get("identity", {}).get("traits") or [],
+        "game_state": {
+            "needs": speaker.get("needs") or {},
+            "moodlets": speaker.get("moodlets") or [],
+            "aspiration": speaker.get("aspiration") or "unknown",
+            "career": speaker.get("career") or "unknown",
+            "skills": speaker.get("skills") or {},
+            "household": speaker.get("household") or {},
+        },
     }
 
 
@@ -1324,6 +1332,9 @@ def build_chat_prompt(payload, context):
     emotions = context["emotions"]
     memory_lines = "\n".join("- " + item["summary"] for item in context["memories"]) or "- None yet"
     nearby = ", ".join(sim_name(item) if isinstance(item, dict) else str(item) for item in context["nearby_sims"]) or "none"
+    game_state = context["game_state"]
+    household = game_state["household"]
+    household_name = household.get("name") if isinstance(household, dict) else household
     goals = speaker_profile.get("goals") or []
     conversation_lines = []
     current_message = " ".join(str(payload.get("message") or "").casefold().split())
@@ -1360,6 +1371,12 @@ Values: {values}
 Behavior rules: {rules}
 Knowledge: {knowledge}
 Goals: {goals}
+Needs: {needs}
+Moodlets: {moodlets}
+Aspiration: {aspiration}
+Career: {career}
+Skills: {skills}
+Household: {household}
 
 Listener:
 {listener_name}
@@ -1409,6 +1426,12 @@ Player says:
         rules=", ".join(speaker_profile.get("behavioral_rules") or []) or "none",
         knowledge=dumps(speaker_profile.get("knowledge") or {}),
         goals=", ".join(str(goal) for goal in goals) or "none",
+        needs=dumps(game_state["needs"]),
+        moodlets=", ".join(str(item) for item in game_state["moodlets"]) or "none",
+        aspiration=game_state["aspiration"],
+        career=game_state["career"],
+        skills=dumps(game_state["skills"]),
+        household=household_name or "unknown",
         listener_name=listener_profile.get("name") or "Unknown Sim",
         listener_traits=", ".join(context["listener_traits"]) or "unknown",
         relationship=dumps(relationship),

@@ -33,6 +33,20 @@ def test_player_dialogue_receives_high_dynamic_cognition_value() -> None:
     assert value == pytest.approx(0.9)
 
 
+def test_old_payload_has_neutral_optional_cognition_facts() -> None:
+    event = Sims4Adapter(
+        {"speaker": {"id": "bella"}, "available_actions": ["friendly_chat"]}
+    ).observe()[0]
+
+    assert event.facts["needs"] == {}
+    assert event.facts["moodlets"] == []
+    assert event.facts["aspiration"] == "unknown"
+    assert event.facts["career"] == "unknown"
+    assert event.facts["skills"] == {}
+    assert event.facts["household"] == {}
+    assert event.facts["nearby_sims"] == []
+
+
 def test_conversation_response_becomes_validated_sims_action() -> None:
     adapter = Sims4Adapter(
         {

@@ -265,6 +265,44 @@ def test_recent_conversation_is_added_to_prompt(monkeypatch, tmp_path) -> None:
     )
     assert prompt.index("Recent conversation") < prompt.index("Player says")
 
+
+def test_rich_game_state_is_grounded_in_dialogue_prompt() -> None:
+    payload = {
+        "speaker": {
+            "id": "bella",
+            "needs": {"Hunger": 18},
+            "moodlets": ["Uncomfortable"],
+            "aspiration": "MasterChef",
+            "career": "Painter",
+            "skills": {"Cooking": 7},
+            "household": {"name": "Goth Household"},
+        },
+        "listener": {},
+        "message": "How are you?",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Bella"},
+        {"name": "Mortimer"},
+        {},
+        {},
+        [],
+        {},
+    )
+    context.update({"conversation": [], "speaker_id": "bella", "listener_id": "mortimer"})
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    for expected in (
+        'Needs: {"Hunger": 18}',
+        "Moodlets: Uncomfortable",
+        "Aspiration: MasterChef",
+        "Career: Painter",
+        'Skills: {"Cooking": 7}',
+        "Household: Goth Household",
+    ):
+        assert expected in prompt
+
 def test_llm_chat_delegates_provider_selection_to_core(monkeypatch) -> None:
     captured = {}
 

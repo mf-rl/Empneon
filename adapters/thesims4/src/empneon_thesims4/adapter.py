@@ -113,6 +113,16 @@ class Sims4Adapter:
                         if item
                     },
                     "relationship": dict(relationship_data),
+                    "needs": dict(sim_data.get("needs") or {}),
+                    "moodlets": list(sim_data.get("moodlets") or []),
+                    "aspiration": str(sim_data.get("aspiration") or "unknown"),
+                    "career": str(sim_data.get("career") or "unknown"),
+                    "skills": dict(sim_data.get("skills") or {}),
+                    "household": dict(sim_data.get("household") or {}),
+                    "nearby_sims": list(self._payload.get("nearby_sims") or []),
+                    "available_actions": list(
+                        self._payload.get("available_actions") or []
+                    ),
                 },
             ),
         )

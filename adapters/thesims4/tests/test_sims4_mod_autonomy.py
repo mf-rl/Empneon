@@ -243,6 +243,48 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
 
+    for probe in (
+        "sim_needs",
+        "sim_moodlets",
+        "sim_aspiration",
+        "sim_career",
+        "sim_skills",
+        "sim_household",
+    ):
+        assert hasattr(agent, probe)
+    hunger = SimpleNamespace(
+        stat_type=type("Hunger", (), {}),
+        get_value=lambda: 18,
+    )
+    cooking = SimpleNamespace(
+        stat_type=type("Cooking", (), {}),
+        get_value=lambda: 7,
+    )
+    rich_info = SimpleNamespace(
+        sim_id="bella",
+        full_name="Bella",
+        trait_tracker=None,
+        commodity_tracker=SimpleNamespace(get_all_commodities=lambda: [hunger]),
+        buff_component=SimpleNamespace(
+            get_all_buffs=lambda: [SimpleNamespace(buff_type=type("Uncomfortable", (), {}))]
+        ),
+        aspiration_tracker=SimpleNamespace(
+            active_aspiration=type("MasterChef", (), {})
+        ),
+        career_tracker=SimpleNamespace(
+            careers={1: SimpleNamespace(current_track_tuning=type("Painter", (), {}))}
+        ),
+        skill_tracker=SimpleNamespace(statistics=[cooking]),
+        household=SimpleNamespace(id=42, name="Goth Household"),
+    )
+    rich_payload = agent.sim_info_payload(rich_info)
+    assert rich_payload["needs"] == {"Hunger": 18}
+    assert rich_payload["moodlets"] == ["Uncomfortable"]
+    assert rich_payload["aspiration"] == "MasterChef"
+    assert rich_payload["career"] == "Painter"
+    assert rich_payload["skills"] == {"Cooking": 7}
+    assert rich_payload["household"] == {"id": "42", "name": "Goth Household"}
+
     save_reports = []
     monkeypatch.setattr(
         agent,
