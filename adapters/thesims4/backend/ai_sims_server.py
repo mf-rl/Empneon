@@ -154,7 +154,6 @@ PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
 ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
-LEGACY_MEMORY_CHECKED = set()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 GENERATION_CONTEXT = threading.local()
 MIGRATION_STATUS = empneon_state.MigrationStatus(
@@ -391,9 +390,8 @@ def start_memory_session(session_id, save_slot_id=""):
             if os.path.exists(legacy_saved) and (
                 not previous_slot or previous_slot == save_slot_id
             ):
-                _import_legacy_memory(
-                    legacy_saved, "legacy-checkpoint-{}".format(save_slot_id)
-                )
+                with open_db(database) as conn:
+                    empneon_state.import_legacy_adapter(conn, legacy_saved)
                 backup_memory_database(database, saved)
             elif not previous:
                 backup_memory_database(database, saved)
@@ -703,21 +701,6 @@ def get_profile_by_name(name):
         return empneon_state.profile_by_name(conn, str(name or ""))
 
 
-def migrate_agent_id(old_id, new_id):
-    old_id = str(old_id or "")
-    new_id = str(new_id or "")
-    if not old_id or not new_id or old_id == new_id:
-        return
-    profile = _get_memory("thesims4.profile", old_id)
-    if not isinstance(profile, dict) or _get_memory("thesims4.profile", new_id):
-        return
-    profile["id"] = new_id
-    profile.setdefault("identity", {})["sim_id"] = new_id
-    _set_memory("thesims4.profile", new_id, profile)
-    _delete_memory("thesims4.profile", old_id)
-    AGENT_LOG.info("migrated agent id old=%s new=%s", old_id, new_id)
-
-
 def list_profiles(limit=100):
     with open_db(CORE_DB_PATH) as conn:
         return empneon_state.profiles(conn, int(limit))
@@ -886,108 +869,6 @@ def memories_for_pair(sim_id_value, target_id_value, limit=20):
             if set(item.get("participant_ids") or ()) == pair
         ]
     return _rank_memories(selected, int(limit))
-
-
-def _pair_key(first, second):
-    return "\x1f".join(sorted((str(first), str(second))))
-
-
-def _pair_key_directional(first, second):
-    return "{}\x1f{}".format(first, second)
-
-
-def _set_memory(namespace, key, value):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        DocumentMemoryStore(conn).set(namespace, key, value)
-
-
-def _get_memory(namespace, key):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        return DocumentMemoryStore(conn).get(namespace, key)
-
-
-def _delete_memory(namespace, key):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        DocumentMemoryStore(conn).delete(namespace, key)
-
-
-def _memory_values(namespace):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        values = [document.value for document in DocumentMemoryStore(conn).list(namespace)]
-    return [value for value in values if isinstance(value, dict)]
-
-
-def _ensure_legacy_memory_imported():
-    _import_legacy_memory(DB_PATH, "legacy-v1")
-
-
-def _import_legacy_memory(source_path, marker):
-    paths = (os.path.abspath(source_path), os.path.abspath(CORE_DB_PATH), marker)
-    if paths in LEGACY_MEMORY_CHECKED:
-        return
-    LEGACY_MEMORY_CHECKED.add(paths)
-    if paths[0] == paths[1] or not os.path.exists(paths[0]):
-        return
-    try:
-        legacy = sqlite3.connect(paths[0])
-        legacy.row_factory = sqlite3.Row
-        tables = {
-            row["name"]
-            for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
-        with open_db(paths[1]) as core:
-            store = DocumentMemoryStore(core)
-            if store.get("thesims4.migration", marker) is not None:
-                return
-            if "sim_profiles" in tables:
-                for row in legacy.execute("SELECT * FROM sim_profiles"):
-                    store.set("thesims4.profile", row["sim_id"], row_profile(row))
-            if "memories" in tables:
-                for row in legacy.execute("SELECT * FROM memories"):
-                    store.set("thesims4.memory", str(row["id"]), dict(row))
-            if "memory_summaries" in tables:
-                for row in legacy.execute("SELECT * FROM memory_summaries"):
-                    store.set(
-                        "thesims4.summary",
-                        _pair_key(row["sim_id"], row["target_id"]),
-                        {"summary": row["summary"], "updated_at": row["updated_at"]},
-                    )
-            if "relationships" in tables:
-                for row in legacy.execute("SELECT * FROM relationships"):
-                    store.set(
-                        "thesims4.relationship",
-                        _pair_key_directional(row["sim_id"], row["target_id"]),
-                        {key: row[key] for key in default_relationship()},
-                    )
-            if "emotions" in tables:
-                for row in legacy.execute("SELECT * FROM emotions"):
-                    value = {key: row[key] for key in default_emotion()}
-                    store.set("thesims4.emotion", row["sim_id"], value)
-            if "conversations" in tables:
-                for row in legacy.execute("SELECT * FROM conversations"):
-                    store.set(
-                        "thesims4.conversation",
-                        str(row["id"]),
-                        {
-                            "conversation_id": row["conversation_id"],
-                            "speaker_id": row["speaker_id"],
-                            "listener_id": row["listener_id"],
-                            "message": row["message"],
-                            "response": loads(row["response_json"], {}),
-                            "created_at": row["created_at"],
-                        },
-                    )
-            store.set("thesims4.migration", marker, {"imported": True})
-    except sqlite3.Error as exc:
-        MEMORY_LOG.warning("legacy memory import failed: %s", exc)
-        LEGACY_MEMORY_CHECKED.discard(paths)
-    finally:
-        if "legacy" in locals():
-            legacy.close()
 
 
 def _rank_memories(memories, limit):
@@ -2169,7 +2050,6 @@ def run():
     with open_db(MEMORY_DB_PATH) as conn:
         empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
-    _ensure_legacy_memory_imported()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print("Empneon for The Sims 4 on http://{}:{}".format(HOST, PORT))
     print("Provider: {}".format(PRIMARY_PROVIDER))

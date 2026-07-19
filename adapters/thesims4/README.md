@@ -58,6 +58,11 @@ ailoaded
 aiping
 aichat Bella Goth | Why have you been avoiding me?
 aidirector
+empneon.status
+empneon.timeline
+empneon.beliefs
+empneon.goals
+empneon.usage
 ```
 
 With a lot active, the mod also submits one NPC-to-NPC interaction every 30 simulated
@@ -69,11 +74,14 @@ mapping is reported back to Core only after the native interaction completes.
 ## Configuration
 
 See the complete [installation, configuration, privacy, and hardware guide](docs/setup.md).
+Use the [in-game Core feature test plan](docs/in-game-core-feature-test-plan.md) to validate every
+implemented identity, memory, cognition, confirmation, portability, and persistence capability.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files
 
 - `backend/ai_sims_server.py`: local game bridge; `/chat` and `/autonomous` run through Core
+- `backend/empneon_state.py`: unified Core identity, memory, migration, and diagnostics integration
 - `ts4script/ai_sims_agent.py`: Sims 4 interaction, autonomy bridge, and diagnostic commands
 - `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning
 - `build_mod.py`: builds `Empneon_TheSims4.ts4script` and `Empneon_TheSims4.package`

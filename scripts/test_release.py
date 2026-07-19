@@ -40,8 +40,15 @@ def _fake_repo(tmp_path: Path) -> Path:
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.ts4script")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.package")
     _write(tmp_path / "adapters/thesims4/backend/ai_sims_server.py")
+    _write(tmp_path / "adapters/thesims4/backend/empneon_state.py")
     _write(tmp_path / "adapters/thesims4/config/config.json", "{}")
-    for name in ("install_mod.ps1", "run_backend.ps1", "README.md", "docs/setup.md"):
+    for name in (
+        "install_mod.ps1",
+        "run_backend.ps1",
+        "README.md",
+        "docs/setup.md",
+        "docs/in-game-core-feature-test-plan.md",
+    ):
         _write(tmp_path / "adapters/thesims4" / name)
 
     _write(tmp_path / "adapters/godot/dist/empneon_godot-0.3.0-py3-none-any.whl")
@@ -84,10 +91,12 @@ def test_package_sims_contains_only_runtime_files(tmp_path: Path) -> None:
         assert set(package.namelist()) == {
             "README.md",
             "backend/ai_sims_server.py",
+            "backend/empneon_state.py",
             "config/config.json",
             "dist/Empneon_TheSims4.package",
             "dist/Empneon_TheSims4.ts4script",
             "docs/setup.md",
+            "docs/in-game-core-feature-test-plan.md",
             "install_mod.ps1",
             "run_backend.ps1",
             "wheels/empneon-0.3.0-py3-none-any.whl",
