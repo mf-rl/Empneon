@@ -1,5 +1,8 @@
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -22,6 +25,27 @@ from empneon.db.connection import open_db
 from empneon.providers.llm import GenerationResult, ModelCapabilities
 
 from backend import ai_sims_server
+
+
+def test_backend_script_imports_from_outside_release_root(tmp_path) -> None:
+    script = Path(ai_sims_server.__file__).resolve()
+    core_src = Path(ai_sims_server.ROOT).parents[1] / "core" / "src"
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(core_src)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import runpy; runpy.run_path({str(script)!r}, run_name='release_import')",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_cognition_queue_prioritizes_waiting_player_work() -> None:
