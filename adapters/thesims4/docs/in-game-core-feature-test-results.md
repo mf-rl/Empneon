@@ -3,6 +3,21 @@
 Test evidence for `in-game-core-feature-test-plan.md`. Raw diagnostic responses remain local;
 this record contains only the evidence needed to determine pass/fail status.
 
+## Remediation awaiting in-game verification (2026-07-20)
+
+The feature branch now includes automated regressions and fixes for every actionable defect below.
+Statuses remain unchanged until a release build passes the corresponding in-game retest:
+
+- Test 3 generic fallback summaries now contain the concrete message and reply.
+- Test 4 probes the live aspiration tracker through attributes and callable APIs.
+- Test 5 rejects irrelevant date replies, supports explicit acceptance or rejection, maps accepted
+  invitations to `flirt`, and reads native friendship and romance tracks separately.
+- Test 6 rejects denial or contradiction when a supporting private memory is available.
+- Test 7 ranks the complete observable memory set, filters it by the exact Sim pair, and excludes
+  irrelevant historical summaries from the dialogue prompt.
+- `FinishingType.OBJECT_CHANGED` remains a reported game cancellation and is not retried
+  automatically, avoiding duplicate native socials.
+
 ## Test 2: Canonical Sim profile and OCEAN personality
 
 **Status:** PASS
