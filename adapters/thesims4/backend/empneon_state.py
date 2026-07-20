@@ -484,8 +484,9 @@ def relevant_memories(
         return []
     event_ids: list[str] = []
     try:
-        # ponytail: bounded oversampling; add filtered vector queries if private corpora grow large.
-        matches = VectorMemoryStore(conn).search(feature_hash(query), max(20, limit * 5))
+        # ponytail: linear candidate window suits bounded game worlds; index observation ownership
+        # in the vector query if a single Sim can accumulate an unbounded memory corpus.
+        matches = VectorMemoryStore(conn).search(feature_hash(query), len(observed))
         event_ids.extend(event_id for event_id, _distance in matches if event_id in observed)
     except (ImportError, OSError, RuntimeError, sqlite3.Error):
         pass

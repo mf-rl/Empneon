@@ -289,6 +289,62 @@ def test_vector_retrieval_never_leaks_an_unobserved_secret(tmp_path) -> None:
         assert state.relevant_memories(conn, "mortimer", "garden key") == []
 
 
+def test_relevant_memories_searches_every_observable_candidate(tmp_path, monkeypatch) -> None:
+    state = ai_sims_server.empneon_state
+    with open_db(tmp_path / "memory.db") as conn:
+        for index in range(40):
+            event = Event("Memory {}".format(index), ["karmine"])
+            state.record_observed_event(conn, event, {"karmine": event.description})
+
+        captured = {}
+
+        class FakeVectors:
+            def __init__(self, _conn):
+                pass
+
+            def search(self, _embedding, limit):
+                captured["limit"] = limit
+                return []
+
+        monkeypatch.setattr(state, "VectorMemoryStore", FakeVectors)
+        assert state.relevant_memories(conn, "karmine", "garden", 6)
+
+    assert captured["limit"] == 40
+
+
+def test_memories_for_pair_filters_complete_observable_ranking(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", str(tmp_path / "core.db"))
+    target = {
+        "id": "target",
+        "summary": "PRIVATE-GARDEN-731 is under the blue bench",
+        "participant_ids": ["karmine", "bernard"],
+        "created_at": 1,
+    }
+    distractors = [
+        {
+            "id": "other-{}".format(index),
+            "summary": "Other memory {}".format(index),
+            "participant_ids": ["karmine", "other-{}".format(index)],
+            "created_at": index + 2,
+        }
+        for index in range(25)
+    ]
+    captured = {}
+
+    def find(_conn, _agent_id, _query, limit):
+        captured["limit"] = limit
+        return (distractors + [target])[:limit]
+
+    monkeypatch.setattr(ai_sims_server.empneon_state, "relevant_memories", find)
+
+    found = ai_sims_server.memories_for_pair(
+        "karmine", "bernard", query="Where is the garden code item?"
+    )
+
+    assert found == [target]
+    assert captured["limit"] > len(distractors)
+
+
 def test_openrouter_and_baseline_defaults_are_configured() -> None:
     config = json.loads(
         (Path(ai_sims_server.ROOT) / "config" / "config.json").read_text(encoding="utf-8")

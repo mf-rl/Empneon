@@ -869,7 +869,7 @@ def memories_for_pair(sim_id_value, target_id_value, limit=20, query=""):
         selected = [
             item
             for item in empneon_state.relevant_memories(
-                conn, sim_id_value, str(query or ""), max(int(limit), 20)
+                conn, sim_id_value, str(query or ""), 10_000
             )
             if set(item.get("participant_ids") or ()) == pair
         ]
