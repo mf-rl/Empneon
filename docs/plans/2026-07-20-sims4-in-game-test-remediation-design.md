@@ -46,8 +46,8 @@ interaction.
 
 After the existing two grounded generation attempts, the fallback will answer a supported factual
 question from its best relevant memory. Other fallback branches will store a concrete summary made
-from the player's message and the generated reply. Romantic fallback accepts explicitly and selects
-`flirt`; it does not directly mutate Core relationship state.
+from the player's message and the generated reply. Romantic fallback declines explicitly and
+proposes no romance when the model cannot produce a reliable accept-or-decline response.
 
 ## Verification
 
