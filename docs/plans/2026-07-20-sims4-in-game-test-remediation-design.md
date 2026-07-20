@@ -63,3 +63,30 @@ Regression tests will cover each failing observation before implementation:
 Then run the Sims 4 backend, script-mod, adapter, release-contract, Core, lint, and type-check suites.
 Tests 4 through 7 remain marked partial/failed until the user repeats their in-game steps with a new
 release.
+
+## Test 5 follow-up: dialogue repetition and relationship lookup
+
+The clean-database retest exposed two additional defects. `ai.relationship <name>` passes the
+display name as a Core agent ID and therefore shows default values, while dialogue validation can
+miss romantic invitations phrased as `go out`, `girlfriend`, or `boyfriend`. The model can then
+copy the current message or recycle an earlier answer without being rejected.
+
+The script mod will resolve a supplied display name through its existing SimInfo lookup and send
+the numeric Sim ID to Core. Numeric IDs remain valid input. No database or API change is needed.
+
+The shared response validator will recognize the additional direct romantic phrases and reject:
+
+- a near-verbatim copy of a sufficiently long current player message;
+- reuse of an earlier generated reply for a different player message.
+
+Rejected output follows the existing behavior: one grounded retry, then the deterministic safe
+fallback. The model otherwise retains control of wording, tone, personality, emotion, intent, and
+relationship proposals. These checks are integrity boundaries, not dialogue templates: the model
+must respond rather than echo, address a romantic invitation directly, and keep factual claims
+grounded, but it remains free to accept or decline and to express that choice naturally.
+
+Native action selection remains unchanged. `OBJECT_CHANGED` and the absence of a compatible game
+social are safe game-state cancellations; retrying them automatically could duplicate or force a
+social. Regression tests will cover name-to-ID resolution, the additional romantic phrases,
+current-message echo rejection, prior-reply reuse rejection, and preservation of a distinct valid
+response.
