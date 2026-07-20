@@ -9,6 +9,7 @@ build/
 .pytest_cache/
 .pytest-*/
 *.sqlite3
+output/http-simulation-*.json
 *.db
 *.empneon-saved*
 *.empneon-session

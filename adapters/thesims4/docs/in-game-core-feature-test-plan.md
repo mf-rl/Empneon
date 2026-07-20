@@ -21,6 +21,30 @@ data first.
 The active database is `empneon_core_memory.sqlite3`. Stop the backend before copying, replacing,
 or deleting it. Never perform migration or save-slot tests against the only copy of player data.
 
+## Automated backend preflight
+
+With the release backend and configured LLM provider running, execute this from
+`adapters/thesims4` in a repository checkout:
+
+```powershell
+py -3.12 .\scripts\simulate_http_interactions.py `
+  --database 'C:\Users\mauri\Downloads\Empneon-TheSims4-0.3.0\empneon_core_memory.sqlite3'
+```
+
+The harness sends the same `/chat` and `/action-result` payloads as Empneon Social, then verifies
+Core state through the diagnostic endpoints. It adds uniquely named `empneon-test-*` records to
+the active database and writes an untracked JSON report under `output/`; it does not delete or
+rewrite existing game records.
+
+Passing this preflight covers the backend portions of profiles, emotions, goals, confirmations,
+private beliefs, vector retrieval, CLOD telemetry, timeline/replay, and identity round trips. It
+does not replace these in-game checks:
+
+- Accuracy of state extracted from live Sim objects.
+- Native social selection, animation, queue completion, cancellation, and consequence capture.
+- Priority behavior with concurrent live Sims.
+- Persistence across actual game save/reload and save-slot changes.
+
 ## 1. Unified database and legacy migration
 
 - Prerequisite: a disposable copy of either `empneon_core.sqlite3` or

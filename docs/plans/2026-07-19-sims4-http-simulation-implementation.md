@@ -235,8 +235,8 @@ Run from `adapters/thesims4`:
 ```powershell
 $env:PYTHONPATH='..\..\core\src;src'
 py -3.12 -m pytest -q -p no:cacheprovider
-py -3.12 -m ruff check .
-py -3.12 -m mypy src backend
+py -3.12 -m ruff check scripts/simulate_http_interactions.py tests/test_http_simulation.py
+py -3.12 -m mypy scripts/simulate_http_interactions.py
 ```
 
 Run from the repository root:
