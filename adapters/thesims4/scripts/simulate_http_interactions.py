@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-from datetime import UTC, datetime
 import json
-from pathlib import Path
 import sqlite3
 import time
-from typing import Any, Callable, cast
 import urllib.parse
 import urllib.request
 import uuid
-
+from collections.abc import Callable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, cast
 
 AVAILABLE_ACTIONS = ["friendly_chat", "apologize", "flirt"]
 COUNT_TABLES = (

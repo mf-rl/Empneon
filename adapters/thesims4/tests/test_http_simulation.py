@@ -1,12 +1,11 @@
 import contextlib
 import io
 import json
-from pathlib import Path
 import sqlite3
 import sys
 import urllib.error
 import urllib.parse
-
+from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
