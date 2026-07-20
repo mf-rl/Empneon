@@ -568,6 +568,15 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
         {"message": "Would you like to go on a date?"}, ignored, context
     )
 
+    for message in (
+        "Would you go out with me sometime?",
+        "Let's be girlfriends.",
+        "Would you be my boyfriend?",
+    ):
+        assert ai_sims_server.response_grounding_issue(
+            {"message": message}, ignored, context
+        ) == "directly accept or decline the romantic invitation"
+
     accepted = ai_sims_server.normalize_response(
         {
             "dialogue": "Yes, I would like to go on a date.",
@@ -589,6 +598,52 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
     assert ai_sims_server.response_grounding_issue(
         {"message": "Would you like to go on a date?"}, declined, context
     ) == ""
+
+    echoed = ai_sims_server.normalize_response(
+        {
+            "dialogue": (
+                "It's nice to meet you too, Bernard. Meeting you today has made my day "
+                "very happy."
+            ),
+            "intent": "agree",
+        }
+    )
+    copy_context = dict(
+        context,
+        speaker={"name": "Billie"},
+        listener={"name": "Bernard"},
+    )
+    assert "copy" in ai_sims_server.response_grounding_issue(
+        {
+            "message": (
+                "It's nice to meet you too, Billie. Meeting you today has made my day "
+                "very happy."
+            )
+        },
+        echoed,
+        copy_context,
+    )
+
+    context["conversation"] = [
+        {
+            "speaker_id": "billie",
+            "message": "It is nice to meet you.",
+            "dialogue": "You have a very kind presence.",
+        }
+    ]
+    copy_context["conversation"] = context["conversation"]
+    reused = ai_sims_server.normalize_response(
+        {"dialogue": "You have a very kind presence.", "intent": "recall"}
+    )
+    assert "previous reply" in ai_sims_server.response_grounding_issue(
+        {"message": "Would you go out with me sometime?"}, reused, copy_context
+    )
+
+    fallback = ai_sims_server.reasoning_fallback_response(
+        {"message": "Would you go out with me sometime?"}, context
+    )
+    assert fallback["intent"] == "set_boundary"
+    assert fallback["relationship"]["romance_delta"] == 0
 
 
 def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -> None:

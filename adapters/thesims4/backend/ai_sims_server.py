@@ -1353,6 +1353,33 @@ def response_has_role_confusion(response, context):
     return bool({word for word in speaker - listener if len(word) > 1} & words)
 
 
+def _dialogue_words(value, context):
+    names = set()
+    for role in ("speaker", "listener"):
+        names.update(
+            re.findall(
+                r"[a-z0-9']+",
+                str(context.get(role, {}).get("name") or "").casefold(),
+            )
+        )
+    return [
+        word
+        for word in re.findall(r"[a-z0-9']+", str(value or "").casefold())
+        if word not in names
+    ]
+
+
+def _is_romantic_request(message):
+    value = str(message or "").casefold()
+    return bool(
+        re.search(
+            r"\b(date|love|romance|romantic|kiss|girlfriends?|boyfriends?)\b",
+            value,
+        )
+        or re.search(r"\bgo(?:ing)? out\b|\bbe together\b", value)
+    )
+
+
 def response_grounding_issue(payload, response, context):
     message = str(payload.get("message") or "").casefold()
     dialogue = str(response.get("dialogue") or "").casefold()
@@ -1375,6 +1402,17 @@ def response_grounding_issue(payload, response, context):
         missing = [name for name in critical if name not in dialogue]
         if missing:
             return "mention critical needs: {}".format(", ".join(missing))
+    message_words = _dialogue_words(message, context)
+    dialogue_words = _dialogue_words(dialogue, context)
+    if len(message_words) >= 6 and message_words == dialogue_words:
+        return "respond naturally; do not copy the player's message"
+    for turn in context.get("conversation") or []:
+        if (
+            len(dialogue_words) >= 4
+            and dialogue_words == _dialogue_words(turn.get("dialogue"), context)
+            and message_words != _dialogue_words(turn.get("message"), context)
+        ):
+            return "do not reuse a previous reply for a different message"
     asks_recalled_fact = "?" in message and (
         message.startswith(("where ", "when ", "who ", "what did "))
         or "remember" in message
@@ -1395,7 +1433,7 @@ def response_grounding_issue(payload, response, context):
         phrase in dialogue for phrase in uncertainty
     ):
         return "state uncertainty because no supporting memory exists"
-    if re.search(r"\b(date|love|romance|kiss)\b", message):
+    if _is_romantic_request(message):
         romance = response.get("relationship") or {}
         romance_delta = romance.get("romance_delta", 0) if isinstance(romance, dict) else 0
         declines = r"\bno\b|not interested|rather stay friends|do not want|don't want"
@@ -1503,7 +1541,7 @@ def reasoning_fallback_response(payload, context):
         intent = "accept_apology"
         animation = "apologize"
         trust_delta = 1
-    elif re.search(r"\b(date|love|romance|kiss)\b", message):
+    elif _is_romantic_request(message):
         dialogue = "No, I would rather stay friends."
         emotion = "awkward"
         intent = "set_boundary"
