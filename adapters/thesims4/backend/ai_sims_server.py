@@ -795,11 +795,15 @@ def update_emotion_from_response(sim_id_value, label):
     return save_emotion(sim_id_value, emotion)
 
 
-def recent_memories(speaker_id, listener_id, limit=None, topic="", emotion="", location=""):
+def recent_memories(
+    speaker_id, listener_id, limit=None, topic="", emotion="", location="", query=""
+):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
     return [
         item
-        for item in memories_for_pair(speaker_id, listener_id, limit=10_000)
+        for item in memories_for_pair(
+            speaker_id, listener_id, limit=10_000, query=query or topic
+        )
         if (not topic or topic.casefold() in str(item.get("summary") or "").casefold())
         and (not emotion or emotion.casefold() in str(item.get("summary") or "").casefold())
         and (not location or location.casefold() in str(item.get("location") or "").casefold())
@@ -859,16 +863,18 @@ def maybe_summarize_memories(sim_id_value, target_id_value):
     return memory_summary(sim_id_value, target_id_value)
 
 
-def memories_for_pair(sim_id_value, target_id_value, limit=20):
+def memories_for_pair(sim_id_value, target_id_value, limit=20, query=""):
     pair = {str(sim_id_value), str(target_id_value)}
     with open_db(CORE_DB_PATH) as conn:
         selected = [
             item
             for item in empneon_state.relevant_memories(
-                conn, sim_id_value, "", max(int(limit), 20)
+                conn, sim_id_value, str(query or ""), max(int(limit), 20)
             )
             if set(item.get("participant_ids") or ()) == pair
         ]
+    if query:
+        return selected[: int(limit)]
     return _rank_memories(selected, int(limit))
 
 
@@ -959,6 +965,15 @@ def extract_json(text):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
 
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            parsed, _end = decoder.raw_decode(text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end < start:
@@ -980,12 +995,9 @@ def extract_json(text):
 
 
 def fallback_response(text):
-    text = str(text or "").strip()
-    if text.startswith("```"):
-        text = "\n".join(line for line in text.splitlines() if not line.startswith("```")).strip()
     return normalize_response(
         {
-            "dialogue": text[:500] or "...",
+            "dialogue": "I couldn't form a reliable response. Please try again.",
             "emotion": "neutral",
             "intent": "respond",
             "relationship": {},
@@ -1299,6 +1311,10 @@ Grounding rules:
   memory.summary.
 - When asked about a supported plan or agreement, answer with the exact activity, date, and time
   available in the evidence.
+- When asked how the Speaker feels or what needs attention, explicitly mention every critical need
+  (25 or below) and never claim to feel fine while one is critical.
+- memory.summary must describe the concrete exchange; never use placeholders such as "None yet"
+  or "One concrete event memory."
 
 Player says:
 {message}
@@ -1336,6 +1352,69 @@ def response_has_role_confusion(response, context):
     listener = set(re.findall(r"\w+", str(context["listener"].get("name") or "").casefold()))
     return bool({word for word in speaker - listener if len(word) > 1} & words)
 
+
+def response_grounding_issue(payload, response, context):
+    message = str(payload.get("message") or "").casefold()
+    dialogue = str(response.get("dialogue") or "").casefold()
+    needs = context.get("game_state", {}).get("needs") or {}
+    critical = [
+        str(name).casefold()
+        for name, value in needs.items()
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and float(value) <= 25
+    ]
+    if critical and any(word in message for word in ("feel", "feeling", "need", "attention")):
+        missing = [name for name in critical if name not in dialogue]
+        if missing:
+            return "mention critical needs: {}".format(", ".join(missing))
+    asks_recalled_fact = "?" in message and (
+        message.startswith(("where ", "when ", "who ", "what did "))
+        or "remember" in message
+        or "did i say" in message
+    )
+    has_evidence = _memory_supports_question(message, context)
+    uncertainty = (
+        "don't know",
+        "do not know",
+        "not sure",
+        "don't remember",
+        "do not remember",
+        "what are you talking",
+    )
+    if asks_recalled_fact and not has_evidence and not any(
+        phrase in dialogue for phrase in uncertainty
+    ):
+        return "state uncertainty because no supporting memory exists"
+    return ""
+
+
+def _memory_supports_question(message, context):
+    ignored = {
+        "where",
+        "when",
+        "who",
+        "what",
+        "which",
+        "remember",
+        "said",
+        "say",
+        "item",
+        "hidden",
+        "there",
+        "about",
+    }
+    terms = {
+        term
+        for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(message).casefold())
+        if len(term) >= 4 and term not in ignored
+    }
+    evidence = " ".join(
+        [str(context.get("summary") or "")]
+        + [str(item.get("summary") or "") for item in context.get("memories") or []]
+    ).casefold()
+    return bool(terms and any(term in evidence for term in terms))
+
 def save_conversation(conversation_id, speaker_id, listener_id, message, response):
     with open_db(CORE_DB_PATH) as conn:
         empneon_state.record_conversation(
@@ -1353,7 +1432,33 @@ def recent_conversation(speaker_id, listener_id, limit=None):
 
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
-    if any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
+    needs = context.get("game_state", {}).get("needs") or {}
+    critical = [
+        str(name).casefold()
+        for name, value in needs.items()
+        if isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and float(value) <= 25
+    ]
+    if critical and any(word in message for word in ("feel", "feeling", "need", "attention")):
+        dialogue = "I'm uncomfortable because my {} need is critical.".format(
+            " and ".join(critical)
+        )
+        emotion = "uncomfortable"
+        intent = "report_needs"
+        animation = "awkward_chat"
+        trust_delta = 0
+    elif "?" in message and not _memory_supports_question(message, context) and (
+        message.startswith(("where ", "when ", "who ", "what did "))
+        or "remember" in message
+        or "did i say" in message
+    ):
+        dialogue = "I don't know or remember that."
+        emotion = "uncertain"
+        intent = "admit_uncertainty"
+        animation = "awkward_chat"
+        trust_delta = 0
+    elif any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
         dialogue = "I wasn't trying to avoid you. I just needed a little space to sort through my feelings."
         emotion = "tense"
         intent = "reassure"
@@ -1412,13 +1517,20 @@ class HermesRuntime:
                 response = normalize_response(extract_json(content))
             except (ValueError, json.JSONDecodeError):
                 response = fallback_response(content)
-            if not response_has_role_confusion(response, context):
+            issue = response_grounding_issue(payload, response, context)
+            if not response_has_role_confusion(response, context) and not issue:
                 return response
-            PROVIDER_LOG.warning("model confused speaker and listener; retrying=%s", attempt == 0)
+            PROVIDER_LOG.warning(
+                "model response failed grounding (%s); retrying=%s",
+                issue or "speaker/listener confusion",
+                attempt == 0,
+            )
             prompt += (
                 "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
                 "If using a name, use the Listener's name, '{}'."
             ).format(context["speaker"]["name"], context["listener"]["name"])
+            if issue:
+                prompt += "\nCorrection: {}.".format(issue)
         return reasoning_fallback_response(payload, context)
 
     def story_beat(self, prompt):
@@ -1465,6 +1577,7 @@ def chat(payload):
             topic=payload.get("topic") or "",
             emotion=payload.get("emotion") or "",
             location=payload.get("location") or "",
+            query=payload.get("message") or "",
         )
         summary = memory_summary(speaker_id, listener_id)
         context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
@@ -1666,11 +1779,7 @@ def persist_core_event(conn, event):
             "summary": message or event.type,
         }
     )
-    perceptions = {
-        agent_id: message or "Observed {}".format(event.type)
-        for agent_id in event.actor_ids
-    }
-    empneon_state.record_observed_event(
+    empneon_state.record_pending_event(
         conn,
         Event(
             id=event.id,
@@ -1679,8 +1788,6 @@ def persist_core_event(conn, event):
             location=event.location,
             happened_at=event.happened_at,
         ),
-        perceptions,
-        factual_statement=message or None,
     )
 
 

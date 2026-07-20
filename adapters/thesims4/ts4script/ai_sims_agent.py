@@ -252,8 +252,13 @@ def sim_mood(sim_info):
         mood = sim_info.get_mood()
         display_name = getattr(mood, "display_name", None)
         if callable(display_name):
-            return str(display_name(sim_info))
-        return str(display_name or mood)
+            name = str(display_name(sim_info))
+        else:
+            name = str(display_name or short_trait_name(mood))
+        name = name.strip().casefold()
+        if name.startswith("mood_"):
+            name = name[5:]
+        return name or "unknown"
     except Exception:
         return "unknown"
 
@@ -294,7 +299,26 @@ def sim_needs(sim_info):
             tracker = getattr(sim_info.get_sim_instance(), "commodity_tracker", None)
         except Exception:
             pass
-    return _stat_values(tracker)
+    needs = {}
+    allowed = ("bladder", "energy", "fun", "hunger", "hygiene", "social")
+    for raw_name, value in _stat_values(tracker).items():
+        name = raw_name.strip().casefold()
+        if name.startswith("motive_"):
+            name = name[7:]
+        if name in allowed:
+            needs[name] = value
+    return needs
+
+
+def sim_age(sim_info):
+    value = getattr(sim_info, "age", None)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            return int(getattr(value, "value", None))
+        except (TypeError, ValueError):
+            return None
 
 
 def sim_moodlets(sim_info):
@@ -366,6 +390,7 @@ def sim_info_payload(sim_info):
     return {
         "id": str(getattr(sim_info, "sim_id", sim_full_name(sim_info))),
         "name": sim_full_name(sim_info),
+        "age": sim_age(sim_info),
         "traits": sim_traits(sim_info),
         "current_mood": sim_mood(sim_info),
         "needs": sim_needs(sim_info),
@@ -610,8 +635,15 @@ def execute_sims_action(payload, data, interaction):
                 failures.append("{}={!r}".format(candidate_name, exc))
 
         if mapped_aop is None:
+            details = "; ".join(failures[:8])
+            if not details:
+                details = (
+                    "no compatible social super-interaction offers {}"
+                ).format(action)
             raise RuntimeError(
-                "native social failed game selection: {}".format("; ".join(failures[:8]))
+                "native social failed game selection for {}: {}".format(
+                    action, details
+                )
             )
         if mapped_interaction is None:
             test_result = mapped_aop.test(context)

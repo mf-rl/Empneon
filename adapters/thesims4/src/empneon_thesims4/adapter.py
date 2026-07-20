@@ -186,7 +186,9 @@ class Sims4Adapter:
         self, decision: Decision, result: ActionResult | None = None
     ) -> dict[str, object]:
         response: dict[str, object] = {
-            "dialogue": "I hear you.",
+            "dialogue": (
+                "My language model is unavailable, so I can't answer reliably right now."
+            ),
             "emotion": "neutral",
             "intent": decision.intent,
             "relationship": {
@@ -194,7 +196,7 @@ class Sims4Adapter:
                 "romance_delta": 0,
                 "trust_delta": 0,
             },
-            "memory": {"importance": 0.2, "summary": "The conversation was acknowledged."},
+            "memory": {"importance": 0.0, "summary": ""},
             "animation": "friendly_chat",
         }
         relationship = response["relationship"]

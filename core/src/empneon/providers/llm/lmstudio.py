@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 import urllib.request
 from dataclasses import dataclass
 
@@ -40,6 +41,7 @@ class LMStudioProvider:
         prompt = "\n\n".join(
             f"{message.role.upper()}:\n{message.content}" for message in request.messages
         )
+        started = time.perf_counter()
         data = self._request(
             "/chat",
             {
@@ -53,11 +55,23 @@ class LMStudioProvider:
         output = data.get("output", [])
         if not isinstance(output, list):
             raise ValueError("LM Studio output must be a list")
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        prompt_tokens = usage.get("input_tokens", usage.get("prompt_tokens"))
+        completion_tokens = usage.get(
+            "output_tokens", usage.get("completion_tokens")
+        )
+        latency_ms = max(0, round((time.perf_counter() - started) * 1000))
         for item in output:
             if not isinstance(item, dict):
                 continue
             if item.get("type") == "message" and str(item.get("content") or "").strip():
-                return GenerationResult(str(item["content"]).strip())
+                return GenerationResult(
+                    str(item["content"]).strip(),
+                    int(prompt_tokens) if prompt_tokens is not None else None,
+                    int(completion_tokens) if completion_tokens is not None else None,
+                    latency_ms,
+                )
         raise ValueError("LM Studio returned empty content")
 
     def _model_id(self) -> str:

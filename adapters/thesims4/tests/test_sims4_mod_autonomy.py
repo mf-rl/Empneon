@@ -267,8 +267,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     ):
         assert hasattr(agent, probe)
     hunger = SimpleNamespace(
-        stat_type=type("Hunger", (), {}),
+        stat_type=type("motive_Hunger", (), {}),
         get_value=lambda: 18,
+    )
+    internal_stat = SimpleNamespace(
+        stat_type=type("commodity_burnout_mentaltracker", (), {}),
+        get_value=lambda: 5,
     )
     cooking = SimpleNamespace(
         stat_type=type("Cooking", (), {}),
@@ -277,8 +281,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     rich_info = SimpleNamespace(
         sim_id="bella",
         full_name="Bella",
+        age=42,
+        get_mood=lambda: type("mood_uncomfortable", (), {}),
         trait_tracker=None,
-        commodity_tracker=SimpleNamespace(get_all_commodities=lambda: [hunger]),
+        commodity_tracker=SimpleNamespace(
+            get_all_commodities=lambda: [hunger, internal_stat]
+        ),
         buff_component=SimpleNamespace(
             get_all_buffs=lambda: [SimpleNamespace(buff_type=type("Uncomfortable", (), {}))]
         ),
@@ -292,7 +300,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         household=SimpleNamespace(id=42, name="Goth Household"),
     )
     rich_payload = agent.sim_info_payload(rich_info)
-    assert rich_payload["needs"] == {"Hunger": 18}
+    assert rich_payload["age"] == 42
+    assert rich_payload["current_mood"] == "uncomfortable"
+    assert rich_payload["needs"] == {"hunger": 18}
     assert rich_payload["moodlets"] == ["Uncomfortable"]
     assert rich_payload["aspiration"] == "MasterChef"
     assert rich_payload["career"] == "Painter"
@@ -664,3 +674,20 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert mapped_aops[-1].affordance is mixer
     assert executed[-1].affordance is mixer
     assert relationship_bits == {("mortimer", has_met)}
+
+    incompatible_parent = type("UnrelatedSocialSuperInteraction", (), {})
+    incompatible_parent.all_affordances_gen = classmethod(
+        lambda _cls, **_kwargs: iter(())
+    )
+    target.potential_interactions = lambda _context: [
+        SimpleNamespace(affordance=incompatible_parent)
+    ]
+    agent.execute_sims_action(
+        player_payload,
+        {"decision_id": "decision-5", "animation": "friendly_chat"},
+        None,
+    )
+    assert payloads[-1][0] == "/action-result"
+    assert payloads[-1][1]["status"] == "failed"
+    assert "friendly_chat" in payloads[-1][1]["reason"]
+    assert "compatible social super-interaction" in payloads[-1][1]["reason"]

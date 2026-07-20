@@ -214,7 +214,10 @@ def test_configured_router_exposes_generation_result_without_breaking_generate(
 
 def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning() -> None:
     models = {"models": [{"key": "gemma", "loaded_instances": [{"id": "gemma-loaded"}]}]}
-    chat = {"output": [{"type": "message", "content": "Hello Robin"}]}
+    chat = {
+        "output": [{"type": "message", "content": "Hello Robin"}],
+        "usage": {"input_tokens": 17, "output_tokens": 4},
+    }
 
     with patch(
         "urllib.request.urlopen", side_effect=[Response(models), Response(chat)]
@@ -235,3 +238,6 @@ def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning()
         "reasoning": "off",
     }
     assert result.content == "Hello Robin"
+    assert result.prompt_tokens == 17
+    assert result.completion_tokens == 4
+    assert result.latency_ms >= 0

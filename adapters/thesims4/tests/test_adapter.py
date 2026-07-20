@@ -144,3 +144,13 @@ def test_retained_relationship_changes_later_autonomous_choice() -> None:
 
     assert strained.action_for(decision) == "apologize"
     assert repaired.action_for(decision) == "friendly_chat"
+
+
+def test_clod1_dialogue_fallback_reports_model_unavailability_without_memory() -> None:
+    response = Sims4Adapter({"available_actions": ["friendly_chat"]}).response_for(
+        Decision("sim", "acknowledge")
+    )
+
+    assert "unavailable" in response["dialogue"].casefold()
+    assert "reliably" in response["dialogue"].casefold()
+    assert response["memory"] == {"importance": 0.0, "summary": ""}

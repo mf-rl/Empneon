@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 
 from empneon.core.contracts import CognitiveRequest, WorldEvent
-from empneon.core.identity.emotions import EmotionalStateStore
-from empneon.core.identity.goals import GoalStore
+from empneon.core.identity.emotions import EmotionalState, EmotionalStateStore
+from empneon.core.identity.goals import Goal, GoalStore
 from empneon.core.identity.models import Agent
 from empneon.core.identity.personality import PersonalityStore
 from empneon.core.identity.relationships import RelationshipStore
@@ -125,7 +125,40 @@ def test_prepare_database_adopts_legacy_core_without_modifying_it(tmp_path) -> N
     assert status.completed is True
 
 
-def test_sync_sim_populates_canonical_identity_stores(tmp_path) -> None:
+def test_prepare_database_hides_legacy_unconfirmed_observations(tmp_path) -> None:
+    database = tmp_path / "empneon_core_memory.sqlite3"
+    state = ai_sims_server.empneon_state
+    with open_db(database) as conn:
+        state.sync_sim(conn, {"id": "bella", "name": "Bella"})
+        state.record_observed_event(
+            conn,
+            Event(
+                json.dumps(
+                    {
+                        "kind": "observed_interaction",
+                        "message": "Where is PRIVATE-GARDEN-731?",
+                    }
+                ),
+                ["bella"],
+            ),
+            {"bella": "Where is PRIVATE-GARDEN-731?"},
+            factual_statement="Where is PRIVATE-GARDEN-731?",
+        )
+
+    status = state.prepare_database(
+        str(database),
+        str(tmp_path / "legacy-core.db"),
+        str(tmp_path / "legacy-adapter.db"),
+    )
+
+    with open_db(database) as conn:
+        diagnostics = state.sim_diagnostics(conn, "bella")
+    assert status.completed is True
+    assert diagnostics["beliefs"] == []
+    assert diagnostics["accessible_memories"] == []
+
+
+def test_sync_sim_populates_canonical_identity_stores(tmp_path, monkeypatch) -> None:
     state = ai_sims_server.empneon_state
     assert hasattr(state, "sync_sim")
 
@@ -135,10 +168,11 @@ def test_sync_sim_populates_canonical_identity_stores(tmp_path) -> None:
             {
                 "id": "bella",
                 "name": "Bella",
+                "age": 42,
                 "traits": ["Outgoing", "Good"],
                 "current_mood": "happy",
                 "aspiration": "Successful Lineage",
-                "needs": {"hunger": 20},
+                "needs": {"hunger": 20, "commodity_burnout_mentaltracker": 5},
                 "career": "Secret Agent",
                 "voice": {
                     "provider": "piper",
@@ -149,7 +183,9 @@ def test_sync_sim_populates_canonical_identity_stores(tmp_path) -> None:
             },
         )
 
-        assert AgentStore(conn).get("bella").occupation == "Secret Agent"
+        agent = AgentStore(conn).get("bella")
+        assert agent.occupation == "Secret Agent"
+        assert agent.age == 42
         assert PersonalityStore(conn).get("bella").extraversion > 0.5
         assert EmotionalStateStore(conn).get("bella", "happiness").value > 0
         assert {
@@ -157,6 +193,39 @@ def test_sync_sim_populates_canonical_identity_stores(tmp_path) -> None:
         } == {"Aspiration: Successful Lineage", "Restore hunger"}
         assert VoiceProfileStore(conn).get("bella").voice_id == "bella"
         assert profile["id"] == "bella"
+
+        goals = GoalStore(conn)
+        hunger = next(
+            goal for goal in goals.get_all("bella", "active")
+            if goal.description == "Restore hunger"
+        )
+        legacy = Goal("bella", "Restore ev:internal_counter", id="legacy-internal")
+        goals.set(legacy)
+        EmotionalStateStore(conn).set(
+            EmotionalState(
+                "bella", "<class 'sims4.tuning.instances.mood_uncomfortable'>", 0.75
+            )
+        )
+        monkeypatch.setattr(state.time, "time", lambda: hunger.updated_at + 1)
+        state.sync_sim(
+            conn,
+            {
+                "id": "bella",
+                "name": "Bella",
+                "age": 42,
+                "needs": {"hunger": 80},
+            },
+        )
+        completed = goals.get(hunger.id)
+        assert completed.status == "completed"
+        assert completed.updated_at > hunger.updated_at
+        assert goals.get("legacy-internal").status == "completed"
+        assert (
+            EmotionalStateStore(conn).get(
+                "bella", "<class 'sims4.tuning.instances.mood_uncomfortable'>"
+            )
+            is None
+        )
 
 
 def test_legacy_adapter_import_is_idempotent_and_read_only(tmp_path) -> None:
@@ -329,6 +398,86 @@ def test_rich_game_state_is_grounded_in_dialogue_prompt() -> None:
     ):
         assert expected in prompt
 
+
+def test_memories_for_pair_uses_current_query_and_preserves_relevance(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", str(tmp_path / "core.db"))
+    captured = {}
+    relevant = [
+        {
+            "id": "most-relevant",
+            "summary": "PRIVATE-GARDEN-731 is under the blue bench.",
+            "participant_ids": ["bella", "mortimer"],
+            "created_at": 1,
+        },
+        {
+            "id": "newer",
+            "summary": "Unrelated recent conversation.",
+            "participant_ids": ["bella", "mortimer"],
+            "created_at": 2,
+        },
+    ]
+
+    def find(_conn, agent_id, query, limit):
+        captured.update(agent_id=agent_id, query=query, limit=limit)
+        return relevant
+
+    monkeypatch.setattr(ai_sims_server.empneon_state, "relevant_memories", find)
+
+    memories = ai_sims_server.memories_for_pair(
+        "bella", "mortimer", limit=2, query="Where was the garden item hidden?"
+    )
+
+    assert captured["query"] == "Where was the garden item hidden?"
+    assert [item["id"] for item in memories] == ["most-relevant", "newer"]
+
+
+def test_dialogue_fallback_mentions_critical_need_and_refuses_unsupported_fact(
+    monkeypatch,
+) -> None:
+    responses = iter(
+        [
+            json.dumps({"dialogue": "I feel fine."}),
+            json.dumps({"dialogue": "Everything is okay."}),
+            json.dumps({"dialogue": "It is behind the main house."}),
+            json.dumps({"dialogue": "Try the back garden."}),
+        ]
+    )
+    monkeypatch.setattr(ai_sims_server, "llm_chat", lambda *_args, **_kwargs: next(responses))
+    payload = {
+        "speaker": {"needs": {"bladder": 10}, "moodlets": ["ReallyHasToPee"]},
+        "listener": {},
+        "message": "How are you feeling and what needs attention?",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Bella"},
+        {"name": "Mortimer"},
+        {},
+        {"current_mood": "uncomfortable"},
+        [],
+        {},
+    )
+    context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
+
+    need_response = ai_sims_server.HERMES.dialogue(payload, context)
+    assert "bladder" in need_response["dialogue"].casefold()
+    assert "critical" in need_response["dialogue"].casefold()
+
+    payload["speaker"] = {}
+    payload["message"] = "Where is PRIVATE-GARDEN-731?"
+    context["game_state"]["needs"] = {}
+    context["game_state"]["moodlets"] = []
+    context["message"] = payload["message"]
+    context["memories"] = [{"summary": "We talked about pizza yesterday."}]
+    context["summary"] = "We talked about pizza yesterday."
+    unknown_response = ai_sims_server.HERMES.dialogue(payload, context)
+    assert any(
+        phrase in unknown_response["dialogue"].casefold()
+        for phrase in ("don't know", "do not know", "don't remember", "do not remember")
+    )
+
 def test_llm_chat_delegates_provider_selection_to_core(monkeypatch) -> None:
     captured = {}
 
@@ -358,6 +507,18 @@ def test_llm_chat_delegates_provider_selection_to_core(monkeypatch) -> None:
     assert captured["temperature"] == 0.4
 
 
+def test_provider_output_parsing_uses_first_json_and_never_exposes_malformed_data() -> None:
+    first = {"dialogue": "Pizza sounds good.", "emotion": "happy"}
+    duplicated = f"```json\n{json.dumps(first)}\n```\n```json\n{json.dumps(first)}\n```"
+
+    assert ai_sims_server.extract_json(duplicated) == first
+    fallback = ai_sims_server.fallback_response(
+        '{"dialogue": "partial"}\n```json\n{"dialogue": "duplicate"'
+    )
+    assert "{\"dialogue\"" not in fallback["dialogue"]
+    assert fallback["memory"] == {"importance": 0.0, "summary": ""}
+
+
 def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     tmp_path, monkeypatch
 ) -> None:
@@ -371,7 +532,7 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
                 "romance_delta": 0,
                 "trust_delta": 0,
             },
-            "memory": {"importance": 0.2, "summary": "A greeting."},
+            "memory": {"importance": 0.2, "summary": "One concrete event memory."},
             "animation": "friendly_chat",
         }
     )
@@ -409,7 +570,7 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
         {
             "speaker": {"id": "bella", "name": "Bella"},
             "listener": {"id": "mortimer", "name": "Mortimer"},
-            "message": "Hello",
+            "message": "PRIVATE-GARDEN-731 is under the blue bench.",
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
         }
@@ -417,13 +578,55 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
 
     with open_db(core_db) as conn:
         telemetry = UsageStore(conn).telemetry("bella")
+        pending = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
     assert result["selected_clod"] == 3
+    assert pending["beliefs"] == []
+    assert pending["accessible_memories"] == []
     assert telemetry["by_clod"] == {"3": 1}
     assert telemetry["actual"] == {
         "prompt_tokens": 20,
         "completion_tokens": 8,
         "latency_ms": 30,
     }
+
+    ai_sims_server.confirm_action(
+        {
+            "decision_id": result["decision_id"],
+            "action": result["animation"],
+            "status": "succeeded",
+        }
+    )
+    with open_db(core_db) as conn:
+        confirmed = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
+    assert [item["statement"] for item in confirmed["beliefs"]] == [
+        "PRIVATE-GARDEN-731 is under the blue bench."
+    ]
+    assert len(confirmed["accessible_memories"]) == 1
+    description = json.loads(confirmed["accessible_memories"][0]["description"])
+    assert description["summary"] != "One concrete event memory."
+    assert "PRIVATE-GARDEN-731" in description["summary"]
+
+    question = ai_sims_server.chat(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "message": "Where is PRIVATE-GARDEN-731?",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    ai_sims_server.confirm_action(
+        {
+            "decision_id": question["decision_id"],
+            "action": question["animation"],
+            "status": "succeeded",
+        }
+    )
+    with open_db(core_db) as conn:
+        after_question = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
+    assert [item["statement"] for item in after_question["beliefs"]] == [
+        "PRIVATE-GARDEN-731 is under the blue bench."
+    ]
 
 
 def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -> None:
@@ -491,8 +694,11 @@ def test_failed_action_records_replay_but_applies_no_consequences(
     with open_db(core_db) as conn:
         replay = replay_action_record(conn, proposal["decision_id"])
         relationship = RelationshipStore(conn).get("bella", "mortimer")
+        diagnostics = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
     assert replay["result"]["status"] == "failed"
     assert relationship is None
+    assert diagnostics["beliefs"] == []
+    assert diagnostics["accessible_memories"] == []
 
 
 def test_successful_confirmation_applies_validated_identity_consequences(

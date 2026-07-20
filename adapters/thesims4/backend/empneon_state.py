@@ -65,8 +65,8 @@ def prepare_database(target: str, legacy_core: str, legacy_adapter: str) -> Migr
                 source.backup(output)
             backup = _backup(core_source)
             backups.append(str(backup))
-        with open_db(destination):
-            pass
+        with open_db(destination) as conn:
+            _hide_legacy_unconfirmed_observations(conn)
         return MigrationStatus(str(destination), sources, tuple(backups))
     except Exception as exc:
         return MigrationStatus(
@@ -76,6 +76,22 @@ def prepare_database(target: str, legacy_core: str, legacy_adapter: str) -> Migr
 
 def open_memory(target: str) -> sqlite3.Connection:
     return open_db(target)
+
+
+def _hide_legacy_unconfirmed_observations(conn: sqlite3.Connection) -> None:
+    pending = (
+        "SELECT o.id FROM event_observations o "
+        "JOIN events e ON e.id=o.event_id "
+        "WHERE e.description LIKE '%\"kind\": \"observed_interaction\"%'"
+    )
+    conn.execute(
+        "DELETE FROM beliefs WHERE id IN "
+        "(SELECT belief_id FROM belief_provenance WHERE source_observation_id IN ("
+        + pending
+        + "))"
+    )
+    conn.execute("DELETE FROM event_observations WHERE id IN (" + pending + ")")
+    conn.commit()
 
 
 def identity_stores(conn: sqlite3.Connection) -> IdentityStores:
@@ -361,6 +377,16 @@ def record_observed_event(
     return event
 
 
+def record_pending_event(conn: sqlite3.Connection, event: Event) -> Event:
+    for agent_id in event.participant_ids:
+        _ensure_agent(conn, str(agent_id))
+    conn.commit()
+    events = EpisodicMemoryStore(conn)
+    if events.get(event.id) is None:
+        events.create(event)
+    return event
+
+
 def add_experience(
     conn: sqlite3.Connection,
     agent_id: str,
@@ -500,12 +526,21 @@ def record_confirmed_experience(
     )
     source_event = EpisodicMemoryStore(conn).get(proposal.event_id)
     source = _event_data(source_event.description) if source_event is not None else {}
+    message = str(source.get("message") or "").strip()
+    dialogue = str(values.get("dialogue") or "").strip()
+    if summary.strip().casefold() in {
+        "",
+        "none yet",
+        "one concrete event memory.",
+        "the conversation was acknowledged.",
+    }:
+        summary = " ".join(value for value in (message, dialogue) if value)
     payload = {
         "kind": "confirmed_interaction",
         "speaker_id": proposal.decision.actor_id,
         "listener_id": proposal.decision.target_id or "",
-        "message": str(source.get("message") or ""),
-        "dialogue": str(values.get("dialogue") or ""),
+        "message": message,
+        "dialogue": dialogue,
         "summary": summary,
     }
     participants = [proposal.decision.actor_id]
@@ -520,7 +555,33 @@ def record_confirmed_experience(
         conn,
         event,
         {agent_id: summary for agent_id in participants},
+        factual_statement=_declarative_fact(message),
     )
+
+
+def _declarative_fact(message: str) -> str | None:
+    value = str(message).strip()
+    lowered = value.casefold()
+    questions = (
+        "who ",
+        "what ",
+        "when ",
+        "where ",
+        "why ",
+        "how ",
+        "do ",
+        "does ",
+        "did ",
+        "is ",
+        "are ",
+        "can ",
+        "could ",
+        "would ",
+        "will ",
+    )
+    if not value or value.endswith("?") or lowered.startswith(questions):
+        return None
+    return value
 
 
 def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
@@ -582,12 +643,22 @@ def _sync_sim(
     name = str(sim.get("name") or agent_id)
     career = str(sim.get("career") or "").strip()
     occupation = None if not career or career.casefold() == "unknown" else career
+    raw_age = sim.get("age")
+    age = raw_age if isinstance(raw_age, int) and not isinstance(raw_age, bool) and raw_age >= 0 else None
     agent = stores.agents.get(agent_id)
     if agent is None:
-        agent = Agent(agent_id, name, occupation=occupation, game_id=agent_id, adapter="sims4")
+        agent = Agent(
+            agent_id,
+            name,
+            age=age,
+            occupation=occupation,
+            game_id=agent_id,
+            adapter="sims4",
+        )
         stores.agents.create(agent, commit=False)
     else:
         agent.name = name
+        agent.age = age if age is not None else agent.age
         agent.occupation = occupation or agent.occupation
         agent.game_id = agent_id
         agent.adapter = "sims4"
@@ -639,6 +710,7 @@ def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> N
         for goal in store.get_all(agent_id, GOAL_ACTIVE):
             if goal.description.startswith("Aspiration: ") and goal.id != goal_id:
                 goal.status = GOAL_COMPLETED
+                goal.updated_at = int(time.time())
                 store.set(goal, commit=False)
         existing = store.get(goal_id)
         store.set(
@@ -653,11 +725,18 @@ def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> N
         )
     needs = sim.get("needs")
     if isinstance(needs, Mapping):
+        allowed = {"bladder", "energy", "fun", "hunger", "hygiene", "social"}
+        current_ids: set[str] = set()
         for name, raw in needs.items():
             if isinstance(raw, bool) or not isinstance(raw, (int, float)):
                 continue
             need = str(name).strip().casefold()
+            if need.startswith("motive_"):
+                need = need[7:]
+            if need not in allowed:
+                continue
             goal_id = _stable_id(agent_id, "need", need)
+            current_ids.add(goal_id)
             existing = store.get(goal_id)
             if float(raw) <= 25:
                 goal = existing or Goal(
@@ -666,16 +745,28 @@ def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> N
                     priority=_clamp((25 - float(raw)) / 25, 0.6, 1.0),
                     id=goal_id,
                 )
+                if existing is not None and goal.status != GOAL_ACTIVE:
+                    goal.updated_at = int(time.time())
                 goal.status = GOAL_ACTIVE
                 store.set(goal, commit=False)
             elif existing is not None and existing.status == GOAL_ACTIVE:
                 existing.status = GOAL_COMPLETED
+                existing.updated_at = int(time.time())
                 store.set(existing, commit=False)
+        for goal in store.get_all(agent_id, GOAL_ACTIVE):
+            if goal.description.startswith("Restore ") and goal.id not in current_ids:
+                goal.status = GOAL_COMPLETED
+                goal.updated_at = int(time.time())
+                store.set(goal, commit=False)
 
 
 def _sync_emotion(
     store: EmotionalStateStore, agent_id: str, sim: Mapping[str, object]
 ) -> None:
+    store._conn.execute(
+        "DELETE FROM emotional_states WHERE agent_id=? AND emotion LIKE '<class %mood_%'",
+        (agent_id,),
+    )
     mood = str(sim.get("current_mood") or "").strip().casefold()
     if not mood or mood == "unknown":
         return
