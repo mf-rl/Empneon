@@ -559,73 +559,59 @@ def execute_sims_action(payload, data, interaction):
             raise RuntimeError("no native social mapped for {}".format(action))
         from interactions.aop import AffordanceObjectPair
 
+        from interactions.context import InteractionContext
+        from interactions.priority import Priority
+        import sims4.resources
+
+        bit_manager = services.get_instance_manager(sims4.resources.Types.RELATIONSHIP_BIT)
+        has_met = next(
+            (
+                tuning
+                for tuning in bit_manager.types.values()
+                if getattr(tuning, "__name__", "") == "has_met"
+            ),
+            None,
+        )
+        tracker = getattr(actor_info, "relationship_tracker", None)
+        if has_met is not None and tracker is not None and not tracker.has_bit(target_info.sim_id, has_met):
+            tracker.add_relationship_bit(target_info.sim_id, has_met)
+            write_marker("established has_met: {} -> {}".format(listener_id, speaker_id))
+
+        context = InteractionContext(
+            actor,
+            InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
+            Priority.High,
+        )
+        mapped_aop = None
         mapped_interaction = None
-        if interaction is None:
-            from interactions.context import InteractionContext
-            from interactions.priority import Priority
-            import sims4.resources
-
-            bit_manager = services.get_instance_manager(sims4.resources.Types.RELATIONSHIP_BIT)
-            has_met = next(
-                (
-                    tuning
-                    for tuning in bit_manager.types.values()
-                    if getattr(tuning, "__name__", "") == "has_met"
-                ),
-                None,
-            )
-            tracker = getattr(actor_info, "relationship_tracker", None)
-            if has_met is not None and tracker is not None and not tracker.has_bit(target_info.sim_id, has_met):
-                tracker.add_relationship_bit(target_info.sim_id, has_met)
-                write_marker("established has_met: {} -> {}".format(listener_id, speaker_id))
-
-            context = InteractionContext(
-                actor,
-                InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
-                Priority.High,
-            )
-            mapped_aop = None
-            failures = []
-            candidates = tuple(target.potential_interactions(context))
-            for candidate in candidates:
-                candidate_name = getattr(candidate.affordance, "__name__", "unknown")
-                try:
-                    available = getattr(candidate.affordance, "all_affordances_gen", None)
-                    if not callable(available) or affordance not in tuple(available(context=context)):
-                        continue
-                    proposed = AffordanceObjectPair(
-                        affordance,
-                        target,
-                        candidate.affordance,
-                        None,
-                        push_super_on_prepare=True,
-                    )
-                    test_result = proposed.test(context)
-                    factory_result = proposed.interaction_factory(context) if test_result else None
-                    if factory_result:
-                        mapped_aop = proposed
-                        mapped_interaction = factory_result.interaction
-                        break
-                    failures.append("{}={}".format(candidate_name, test_result))
-                except Exception as exc:
-                    failures.append("{}={!r}".format(candidate_name, exc))
-
-            if mapped_aop is None:
-                raise RuntimeError(
-                    "native social failed game selection: {}".format("; ".join(failures[:8]))
+        failures = []
+        candidates = tuple(target.potential_interactions(context))
+        for candidate in candidates:
+            candidate_name = getattr(candidate.affordance, "__name__", "unknown")
+            try:
+                available = getattr(candidate.affordance, "all_affordances_gen", None)
+                if not callable(available) or affordance not in tuple(available(context=context)):
+                    continue
+                proposed = AffordanceObjectPair(
+                    affordance,
+                    target,
+                    candidate.affordance,
+                    None,
+                    push_super_on_prepare=True,
                 )
-        else:
-            seed_aop = getattr(interaction, "_aop", None)
-            context = getattr(interaction, "context", None)
-            if seed_aop is None or context is None:
-                raise RuntimeError("autonomy selection has no reusable interaction context")
-            super_affordance = seed_aop.super_affordance
-            super_interaction = seed_aop.super_interaction
-            mapped_aop = AffordanceObjectPair(
-                affordance,
-                target,
-                super_affordance,
-                super_interaction,
+                test_result = proposed.test(context)
+                factory_result = proposed.interaction_factory(context) if test_result else None
+                if factory_result:
+                    mapped_aop = proposed
+                    mapped_interaction = factory_result.interaction
+                    break
+                failures.append("{}={}".format(candidate_name, test_result))
+            except Exception as exc:
+                failures.append("{}={!r}".format(candidate_name, exc))
+
+        if mapped_aop is None:
+            raise RuntimeError(
+                "native social failed game selection: {}".format("; ".join(failures[:8]))
             )
         if mapped_interaction is None:
             test_result = mapped_aop.test(context)

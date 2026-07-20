@@ -9,7 +9,9 @@ data first.
 1. Extract the release, run `install_mod.ps1`, then run `run_backend.ps1`.
 2. Enable **Custom Content and Mods** and **Script Mods Allowed**, restart the game, and load a
    household with two controllable Sims and at least one NPC.
-3. Open the cheat console with `Ctrl+Shift+C` and run `aiping`, then `empneon.status`.
+3. Open the cheat console with `Ctrl+Shift+C` and run `aiping`, `ai.profile`, then
+   `empneon.status`. The `ai.profile` command registers the selected Sim in Empneon Core before
+   diagnostics are requested.
 4. In PowerShell, set the backend URL for API checks:
 
    ```powershell

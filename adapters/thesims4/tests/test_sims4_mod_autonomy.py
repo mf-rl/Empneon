@@ -530,12 +530,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         (social_mixer_base,),
         {},
     )
-    interaction._aop.super_affordance.all_affordances_gen = classmethod(
-        lambda _cls, **_kwargs: iter((mixer,))
-    )
     apologize = type("mixer_social_Apologize_targeted_friendly_lowScore", (), {})
     flirt = type(
         "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn", (), {}
+    )
+    interaction._aop.super_affordance.all_affordances_gen = classmethod(
+        lambda _cls, **_kwargs: iter((mixer, apologize, flirt))
     )
     infos = {
         "bella": bella,
@@ -574,6 +574,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert len(mapped_aops) == 1
     assert mapped_aops[0].affordance is mixer
     assert mapped_aops[0].target is target
+    assert mapped_aops[0].push_super_on_prepare is True
     assert len(executed) == 1
     assert executed[0] is not interaction
     assert executed[0].affordance is mixer
