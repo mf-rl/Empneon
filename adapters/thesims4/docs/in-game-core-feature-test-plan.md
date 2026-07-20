@@ -47,6 +47,8 @@ does not replace these in-game checks:
 
 ## 1. Unified database and legacy migration
 
+**Current status (2026-07-20): PASS**
+
 - Prerequisite: a disposable copy of either `empneon_core.sqlite3` or
   `ai_sims_memory.sqlite3`; no active `empneon_core_memory.sqlite3`.
 - Action: put the legacy copy beside the backend, start it, and run:
@@ -63,6 +65,8 @@ does not replace these in-game checks:
 - Cleanup: archive or remove only the disposable legacy copies and restore the original config.
 
 ## 2. Canonical Sim profile and OCEAN personality
+
+**Current status (2026-07-20): PASS**
 
 - Prerequisite: select a Sim with recognizable traits, for example Good, Creative, or Outgoing.
 - Action: run `ai.profile`, then `empneon.status`.
@@ -81,6 +85,8 @@ does not replace these in-game checks:
 
 ## 3. Rich game state and emotional state
 
+**Current status (2026-07-20): PASS**
+
 - Prerequisite: make the active Sim hungry and apply a visible moodlet.
 - Action: start **Empneon Social** and ask, "How are you feeling and what needs attention?"
 - Expected game result: the answer reflects available needs/mood without inventing unavailable
@@ -94,6 +100,8 @@ does not replace these in-game checks:
 
 ## 4. Aspirations and need-derived goals
 
+**Current status (2026-07-20): PARTIAL** — Need-goal lifecycle passes; aspiration ingestion fails.
+
 - Prerequisite: an active aspiration and one need at or below 25 percent.
 - Action: trigger an Empneon interaction, then run `empneon.goals`.
 - Expected game result: the console lists an `Aspiration: ...` goal and `Restore <need>`.
@@ -104,6 +112,9 @@ does not replace these in-game checks:
 - Cleanup: restore all needs to safe values.
 
 ## 5. Directed relationships and confirmed consequences
+
+**Current status (2026-07-20): PARTIAL** — Directed storage and persistence pass; dialogue
+relevance and romance consequence fail.
 
 - Prerequisite: two Sims with a known relationship.
 - Action: note `ai.relationship <Target Name>`, complete an Empneon Social, then run it again.
@@ -117,6 +128,9 @@ does not replace these in-game checks:
 
 ## 6. Private observations and beliefs
 
+**Current status (2026-07-20): PARTIAL** — Confirmation gating, privacy, and persistence pass;
+recall dialogue contradicts stored memory.
+
 - Prerequisite: Sims A, B, and C are present. C must not participate in the first conversation.
 - Action: as A, tell B a unique fact such as `PRIVATE-GARDEN-731 is under the blue bench`. Then ask
   B to recall it. Switch to C and ask for the same fact.
@@ -129,6 +143,9 @@ does not replace these in-game checks:
 
 ## 7. Local vector retrieval
 
+**Current status (2026-07-20): PARTIAL** — Exact recall, privacy, and persistence pass;
+paraphrased retrieval fails.
+
 - Prerequisite: complete section 6 and add several unrelated confirmed conversations.
 - Action: ask B, "Where is the garden code item?" without repeating the exact original sentence.
 - Expected game result: B retrieves the topically related garden memory.
@@ -139,6 +156,9 @@ does not replace these in-game checks:
 
 ## 8. Provider-free CLOD 1
 
+**Current status (2026-07-20): PARTIAL** — Backend CLOD 1 telemetry passes; live native execution
+and restart persistence remain.
+
 - Prerequisite: leave normal autonomy enabled; the LLM may be stopped.
 - Action: let 30 simulated minutes pass with two eligible NPCs on the lot.
 - Expected game result: a mapped native social is proposed and queued without an LLM call.
@@ -148,6 +168,9 @@ does not replace these in-game checks:
 - Cleanup: cancel any unwanted native social in the Sims queue.
 
 ## 9. Provider-backed dynamic CLOD and usage
+
+**Current status (2026-07-20): PARTIAL** — LM Studio routing and latency pass; live token counts
+and restart persistence remain.
 
 - Prerequisite: start the configured OpenAI-compatible provider with a model loaded.
 - Action: use **Empneon Social** for a player-directed question involving mood, goals, or recent
@@ -160,6 +183,8 @@ does not replace these in-game checks:
 - Cleanup: none.
 
 ## 10. Priority under concurrent Sims
+
+**Current status (2026-07-20): PENDING**
 
 - Prerequisite: set `active_agent_limit` to `1`, restart, and place several eligible NPCs on the
   lot.
@@ -174,6 +199,9 @@ does not replace these in-game checks:
 
 ## 11. Successful and failed confirmation
 
+**Current status (2026-07-20): PARTIAL** — Automated success/failure passes; deliberate live queue
+cancellation and persistence remain.
+
 - Prerequisite: two Sims and a baseline relationship diagnostic.
 - Action: complete one native Empneon social. Then start another and cancel it from the interaction
   queue before completion.
@@ -185,6 +213,8 @@ does not replace these in-game checks:
 - Cleanup: none.
 
 ## 12. Timeline and replay
+
+**Current status (2026-07-20): PASS**
 
 - Prerequisite: complete sections 8, 9, and 11.
 - Action: run `empneon.timeline`, copy one decision ID, then run:
@@ -201,6 +231,9 @@ does not replace these in-game checks:
 - Cleanup: none.
 
 ## 13. Identity export and import
+
+**Current status (2026-07-20): PARTIAL** — Automated round trip passes; repeated import and restart
+persistence remain.
 
 - Prerequisite: a Sim with goals, emotion, relationship, and optionally voice data.
 - Action:
@@ -220,6 +253,8 @@ does not replace these in-game checks:
 
 ## 14. Save-slot isolation
 
+**Current status (2026-07-20): PENDING**
+
 - Prerequisite: set `preserve_memory_only_on_game_save` to `true` and restart.
 - Action: in Save A, teach a unique fact and save. Use **Save As** to create Save B, teach a second
   unique fact, and save. Reload each branch.
@@ -231,6 +266,8 @@ does not replace these in-game checks:
   corresponding Sims saves.
 
 ## 15. LLM-unavailable fallback
+
+**Current status (2026-07-20): PENDING**
 
 - Prerequisite: stop the configured LLM server or temporarily configure an unreachable endpoint.
 - Action: allow CLOD 1 autonomy, then attempt player **Empneon Social**.
