@@ -100,7 +100,8 @@ does not replace these in-game checks:
 
 ## 4. Aspirations and need-derived goals
 
-**Current status (2026-07-20): PARTIAL** — Need-goal lifecycle passes; aspiration ingestion fails.
+**Current status (2026-07-20): PASS** — Aspiration ingestion, need-goal lifecycle, goal
+coexistence, and persistence pass on a clean database.
 
 - Prerequisite: an active aspiration and one need at or below 25 percent.
 - Action: trigger an Empneon interaction, then run `empneon.goals`.
@@ -113,8 +114,9 @@ does not replace these in-game checks:
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-20): PARTIAL** — Directed storage and persistence pass; dialogue
-relevance and romance consequence fail.
+**Current status (2026-07-20): PARTIAL** — Directed storage and persistence pass. Automated fixes
+now resolve names and reject copied, recycled, or evasive romantic dialogue; a release retest must
+still verify a confirmed native romance consequence.
 
 - Prerequisite: two Sims with a known relationship.
 - Action: note `ai.relationship <Target Name>`, complete an Empneon Social, then run it again.

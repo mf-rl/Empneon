@@ -6,12 +6,15 @@ this record contains only the evidence needed to determine pass/fail status.
 ## Remediation awaiting in-game verification (2026-07-20)
 
 The feature branch now includes automated regressions and fixes for every actionable defect below.
-Statuses remain unchanged until a release build passes the corresponding in-game retest:
+Test 4 has passed its release-build retest; the remaining statuses stay unchanged until their
+corresponding in-game retests pass:
 
 - Test 3 generic fallback summaries now contain the concrete message and reply.
-- Test 4 probes the live aspiration tracker through attributes and callable APIs.
-- Test 5 rejects irrelevant date replies, supports explicit acceptance or rejection, maps accepted
-  invitations to `flirt`, and reads native friendship and romance tracks separately.
+- Test 4 now passes: the live aspiration tracker is ingested, and need-goal lifecycle state
+  persists correctly.
+- Test 5 resolves relationship display names to numeric Sim IDs, recognizes common romantic
+  phrases, rejects copied or recycled dialogue, supports explicit acceptance or rejection, maps
+  accepted invitations to `flirt`, and reads native friendship and romance tracks separately.
 - Test 6 rejects denial or contradiction when a supporting private memory is available.
 - Test 7 ranks the complete observable memory set, filters it by the exact Sim pair, and excludes
   irrelevant historical summaries from the dialogue prompt.
@@ -66,30 +69,63 @@ does not fail Test 3, but summary quality should be improved separately.
 
 ## Test 4: Aspirations and need-derived goals
 
-**Status:** FAIL / PARTIAL
+**Status:** PASS
 
-**Evidence passed:**
+**Retest procedure (2026-07-20):** Started with a clean database, initialized the active Sim with
+`ai.profile`, changed individual needs, synchronized the profile, queried `empneon.goals`, and
+restarted both the game and backend before the final verification.
 
-- `empneon.goals` exposes active `Restore hunger` and `Restore hygiene` goals for critical needs.
-- The need-derived goal IDs and statuses persisted across game/backend restart.
-- After leaving only energy low and triggering another Empneon interaction, the hunger, hygiene,
-  bladder, and fun restore goals were `completed`; the energy restore goal remained `active`.
-  This verifies that goal status follows current need state instead of leaving satisfied needs
-  active.
+**Evidence:**
 
-**Failure:**
-
-- `empneon.goals` does not expose any `Aspiration: ...` goal. This fails the aspiration criterion
-  and indicates that the live aspiration is not reaching or not being converted by the Core sync
-  path.
-
-**Remaining defect:** Aspiration ingestion is the only observed Test 4 failure. Exact goal IDs can
-be compared in diagnostics during the fix verification, but no duplicate goals were reported by
-`empneon.goals`.
+- The active `Aspiration: ...` goal appeared in every `empneon.goals` query.
+- Lowering hunger produced an active `Restore hunger` goal.
+- Restoring hunger changed that same goal to `completed`.
+- Lowering fun produced an active `Restore fun` goal while `Restore hunger` remained completed.
+- After restarting the game and backend and running `ai.profile` again, the aspiration remained
+  active, `Restore hunger` remained completed, and `Restore fun` remained active.
+- This verifies aspiration ingestion, need-goal activation/completion, coexistence of aspiration
+  and need goals, and persistence across restart.
 
 ## Test 5: Directed relationships and confirmed consequences
 
-**Status:** PARTIAL / DIALOGUE AND ROMANCE FAILED
+**Status:** PARTIAL / AUTOMATED REMEDIATION AWAITING IN-GAME RETEST
+
+**Retest evidence (2026-07-20):**
+
+- With Billie Jang active, `ai.relationship Cam Sadya` returned friendship `0`, romance `0`,
+  trust `50`, respect `50`, and resentment `0` before and after “Let's be girlfriends.”
+- The same values appear for every newly queried relationship.
+- Root cause of the repeated display is confirmed: `ai.relationship <name>` passes the name as
+  `sim_id`, but Core stores relationship edges under numeric Sim IDs. A missing edge then returns
+  the documented default values. The native/Core consequence cannot be judged from these two
+  name-based queries and must be rechecked by numeric ID.
+- Cam's decision `59cd1c4b-b94f-48c1-987a-ba77903d036f` directly addressed the proposal with
+  `set_boundary` and “No, I would rather stay friends.” All proposed relationship deltas were
+  zero, which correctly preserves consent and avoids an invented romance consequence.
+- The native result was `failed` with `FinishingType.OBJECT_CHANGED` and no applied changes. This
+  verifies the explicit-rejection branch but does not verify a completed native flirt or confirmed
+  romance consequence; an accepted invitation is still required for that branch.
+- A later Billie/Bernard retest exposed dialogue repetition: Billie copied Bernard's compliment
+  almost verbatim and then reused that old compliment to answer “Would you go out with me
+  sometime?”. Timeline decisions confirm the stale dialogue rather than a display-only problem.
+- Root cause: romantic-request validation recognizes `date`, `love`, `romance`, and `kiss`, but not
+  `go out`, `girlfriend`, or `boyfriend`; it also has no guard against echoing the current message
+  or reusing a previous reply.
+- Those recent native results also failed with `no compatible social super-interaction offers
+  friendly_chat`, so no confirmed relationship consequence could be applied.
+
+**Automated remediation (2026-07-20):**
+
+- `ai.relationship <name>` now resolves the existing SimInfo and queries Core with its numeric Sim
+  ID; direct numeric-ID input remains supported.
+- Romantic validation now recognizes `go out`, `girlfriend(s)`, and `boyfriend(s)` in addition to
+  its original phrases.
+- The shared validator rejects a near-verbatim copy of the current player message and reuse of a
+  prior reply for a different message. It then uses the existing grounded retry/fallback path,
+  leaving the model free to write any distinct, relevant, grounded response.
+- Regression tests reproduce the Billie/Bernard transcript and the name-resolution defect. The
+  complete verification passed: Core 168, Sims 4 54, Godot 1, integration 3, and release 18 tests
+  (`244 passed` total), plus Ruff, mypy, and Python compilation.
 
 **Procedure:** Recorded `ai.relationship Billie Jang`, asked Billie on a date through Empneon
 Social, then queried the relationship again.
@@ -130,8 +166,9 @@ Social, then queried the relationship again.
 relationship IDs, strengths, trust values, and timestamps were unchanged (`0.56` Billie → Bernard
 and `0.53` Bernard → Billie).
 
-**Final Test 5 result:** Native confirmation, directed storage, and persistence pass. Dialogue
-relevance and the expected positive romance consequence remain defects.
+**Final Test 5 result:** Native confirmation, directed storage, and persistence pass. Dialogue and
+name-resolution defects are remediated in automated tests; a new release must still verify the
+dialogue behavior and a positive native romance consequence in game.
 
 ## Test 6: Private observations and beliefs
 
