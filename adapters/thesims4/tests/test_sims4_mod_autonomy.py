@@ -331,6 +331,31 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert relationship["friendship"] == -20
     assert relationship["romance"] == 15
 
+    relationship_queries = []
+    with monkeypatch.context() as command_patch:
+        command_patch.setattr(
+            agent,
+            "active_sim",
+            lambda _connection: SimpleNamespace(sim_info=rich_info),
+        )
+        command_patch.setattr(
+            agent,
+            "find_sim_info_by_name",
+            lambda name: SimpleNamespace(sim_id="cam-id", full_name="Cam Sadya")
+            if name == "Cam Sadya"
+            else None,
+        )
+        command_patch.setattr(
+            agent,
+            "query_json",
+            lambda path, query: relationship_queries.append((path, query))
+            or {"relationship": {}},
+        )
+        agent.ai_relationship("Cam", "Sadya")
+    assert relationship_queries == [
+        ("/relationship", {"sim_id": "cam-id", "target_id": "bella"})
+    ]
+
     save_reports = []
     monkeypatch.setattr(
         agent,

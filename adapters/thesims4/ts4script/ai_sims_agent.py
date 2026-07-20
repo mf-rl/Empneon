@@ -1347,8 +1347,14 @@ def ai_relationship(*args, _connection=None):
         out(_connection, "Usage: ai.relationship Bella Goth")
         return
     active = sim_payload(sim)
+    target_info = find_sim_info_by_name(target)
+    target_id = str(getattr(target_info, "sim_id", target))
+    target_label = sim_full_name(target_info) if target_info is not None else target
     try:
-        data = query_json("/relationship", {"sim_id": target, "target_id": active["id"]})
+        data = query_json(
+            "/relationship",
+            {"sim_id": target_id, "target_id": active["id"]},
+        )
     except Exception as exc:
         out(_connection, "AI relationship error: {}".format(exc))
         return
@@ -1356,7 +1362,7 @@ def ai_relationship(*args, _connection=None):
     out(
         _connection,
         "relationship {} -> {}: friendship {}, romance {}, trust {}, respect {}, resentment {}".format(
-            target,
+            target_label,
             active["name"],
             rel.get("friendship", 0),
             rel.get("romance", 0),
