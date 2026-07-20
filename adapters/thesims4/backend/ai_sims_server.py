@@ -1364,6 +1364,13 @@ def response_grounding_issue(payload, response, context):
         and not isinstance(value, bool)
         and float(value) <= 25
     ]
+    stale = [
+        name
+        for name in ("bladder", "energy", "fun", "hunger", "hygiene", "social")
+        if name in dialogue and "critical" in dialogue and name not in critical
+    ]
+    if stale:
+        return "do not report non-critical needs: {}".format(", ".join(stale))
     if critical and any(word in message for word in ("feel", "feeling", "need", "attention")):
         missing = [name for name in critical if name not in dialogue]
         if missing:
@@ -1382,10 +1389,23 @@ def response_grounding_issue(payload, response, context):
         "do not remember",
         "what are you talking",
     )
+    if asks_recalled_fact and has_evidence and any(phrase in dialogue for phrase in uncertainty):
+        return "use the supporting memory instead of denying it"
     if asks_recalled_fact and not has_evidence and not any(
         phrase in dialogue for phrase in uncertainty
     ):
         return "state uncertainty because no supporting memory exists"
+    if re.search(r"\b(date|love|romance|kiss)\b", message):
+        romance = response.get("relationship") or {}
+        romance_delta = romance.get("romance_delta", 0) if isinstance(romance, dict) else 0
+        declines = r"\bno\b|not interested|rather stay friends|do not want|don't want"
+        if re.search(declines, dialogue):
+            return "do not add romance when declining" if romance_delta else ""
+        accepts = ("yes", "would like", "i'd like", "let's", "sounds good")
+        if not any(phrase in dialogue for phrase in accepts):
+            return "directly accept or decline the romantic invitation"
+        if response.get("intent") != "flirt" or romance_delta <= 0:
+            return "accepted romantic invitations require flirt intent and positive romance"
     return ""
 
 
@@ -1448,6 +1468,19 @@ def reasoning_fallback_response(payload, context):
         intent = "report_needs"
         animation = "awkward_chat"
         trust_delta = 0
+    elif "?" in message and _memory_supports_question(message, context):
+        candidates = [
+            str(item.get("summary") or "").strip()
+            for item in context.get("memories") or []
+            if str(item.get("summary") or "").strip()
+        ]
+        if not candidates and str(context.get("summary") or "").strip():
+            candidates.append(str(context["summary"]).strip())
+        dialogue = next((item for item in candidates if not item.endswith("?")), candidates[0])
+        emotion = "confident"
+        intent = "recall"
+        animation = "friendly_chat"
+        trust_delta = 0
     elif "?" in message and not _memory_supports_question(message, context) and (
         message.startswith(("where ", "when ", "who ", "what did "))
         or "remember" in message
@@ -1470,11 +1503,11 @@ def reasoning_fallback_response(payload, context):
         intent = "accept_apology"
         animation = "apologize"
         trust_delta = 1
-    elif any(word in message for word in ("date", "love", "romance", "kiss")):
-        dialogue = "You certainly know how to surprise me. Let's see where the moment takes us."
-        emotion = "romantic"
-        intent = "flirt"
-        animation = "flirt"
+    elif re.search(r"\b(date|love|romance|kiss)\b", message):
+        dialogue = "No, I would rather stay friends."
+        emotion = "awkward"
+        intent = "set_boundary"
+        animation = "awkward_chat"
         trust_delta = 0
     elif any(word in message for word in ("sex", "woohoo")):
         dialogue = "Slow down. If there is something between us, I want it to feel right, not rushed."
@@ -1494,7 +1527,10 @@ def reasoning_fallback_response(payload, context):
             "emotion": emotion,
             "intent": intent,
             "relationship": {"friendship_delta": 0, "romance_delta": 0, "trust_delta": trust_delta},
-            "memory": {"importance": 0.2, "summary": "The conversation needed a careful response."},
+            "memory": {
+                "importance": 0.2,
+                "summary": "{} {}".format(payload.get("message") or "", dialogue).strip(),
+            },
             "animation": animation,
         }
     )
@@ -1579,7 +1615,7 @@ def chat(payload):
             location=payload.get("location") or "",
             query=payload.get("message") or "",
         )
-        summary = memory_summary(speaker_id, listener_id)
+        summary = {"summary": "; ".join(item["summary"] for item in memories[:4])}
         context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
         context["conversation"] = recent_conversation(speaker_id, listener_id)
         context["speaker_id"] = speaker_id

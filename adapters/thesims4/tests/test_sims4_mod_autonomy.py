@@ -149,7 +149,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     collections.FrozenAttributeDict = FrozenAttributeDict
     resources = ModuleType("sims4.resources")
     resources.Types = SimpleNamespace(
-        INTERACTION="interaction", RELATIONSHIP_BIT="relationship_bit"
+        INTERACTION="interaction", RELATIONSHIP_BIT="relationship_bit", STATISTIC="statistic"
     )
     resources.get_resource_key = lambda name, resource_type: (name, resource_type)
     sims4.resources = resources
@@ -315,6 +315,21 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         )
     )
     assert agent.sim_aspiration(method_info) == "Bodybuilder"
+
+    friendship_track = type("LTR_Friendship_Main", (), {})
+    romance_track = type("LTR_Romance_Main", (), {})
+    track_manager = SimpleNamespace(types={1: friendship_track, 2: romance_track})
+    agent.services.get_instance_manager = lambda _resource_type: track_manager
+    scores = {friendship_track: -20, romance_track: 15}
+    source_info = SimpleNamespace(
+        relationship_tracker=SimpleNamespace(
+            get_relationship_score=lambda _target, track=None: scores[track]
+        )
+    )
+    target_info = SimpleNamespace(sim_id="mortimer")
+    relationship = agent.relationship_payload(source_info, target_info)
+    assert relationship["friendship"] == -20
+    assert relationship["romance"] == 15
 
     save_reports = []
     monkeypatch.setattr(

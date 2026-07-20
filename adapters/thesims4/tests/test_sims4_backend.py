@@ -293,7 +293,7 @@ def test_relevant_memories_searches_every_observable_candidate(tmp_path, monkeyp
     state = ai_sims_server.empneon_state
     with open_db(tmp_path / "memory.db") as conn:
         for index in range(40):
-            event = Event("Memory {}".format(index), ["karmine"])
+            event = Event(f"Memory {index}", ["karmine"])
             state.record_observed_event(conn, event, {"karmine": event.description})
 
         captured = {}
@@ -322,9 +322,9 @@ def test_memories_for_pair_filters_complete_observable_ranking(tmp_path, monkeyp
     }
     distractors = [
         {
-            "id": "other-{}".format(index),
-            "summary": "Other memory {}".format(index),
-            "participant_ids": ["karmine", "other-{}".format(index)],
+            "id": f"other-{index}",
+            "summary": f"Other memory {index}",
+            "participant_ids": ["karmine", f"other-{index}"],
             "created_at": index + 2,
         }
         for index in range(25)
@@ -533,6 +533,86 @@ def test_dialogue_fallback_mentions_critical_need_and_refuses_unsupported_fact(
         phrase in unknown_response["dialogue"].casefold()
         for phrase in ("don't know", "do not know", "don't remember", "do not remember")
     )
+
+
+def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {"needs": {"hunger": 80}}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [{"summary": "PRIVATE-GARDEN-731 is under the blue bench"}],
+        {"summary": "PRIVATE-GARDEN-731 is under the blue bench"},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    stale_need = ai_sims_server.normalize_response(
+        {"dialogue": "My hunger is critical.", "intent": "respond"}
+    )
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "Would you like to go on a date?"}, stale_need, context
+    )
+
+    denial = ai_sims_server.normalize_response(
+        {"dialogue": "What are you talking about?", "intent": "clarify"}
+    )
+    assert "supporting memory" in ai_sims_server.response_grounding_issue(
+        {"message": "Where is the garden code item?"}, denial, context
+    )
+
+    ignored = ai_sims_server.normalize_response(
+        {"dialogue": "It is nice to see you.", "intent": "agree"}
+    )
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "Would you like to go on a date?"}, ignored, context
+    )
+
+    accepted = ai_sims_server.normalize_response(
+        {
+            "dialogue": "Yes, I would like to go on a date.",
+            "intent": "flirt",
+            "relationship": {"romance_delta": 1},
+        }
+    )
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "Would you like to go on a date?"}, accepted, context
+    ) == ""
+
+    declined = ai_sims_server.normalize_response(
+        {
+            "dialogue": "No, I would rather stay friends.",
+            "intent": "set_boundary",
+            "relationship": {"romance_delta": 0},
+        }
+    )
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "Would you like to go on a date?"}, declined, context
+    ) == ""
+
+
+def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [{"summary": "PRIVATE-GARDEN-731 is under the blue bench"}],
+        {"summary": "PRIVATE-GARDEN-731 is under the blue bench"},
+    )
+    recall = ai_sims_server.reasoning_fallback_response(
+        {"message": "Where is the garden code item?"}, context
+    )
+    assert "under the blue bench" in recall["dialogue"]
+
+    context["memories"] = []
+    context["summary"] = ""
+    fallback = ai_sims_server.reasoning_fallback_response(
+        {"message": "Hello there"}, context
+    )
+    assert fallback["memory"]["summary"] != "The conversation needed a careful response."
+    assert "Hello there" in fallback["memory"]["summary"]
 
 def test_llm_chat_delegates_provider_selection_to_core(monkeypatch) -> None:
     captured = {}

@@ -345,16 +345,18 @@ def sim_moodlets(sim_info):
 
 def sim_aspiration(sim_info):
     tracker = getattr(sim_info, "aspiration_tracker", None)
-    for attr in ("active_aspiration", "primary_aspiration"):
-        name = short_trait_name(getattr(tracker, attr, None))
-        if name:
-            return name
-    try:
-        name = short_trait_name(tracker.get_primary_aspiration())
-        if name:
-            return name
-    except Exception:
-        pass
+    for source in (tracker, sim_info):
+        for attr in ("active_aspiration", "primary_aspiration", "_active_aspiration"):
+            name = short_trait_name(getattr(source, attr, None))
+            if name:
+                return name
+        for method_name in ("get_primary_aspiration", "get_active_aspiration"):
+            try:
+                name = short_trait_name(getattr(source, method_name)())
+                if name:
+                    return name
+            except Exception:
+                pass
     return "unknown"
 
 
@@ -428,12 +430,56 @@ def current_location():
 
 
 def relationship_payload(source_info, target_info):
-    # ponytail: aggregate score only; add tuned tracks when action mapping needs them.
     result = {"friendship": 0, "romance": 0, "trust": 50, "resentment": 0}
     if target_info is None:
         return result
     tracker = getattr(source_info, "relationship_tracker", None)
     target_id = getattr(target_info, "sim_id", None)
+    found_track = False
+    for key, tuning_name in (
+        ("friendship", "LTR_Friendship_Main"),
+        ("romance", "LTR_Romance_Main"),
+    ):
+        track = None
+        for resource_name in ("STATISTIC", "RELATIONSHIP_TRACK"):
+            try:
+                resource_type = getattr(sims4.resources.Types, resource_name, None)
+                if resource_type is None:
+                    continue
+                manager = services.get_instance_manager(resource_type)
+                track = next(
+                    (
+                        tuning
+                        for tuning in manager.types.values()
+                        if getattr(tuning, "__name__", "") == tuning_name
+                    ),
+                    None,
+                )
+                if track is not None:
+                    break
+            except Exception:
+                pass
+        if track is None:
+            continue
+        track_read = False
+        for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
+            method = getattr(tracker, method_name, None)
+            if not callable(method):
+                continue
+            for target in (target_info, target_id):
+                try:
+                    raw_score = float(method(target, track))
+                    low = -100 if key == "friendship" else 0
+                    result[key] = int(max(low, min(100, round(raw_score))))
+                    found_track = True
+                    track_read = True
+                    break
+                except Exception:
+                    pass
+            if track_read:
+                break
+    if found_track:
+        return result
     for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
         method = getattr(tracker, method_name, None)
         if not callable(method):
