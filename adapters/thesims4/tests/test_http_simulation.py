@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import sqlite3
 import sys
+import urllib.error
+import urllib.parse
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -92,3 +94,132 @@ def test_database_counts_reads_known_tables() -> None:
         assert all(counts[name] == 0 for name in simulation.COUNT_TABLES[2:])
     finally:
         database.unlink(missing_ok=True)
+
+
+def _empty_core_database(name: str) -> Path:
+    database = Path(__file__).with_name(name)
+    database.unlink(missing_ok=True)
+    with contextlib.closing(sqlite3.connect(database)) as conn:
+        for table in simulation.COUNT_TABLES:
+            conn.execute(f"CREATE TABLE {table} (id TEXT)")
+        conn.commit()
+    return database
+
+
+def test_run_scenarios_records_all_evidence(monkeypatch) -> None:
+    database = _empty_core_database(".http_scenarios_test.sqlite3")
+    calls = []
+    decisions = {}
+    fact = ""
+
+    def fake_request(method, url, payload=None, timeout=120):
+        nonlocal fact
+        path = urllib.parse.urlparse(url).path
+        calls.append((method, path, payload))
+        if path == "/health":
+            return {"status": "ok", "provider": "lmstudio", "memory_db": str(database)}
+        if path == "/chat":
+            number = len(decisions) + 1
+            decision_id = f"decision-{number}"
+            message = payload["message"]
+            if message.startswith("PRIVATE-GARDEN-"):
+                fact = message
+            dialogue = fact if payload["speaker"]["id"].endswith("-b") else "I do not know."
+            response = {
+                "decision_id": decision_id,
+                "animation": "friendly_chat",
+                "dialogue": dialogue,
+                "selected_clod": 3,
+            }
+            decisions[decision_id] = {"status": None, "response": response}
+            return response
+        if path == "/action-result":
+            decisions[payload["decision_id"]]["status"] = payload["status"]
+            return {"decision_id": payload["decision_id"], "status": payload["status"]}
+        if path == "/autonomous":
+            return {
+                "decision_id": "autonomous-1",
+                "suggested_action": "friendly_chat",
+                "selected_clod": 1,
+            }
+        if path == "/diagnostics/sim":
+            sim_id = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["sim_id"][0]
+            informed = sim_id.endswith("-b")
+            return {
+                "agent": {"id": sim_id, "name": sim_id, "adapter": "sims4"},
+                "personality": {"openness": 0.7},
+                "emotions": [{"emotion": "uncomfortable", "value": 0.75}],
+                "goals": [{"description": "Restore bladder", "status": "active"}],
+                "beliefs": [{"statement": fact}] if informed and fact else [],
+                "accessible_memories": [{"description": fact}] if informed and fact else [],
+            }
+        if path == "/diagnostics/usage":
+            return {
+                "attempts": 2,
+                "by_clod": {"1": 1, "3": 1},
+                "by_provider": {"core-rules": 1, "lmstudio": 1},
+            }
+        if path == "/diagnostics/timeline":
+            return {
+                "entries": [
+                    {"type": "event", "id": "event-1"},
+                    {"type": "decision", "id": "decision-1"},
+                ]
+            }
+        if path == "/diagnostics/replay":
+            decision_id = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)[
+                "decision_id"
+            ][0]
+            status = decisions[decision_id]["status"]
+            return {
+                "decision": {"id": decision_id},
+                "result": {"status": status, "applied_changes": []},
+                "consequence_integrity": True,
+            }
+        if path == "/identity/export":
+            sim_id = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["sim_id"][0]
+            return {"agent": {"id": sim_id, "name": sim_id}, "version": 1}
+        if path == "/identity/import":
+            return {"agent": payload["agent"]}
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    monkeypatch.setattr(simulation, "request_json", fake_request)
+    try:
+        report = simulation.run_scenarios("http://example.test", database, run_id="run-1")
+    finally:
+        database.unlink(missing_ok=True)
+
+    assert report["passed"] is True
+    assert [item["name"] for item in report["scenarios"]] == [
+        "health",
+        "canonical_state",
+        "successful_confirmation",
+        "failed_confirmation",
+        "private_fact",
+        "topical_retrieval",
+        "usage",
+        "timeline_and_replay",
+        "identity_round_trip",
+    ]
+    assert report["database"]["before"]["agents"] <= report["database"]["after"]["agents"]
+    assert any(path == "/action-result" for _method, path, _payload in calls)
+
+
+def test_run_scenarios_stops_when_health_fails(monkeypatch) -> None:
+    database = _empty_core_database(".http_health_test.sqlite3")
+    calls = []
+
+    def unavailable(method, url, payload=None, timeout=120):
+        calls.append((method, url))
+        raise urllib.error.URLError("backend unavailable")
+
+    monkeypatch.setattr(simulation, "request_json", unavailable)
+    try:
+        report = simulation.run_scenarios("http://example.test", database, run_id="run-2")
+    finally:
+        database.unlink(missing_ok=True)
+
+    assert report["passed"] is False
+    assert [item["name"] for item in report["scenarios"]] == ["health"]
+    assert "backend unavailable" in report["scenarios"][0]["error"]
+    assert calls == [("GET", "http://example.test/health")]
