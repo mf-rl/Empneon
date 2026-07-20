@@ -349,6 +349,12 @@ def sim_aspiration(sim_info):
         name = short_trait_name(getattr(tracker, attr, None))
         if name:
             return name
+    try:
+        name = short_trait_name(tracker.get_primary_aspiration())
+        if name:
+            return name
+    except Exception:
+        pass
     return "unknown"
 
 

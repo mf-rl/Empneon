@@ -309,6 +309,13 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert rich_payload["skills"] == {"Cooking": 7}
     assert rich_payload["household"] == {"id": "42", "name": "Goth Household"}
 
+    method_info = SimpleNamespace(
+        aspiration_tracker=SimpleNamespace(
+            get_primary_aspiration=lambda: type("Bodybuilder", (), {})
+        )
+    )
+    assert agent.sim_aspiration(method_info) == "Bodybuilder"
+
     save_reports = []
     monkeypatch.setattr(
         agent,
