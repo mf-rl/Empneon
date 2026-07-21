@@ -14,6 +14,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -208,6 +209,7 @@ Use this exact shape with concrete values:
   "dialogue": "expressive in-character reply",
   "emotion": "tense",
   "intent": "deflect",
+  "player_interaction_kind": "friendly",
   "relationship": {
     "friendship_delta": 1,
     "romance_delta": 0,
@@ -219,7 +221,21 @@ Use this exact shape with concrete values:
   },
   "animation": "awkward_chat"
 }
+
+Classify the player's current message as exactly one of: friendly, romantic_compliment,
+romantic_invitation, hostile, informational, or neutral. A romantic compliment is not an
+invitation: respond freely without forcing an acceptance or rejection. A romantic invitation
+must be accepted or declined directly.
 """
+
+PLAYER_INTERACTION_KINDS = (
+    "friendly",
+    "romantic_compliment",
+    "romantic_invitation",
+    "hostile",
+    "informational",
+    "neutral",
+)
 
 DIALOGUE_SCHEMA = {
     "type": "object",
@@ -228,6 +244,10 @@ DIALOGUE_SCHEMA = {
         "dialogue": {"type": "string"},
         "emotion": {"type": "string"},
         "intent": {"type": "string"},
+        "player_interaction_kind": {
+            "type": "string",
+            "enum": list(PLAYER_INTERACTION_KINDS),
+        },
         "relationship": {
             "type": "object",
             "additionalProperties": False,
@@ -268,7 +288,15 @@ DIALOGUE_SCHEMA = {
             ],
         },
     },
-    "required": ["dialogue", "emotion", "intent", "relationship", "memory", "animation"],
+    "required": [
+        "dialogue",
+        "emotion",
+        "intent",
+        "player_interaction_kind",
+        "relationship",
+        "memory",
+        "animation",
+    ],
 }
 
 DIRECTOR_SCHEMA = {
@@ -919,6 +947,11 @@ def normalize_response(raw):
         memory = {}
 
     dialogue = str(raw.get("dialogue") or "").strip() or "..."
+    player_interaction_kind = str(
+        raw.get("player_interaction_kind") or "neutral"
+    ).strip()
+    if player_interaction_kind not in PLAYER_INTERACTION_KINDS:
+        player_interaction_kind = "neutral"
     animation = str(raw.get("animation") or "friendly_chat").strip()
     if animation not in (
         "friendly_chat",
@@ -937,6 +970,7 @@ def normalize_response(raw):
         "dialogue": dialogue,
         "emotion": str(raw.get("emotion") or "neutral").strip().lower(),
         "intent": str(raw.get("intent") or "respond").strip(),
+        "player_interaction_kind": player_interaction_kind,
         "relationship": {
             "friendship_delta": clamp_int(relationship.get("friendship_delta")),
             "romance_delta": clamp_int(relationship.get("romance_delta")),
@@ -1369,15 +1403,40 @@ def _dialogue_words(value, context):
     ]
 
 
-def _is_romantic_request(message):
+def _dialogue_similarity(left, right):
+    if not left or not right:
+        return 0.0
+    return SequenceMatcher(None, left, right, autojunk=False).ratio()
+
+
+def classify_player_interaction(message):
     value = str(message or "").casefold()
-    return bool(
-        re.search(
-            r"\b(date|love|romance|romantic|kiss|girlfriends?|boyfriends?)\b",
-            value,
-        )
-        or re.search(r"\bgo(?:ing)? out\b|\bbe together\b", value)
-    )
+    if re.search(
+        r"\b(go(?:ing)? out|go on a date|on a date with|date me|"
+        r"be my (?:girl|boy)friend|be (?:girl|boy)friends|kiss me|marry me|"
+        r"be together)\b",
+        value,
+    ):
+        return "romantic_invitation"
+    if re.search(
+        r"\b(attracted|attractive|beautiful|cute|gorgeous|handsome|hot|sexy|"
+        r"have feelings for|love you|like you romantically)\b",
+        value,
+    ):
+        return "romantic_compliment"
+    if re.search(r"\b(hate|despise|idiot|stupid|leave me alone|go away)\b", value):
+        return "hostile"
+    if "?" in value or re.search(
+        r"\b(where|when|who|what|why|how|tell me|explain)\b", value
+    ):
+        return "informational"
+    if re.search(r"\b(friend|friends|nice|kind|hello|hi|thank|glad to meet)\b", value):
+        return "friendly"
+    return "neutral"
+
+
+def _is_romantic_request(message):
+    return classify_player_interaction(message) == "romantic_invitation"
 
 
 def response_grounding_issue(payload, response, context):
@@ -1404,12 +1463,20 @@ def response_grounding_issue(payload, response, context):
             return "mention critical needs: {}".format(", ".join(missing))
     message_words = _dialogue_words(message, context)
     dialogue_words = _dialogue_words(dialogue, context)
-    if len(message_words) >= 6 and message_words == dialogue_words:
+    if (
+        len(message_words) >= 6
+        and classify_player_interaction(message) != "romantic_invitation"
+        and _dialogue_similarity(message_words, dialogue_words) >= 0.8
+    ):
         return "respond naturally; do not copy the player's message"
     for turn in context.get("conversation") or []:
         if (
             len(dialogue_words) >= 4
-            and dialogue_words == _dialogue_words(turn.get("dialogue"), context)
+            and _dialogue_similarity(
+                dialogue_words,
+                _dialogue_words(turn.get("dialogue"), context),
+            )
+            >= 0.8
             and message_words != _dialogue_words(turn.get("message"), context)
         ):
             return "do not reuse a previous reply for a different message"
@@ -1433,7 +1500,14 @@ def response_grounding_issue(payload, response, context):
         phrase in dialogue for phrase in uncertainty
     ):
         return "state uncertainty because no supporting memory exists"
-    if _is_romantic_request(message):
+    local_kind = classify_player_interaction(message)
+    model_kind = response.get("player_interaction_kind")
+    interaction_kind = (
+        "romantic_invitation"
+        if local_kind == "romantic_invitation"
+        else model_kind or local_kind
+    )
+    if interaction_kind == "romantic_invitation":
         romance = response.get("relationship") or {}
         romance_delta = romance.get("romance_delta", 0) if isinstance(romance, dict) else 0
         declines = r"\bno\b|not interested|rather stay friends|do not want|don't want"
@@ -1490,6 +1564,7 @@ def recent_conversation(speaker_id, listener_id, limit=None):
 
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
+    interaction_kind = classify_player_interaction(message)
     needs = context.get("game_state", {}).get("needs") or {}
     critical = [
         str(name).casefold()
@@ -1541,11 +1616,23 @@ def reasoning_fallback_response(payload, context):
         intent = "accept_apology"
         animation = "apologize"
         trust_delta = 1
-    elif _is_romantic_request(message):
+    elif interaction_kind == "hostile":
+        dialogue = "I won't continue this conversation while you speak to me that way."
+        emotion = "tense"
+        intent = "set_boundary"
+        animation = "awkward_chat"
+        trust_delta = -1
+    elif interaction_kind == "romantic_invitation":
         dialogue = "No, I would rather stay friends."
         emotion = "awkward"
         intent = "set_boundary"
         animation = "awkward_chat"
+        trust_delta = 0
+    elif interaction_kind == "romantic_compliment":
+        dialogue = "That is flattering. Thank you for being honest with me."
+        emotion = "flattered"
+        intent = "acknowledge_flirtation"
+        animation = "friendly_chat"
         trust_delta = 0
     elif any(word in message for word in ("sex", "woohoo")):
         dialogue = "Slow down. If there is something between us, I want it to feel right, not rushed."
@@ -1553,8 +1640,20 @@ def reasoning_fallback_response(payload, context):
         intent = "set_boundary"
         animation = "awkward_chat"
         trust_delta = -1
+    elif interaction_kind == "informational":
+        dialogue = "I may not have every answer, but I'll tell you what I know."
+        emotion = context.get("emotions", {}).get("current_mood", "neutral")
+        intent = "respond"
+        animation = "friendly_chat"
+        trust_delta = 0
+    elif interaction_kind == "friendly":
+        dialogue = "It's good to hear that. I enjoy talking with you."
+        emotion = "happy"
+        intent = "respond"
+        animation = "friendly_chat"
+        trust_delta = 0
     else:
-        dialogue = "I hear you. Give me a moment to choose my words carefully."
+        dialogue = "I hear you. Thank you for telling me."
         emotion = context.get("emotions", {}).get("current_mood", "neutral")
         intent = "respond"
         animation = "friendly_chat"
@@ -1564,6 +1663,7 @@ def reasoning_fallback_response(payload, context):
             "dialogue": dialogue,
             "emotion": emotion,
             "intent": intent,
+            "player_interaction_kind": interaction_kind,
             "relationship": {"friendship_delta": 0, "romance_delta": 0, "trust_delta": trust_delta},
             "memory": {
                 "importance": 0.2,
@@ -1599,6 +1699,8 @@ class HermesRuntime:
                 issue or "speaker/listener confusion",
                 attempt == 0,
             )
+            if issue and ("copy" in issue or "previous reply" in issue):
+                prompt = build_chat_prompt(payload, dict(context, conversation=[]))
             prompt += (
                 "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
                 "If using a name, use the Listener's name, '{}'."
@@ -1720,6 +1822,11 @@ def chat(payload):
                     )
                 ),
             )
+            if selected["clod"] == 1:
+                decision = adapter.decision_from_response(
+                    reasoning_fallback_response(payload, context),
+                    event.id,
+                )
             action = adapter.action_for(decision)
             if action is None:
                 raise ValueError("no supported Sims action available")

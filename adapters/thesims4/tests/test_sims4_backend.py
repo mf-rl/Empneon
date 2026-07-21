@@ -624,6 +624,19 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
         copy_context,
     )
 
+    near_copy = ai_sims_server.normalize_response(
+        {
+            "dialogue": "It's just looking at you, baby. You really make my world spin.",
+            "intent": "respond",
+            "player_interaction_kind": "romantic_compliment",
+        }
+    )
+    assert "copy" in ai_sims_server.response_grounding_issue(
+        {"message": "Just looking at you, baby. You really make my world spin."},
+        near_copy,
+        copy_context,
+    )
+
     context["conversation"] = [
         {
             "speaker_id": "billie",
@@ -644,6 +657,165 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
     )
     assert fallback["intent"] == "set_boundary"
     assert fallback["relationship"]["romance_delta"] == 0
+
+
+def test_repetition_retry_removes_recent_conversation_history(monkeypatch) -> None:
+    prompts = []
+    responses = iter(
+        [
+            {
+                "dialogue": "You have a very kind presence.",
+                "emotion": "happy",
+                "intent": "respond",
+                "player_interaction_kind": "friendly",
+                "relationship": {},
+                "memory": {},
+                "animation": "friendly_chat",
+            },
+            {
+                "dialogue": "Thank you. I enjoy spending time with you too.",
+                "emotion": "happy",
+                "intent": "agree",
+                "player_interaction_kind": "friendly",
+                "relationship": {},
+                "memory": {},
+                "animation": "friendly_chat",
+            },
+        ]
+    )
+
+    def fake_llm(messages, **_kwargs):
+        prompts.append(messages[-1]["content"])
+        return json.dumps(next(responses))
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "You are very nice. Let's be friends!",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(
+        speaker_id="karmine",
+        listener_id="bernard",
+        conversation=[
+            {
+                "speaker_id": "karmine",
+                "message": "It is nice to meet you.",
+                "dialogue": "You have a very kind presence.",
+            }
+        ],
+    )
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["dialogue"] == "Thank you. I enjoy spending time with you too."
+    assert "You have a very kind presence." in prompts[0]
+    assert "Recent conversation:\nNone yet" in prompts[1]
+
+
+def test_local_social_classifier_distinguishes_common_player_interactions() -> None:
+    examples = {
+        "Would you go out with me sometime?": "romantic_invitation",
+        "Let's be girlfriends.": "romantic_invitation",
+        "I'm very attracted to you. You are really hot.": "romantic_compliment",
+        "You are very nice. Let's be friends!": "friendly",
+        "Where is the garden code item?": "informational",
+        "I hate you. Leave me alone.": "hostile",
+        "The weather changed today.": "neutral",
+    }
+
+    assert {
+        message: ai_sims_server.classify_player_interaction(message)
+        for message in examples
+    } == examples
+
+
+def test_romantic_compliment_does_not_require_invitation_consent_shape() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": "That is flattering, Bernard. You have caught my attention.",
+            "emotion": "flattered",
+            "intent": "respond",
+            "player_interaction_kind": "romantic_compliment",
+            "relationship": {"romance_delta": 0},
+        }
+    )
+
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "I'm very attracted to you. You are really hot."}, response, context
+    ) == ""
+
+
+def test_reasoning_fallback_responds_relevantly_to_romantic_compliment() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+
+    response = ai_sims_server.reasoning_fallback_response(
+        {"message": "I'm very attracted to you. You are really hot."}, context
+    )
+
+    assert response["player_interaction_kind"] == "romantic_compliment"
+    assert "give me a moment" not in response["dialogue"].casefold()
+    assert "attracted to you" not in response["dialogue"].casefold()
+
+
+def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    messages = {
+        "You are very nice. Let's be friends!": "friendly",
+        "I hate you. Leave me alone.": "hostile",
+        "How do you feel about gardening?": "informational",
+        "The weather changed today.": "neutral",
+    }
+
+    responses = {
+        expected: ai_sims_server.reasoning_fallback_response(
+            {"message": message}, context
+        )
+        for message, expected in messages.items()
+    }
+
+    assert set(responses) == set(messages.values())
+    assert all(
+        response["player_interaction_kind"] == kind
+        and "give me a moment" not in response["dialogue"].casefold()
+        for kind, response in responses.items()
+    )
+    assert responses["hostile"]["intent"] == "set_boundary"
 
 
 def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -> None:
@@ -818,6 +990,56 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     assert [item["statement"] for item in after_question["beliefs"]] == [
         "PRIVATE-GARDEN-731 is under the blue bench."
     ]
+
+
+def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
+    tmp_path, monkeypatch
+) -> None:
+    class Provider:
+        capabilities = ModelCapabilities(structured_output=True, local=True)
+
+    class Router:
+        def config_for(self, _task):
+            return {
+                "name": "unavailable",
+                "model": "offline",
+                "max_tokens": 300,
+                "context_tokens": 4096,
+                "latency_ms": 1000,
+                "ram_mb": 64,
+                "vram_mb": 0,
+            }
+
+        def provider_for(self, _task):
+            return Provider()
+
+    def fail_dialogue(_payload, _context):
+        raise RuntimeError("provider unavailable")
+
+    core_db = str(tmp_path / "empneon_core_memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server.HERMES, "dialogue", fail_dialogue)
+
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "message": "I'm very attracted to you. You are really hot.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": ["friendly_chat", "flirt"],
+        }
+    )
+
+    with open_db(core_db) as conn:
+        telemetry = UsageStore(conn).telemetry("karmine")
+    assert result["selected_clod"] == 1
+    assert "language model is unavailable" not in result["dialogue"].casefold()
+    assert "give me a moment" not in result["dialogue"].casefold()
+    assert "attracted to you" not in result["dialogue"].casefold()
+    assert result["relationship"]["romance_delta"] == 0
+    assert telemetry["by_provider"] == {"core-rules": 1}
 
 
 def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -> None:
