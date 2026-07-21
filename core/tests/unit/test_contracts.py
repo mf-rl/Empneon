@@ -23,6 +23,11 @@ def test_agent_state_snapshot_is_json_compatible_and_embedded_in_event() -> None
             "affect": {"tags": ["calm"], "valence": 0.2, "intensity": 0.5},
             "needs": {"energy": {"level": 0.8, "urgency": 0.2}},
             "native": {"unknown_mod_state": "preserved"},
+            "identity": {
+                "gender": {"key": "female", "label": "Female"},
+                "age": {"kind": "life_stage", "value": "adult", "label": "Adult"},
+                "traits": [{"id": "outgoing", "label": "Outgoing"}],
+            },
         }
     )
     event = WorldEvent("observation", ("alice",), agent_state=snapshot)
@@ -33,6 +38,21 @@ def test_agent_state_snapshot_is_json_compatible_and_embedded_in_event() -> None
         "unknown_mod_state": "preserved"
     }
     assert encoded["agent_state"]["effects"] == []
+    assert encoded["agent_state"]["identity"] == {
+        "gender": {"key": "female", "label": "Female"},
+        "age": {"kind": "life_stage", "value": "adult", "label": "Adult"},
+        "traits": [{"id": "outgoing", "label": "Outgoing"}],
+    }
+
+
+def test_agent_state_snapshot_rejects_non_json_identity() -> None:
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        AgentStateSnapshot(
+            1,
+            "test",
+            "alice",
+            identity={"traits": [{"id": object()}]},
+        )
 
 
 @pytest.mark.parametrize(

@@ -47,6 +47,7 @@ class AgentStateSnapshot:
     intentions: list[object] = field(default_factory=list)
     capabilities: dict[str, object] = field(default_factory=dict)
     native: dict[str, object] = field(default_factory=dict)
+    identity: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.schema_version != 1:
@@ -87,6 +88,7 @@ class AgentStateSnapshot:
             intentions=_items(value.get("intentions")),
             capabilities=_mapping(value.get("capabilities")),
             native=_mapping(value.get("native")),
+            identity=_mapping(value.get("identity")),
         )
 
 
