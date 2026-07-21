@@ -233,6 +233,8 @@ dialogue behavior and a positive native romance consequence in game.
   memory and Empneon trust; native friendship/romance persists only after the selected action
   finishes and the game reports its tracks; queued multi-turn sessions wait for that result; and
   manual cancellation suppresses a late backend response.
+- The owner accepted the full-scope critical Ruff gate (`E9,F63,F7,F82`); 119 unrelated legacy
+  all-rule findings are deferred. This resolves verification scope only and is not in-game evidence.
 - **Status remains PARTIAL.** No 2026-07-21 in-game source-build result is recorded. Run the focused
   Test 5 procedure, including the manual-cancel repetition, and append the exact player message,
   displayed response, relationship output before/after, decision ID, native finishing result, and

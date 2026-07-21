@@ -1213,13 +1213,17 @@ From the repository root:
 ```powershell
 $env:PYTHONPATH='core\src;adapters\thesims4\src;adapters\godot\src'
 py -3.12 -m pytest -q -p no:cacheprovider core adapters/thesims4 adapters/godot tests scripts/test_release.py
-py -3.12 -m ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests adapters/thesims4/backend adapters/thesims4/ts4script adapters/godot/src adapters/godot/tests tests scripts
+py -3.12 -m ruff check --select E9,F63,F7,F82 core/src core/tests adapters/thesims4/src adapters/thesims4/tests adapters/thesims4/backend adapters/thesims4/ts4script adapters/godot/src adapters/godot/tests tests scripts
 py -3.12 -m mypy core/src adapters/thesims4/src adapters/godot/src
 py -3.12 -m py_compile adapters/thesims4/backend/ai_sims_server.py adapters/thesims4/backend/empneon_state.py adapters/thesims4/ts4script/ai_sims_agent.py
 $env:PYTHONPATH='core\src'
 py -3.12 -m empneon.benchmarks.regression core/scenarios/clod1-regressions.json
 git diff --check
 ```
+
+The owner approved this full-scope critical Ruff gate instead of requiring cleanup of unrelated
+legacy style findings. Changed production files remain subject to the narrower all-rule Ruff gates
+defined by their implementation tasks. `git diff --check` remains mandatory.
 
 Expected: every command exits `0`; no SQLite sidecars or generated benchmark/dialogue reports are staged.
 
