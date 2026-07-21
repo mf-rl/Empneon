@@ -1815,7 +1815,7 @@ def chat_payload_for_target(active, target_info, message, source):
         "location": current_location(),
         "nearby_sims": nearby_sim_payloads(npc["id"], player["id"]),
         "event": {"type": "player_conversation", "source": source},
-        "available_actions": AVAILABLE_ACTIONS,
+        "available_actions": [],
         "message": message,
     }
 
@@ -1823,9 +1823,7 @@ def chat_payload_for_target(active, target_info, message, source):
 def chat_payload(active, target_name, message):
     target_info = find_sim_info_by_name(target_name)
     if target_info is not None:
-        payload = chat_payload_for_target(active, target_info, message, "cheat_console")
-        payload["available_actions"] = []
-        return payload
+        return chat_payload_for_target(active, target_info, message, "cheat_console")
     player = sim_payload(active)
     return {
         "speaker": npc_payload(target_name),

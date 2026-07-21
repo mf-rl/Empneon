@@ -891,6 +891,13 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     )
     monkeypatch.setattr(agent, "relationship_payload", lambda *_args: {})
     monkeypatch.setattr(agent, "current_location", lambda: "Goth Manor")
+    held_payload = agent.chat_payload_for_target(
+        SimpleNamespace(sim_info=SimpleNamespace(sim_id="mortimer")),
+        SimpleNamespace(sim_id="bella"),
+        "Would you like to go on a date?",
+        "pie_menu",
+    )
+    assert held_payload["available_actions"] == []
     monkeypatch.setattr(
         agent,
         "post_json",
