@@ -18,7 +18,9 @@ class DocumentMemoryStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def set(self, namespace: str, key: str, value: object) -> MemoryDocument:
+    def set(
+        self, namespace: str, key: str, value: object, *, commit: bool = True
+    ) -> MemoryDocument:
         if not namespace.strip() or not key.strip():
             raise ValueError("memory document namespace and key are required")
         updated_at = time.time_ns()
@@ -28,7 +30,8 @@ class DocumentMemoryStore:
             " value=excluded.value, updated_at=excluded.updated_at",
             (namespace, key, json.dumps(value), updated_at),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return MemoryDocument(namespace, key, value, updated_at)
 
     def get(self, namespace: str, key: str) -> object | None:

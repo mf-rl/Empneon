@@ -9,7 +9,9 @@ import sqlite_vec  # type: ignore[import-untyped]
 class VectorMemoryStore:
     """Stores float embeddings keyed by event_id and supports cosine KNN search."""
 
-    def __init__(self, conn: sqlite3.Connection, dimensions: int = 384) -> None:
+    def __init__(
+        self, conn: sqlite3.Connection, dimensions: int = 384, *, commit: bool = True
+    ) -> None:
         self._conn = conn
         self._dim = dimensions
         conn.enable_load_extension(True)
@@ -23,9 +25,12 @@ class VectorMemoryStore:
             "CREATE TABLE IF NOT EXISTS vec_memory_index"
             "(rowid INTEGER PRIMARY KEY, event_id TEXT UNIQUE NOT NULL)"
         )
-        conn.commit()
+        if commit:
+            conn.commit()
 
-    def upsert(self, event_id: str, embedding: list[float]) -> None:
+    def upsert(
+        self, event_id: str, embedding: list[float], *, commit: bool = True
+    ) -> None:
         packed = self._pack(embedding)
         row = self._conn.execute(
             "SELECT rowid FROM vec_memory_index WHERE event_id=?", (event_id,)
@@ -44,7 +49,8 @@ class VectorMemoryStore:
                 "INSERT INTO vec_memories(rowid, embedding) VALUES (?,?)",
                 (cursor.lastrowid, packed),
             )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def search(self, query_embedding: list[float], limit: int = 10) -> list[tuple[str, float]]:
         """Return (event_id, distance) pairs ordered by distance ascending."""

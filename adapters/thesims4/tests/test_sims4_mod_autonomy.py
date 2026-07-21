@@ -579,7 +579,8 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             "post_json",
             lambda path, payload, timeout=90: delivery_reports.append(
                 (path, payload, timeout)
-            ),
+            )
+            or {"decision_id": payload["decision_id"], "status": "displayed"},
         )
 
         class ImmediateThread:
@@ -614,6 +615,14 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert hasattr(chat_dialog.kwargs["text_inputs"], "message")
     assert chat_dialog.show_kwargs == {}
     assert len(notifications) == notification_count
+    assert delivery_reports == [
+        (
+            "/dialogue-result",
+            {"decision_id": "decision-displayed", "status": "displayed"},
+            10,
+        )
+    ]
+    assert agent.show_empneon_message_dialog(None, pie_interaction.target, "not shown") is False
     assert delivery_reports == [
         (
             "/dialogue-result",
@@ -701,10 +710,11 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         agent,
         "post_json",
         lambda path, payload, timeout=None: payloads.append((path, payload))
-        or {
-            "decision_id": "decision-1",
-            "suggested_action": "friendly_chat",
-        },
+        or (
+            {"decision_id": "decision-1", "suggested_action": "friendly_chat"}
+            if path == "/autonomous"
+            else {"decision_id": payload.get("decision_id"), "status": "displayed"}
+        ),
     )
     monkeypatch.setattr(
         agent.threading,
@@ -852,6 +862,38 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert payloads[4][0] == "/action-result"
     assert payloads[4][1]["decision_id"] == "decision-3"
     assert payloads[4][1]["status"] == "succeeded"
+
+    queued = len(agent._AUTONOMY_RESPONSES)
+    with monkeypatch.context() as delivery_patch:
+        delivery_patch.setattr(
+            agent,
+            "post_json",
+            lambda _path, payload, timeout=None: {
+                "decision_id": payload["decision_id"],
+                "status": "already_displayed",
+            },
+        )
+        agent.report_dialogue_delivery(
+            pie_interaction.sim,
+            player_payload,
+            {"decision_id": "decision-already", "animation": "friendly_chat"},
+        )
+    assert len(agent._AUTONOMY_RESPONSES) == queued
+
+    delivery_calls = []
+    with monkeypatch.context() as display_patch:
+        display_patch.setattr(
+            agent,
+            "report_dialogue_delivery",
+            lambda *_args: delivery_calls.append(_args),
+        )
+        agent.show_empneon_chat_result(
+            None,
+            pie_interaction.target,
+            {"decision_id": "decision-not-shown", "dialogue": "No actor."},
+            None,
+        )
+    assert delivery_calls == []
 
     bad_parent = type("EmpneonSocialInteraction", (), {})
     bad_parent.all_affordances_gen = classmethod(

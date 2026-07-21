@@ -2097,32 +2097,46 @@ def confirm_dialogue_delivery(payload):
     if not decision_id or payload.get("status") != "displayed":
         raise ValueError("displayed dialogue decision_id is required")
     with open_db(CORE_DB_PATH) as conn:
-        documents = DocumentMemoryStore(conn)
-        if documents.get("thesims4.dialogue-delivery", decision_id) is not None:
-            return {"decision_id": decision_id, "status": "already_displayed"}
-        actions = ActionRecordStore(conn)
-        proposal = actions.get_proposal(decision_id)
-        if proposal is None:
-            raise ValueError("unknown or already confirmed action proposal")
-        empneon_state.record_delivered_experience(conn, proposal)
-        for change in proposal.decision.state_changes:
-            if change.path == "relationship.trust" and proposal.decision.target_id:
-                relationships = RelationshipStore(conn)
-                relationship = relationships.get(
-                    proposal.decision.actor_id, proposal.decision.target_id
-                ) or Relationship(
-                    proposal.decision.actor_id,
-                    proposal.decision.target_id,
-                    "acquaintance",
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            documents = DocumentMemoryStore(conn)
+            if documents.get("thesims4.dialogue-delivery", decision_id) is not None:
+                conn.commit()
+                return {"decision_id": decision_id, "status": "already_displayed"}
+            actions = ActionRecordStore(conn)
+            proposal = actions.get_proposal(decision_id)
+            if proposal is None:
+                raise ValueError("unknown or already confirmed action proposal")
+            empneon_state.record_delivered_experience(conn, proposal, commit=False)
+            for change in proposal.decision.state_changes:
+                if change.path == "relationship.trust" and proposal.decision.target_id:
+                    relationships = RelationshipStore(conn)
+                    relationship = relationships.get(
+                        proposal.decision.actor_id, proposal.decision.target_id
+                    ) or Relationship(
+                        proposal.decision.actor_id,
+                        proposal.decision.target_id,
+                        "acquaintance",
+                    )
+                    relationship.trust = max(
+                        0.0,
+                        min(1.0, relationship.trust + float(change.value or 0) / 100),
+                    )
+                    relationships.set(relationship, commit=False)
+            if proposal.adapter_action == "none":
+                actions.confirm(
+                    ActionResult(decision_id, "succeeded"), "none", commit=False
                 )
-                relationship.trust = max(
-                    0.0,
-                    min(1.0, relationship.trust + float(change.value or 0) / 100),
-                )
-                relationships.set(relationship)
-        documents.set("thesims4.dialogue-delivery", decision_id, {"displayed": True})
-        if proposal.adapter_action == "none":
-            actions.confirm(ActionResult(decision_id, "succeeded"), "none")
+            documents.set(
+                "thesims4.dialogue-delivery",
+                decision_id,
+                {"displayed": True},
+                commit=False,
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
     return {"decision_id": decision_id, "status": "displayed"}
 
 

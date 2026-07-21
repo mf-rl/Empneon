@@ -360,13 +360,16 @@ def record_observed_event(
     event: Event,
     perceptions: Mapping[str, str],
     factual_statement: str | None = None,
+    *,
+    commit: bool = True,
 ) -> Event:
     for agent_id in {*event.participant_ids, *map(str, perceptions)}:
         _ensure_agent(conn, agent_id)
-    conn.commit()
+    if commit:
+        conn.commit()
     events = EpisodicMemoryStore(conn)
     if events.get(event.id) is None:
-        events.create(event)
+        events.create(event, commit=commit)
     observations = ObservationStore(conn)
     existing_agents = {item.agent_id for item in observations.get_for_event(event.id)}
     for agent_id, perception in perceptions.items():
@@ -378,7 +381,7 @@ def record_observed_event(
             str(perception),
             id=_stable_id(str(agent_id), "observation", event.id),
         )
-        observations.create(observation)
+        observations.create(observation, commit=commit)
         if factual_statement and str(factual_statement).strip():
             belief = Belief(
                 str(agent_id),
@@ -390,9 +393,11 @@ def record_observed_event(
                 id=_stable_id(str(agent_id), "belief", event.id),
             )
             if BeliefStore(conn).get(belief.id) is None:
-                BeliefStore(conn).create(belief)
+                BeliefStore(conn).create(belief, commit=commit)
     try:
-        VectorMemoryStore(conn).upsert(event.id, feature_hash(event.description))
+        VectorMemoryStore(conn, commit=commit).upsert(
+            event.id, feature_hash(event.description), commit=commit
+        )
     except (ImportError, OSError, RuntimeError, sqlite3.Error):
         pass
     return event
@@ -535,7 +540,7 @@ def relevant_memories(
 
 
 def record_delivered_experience(
-    conn: sqlite3.Connection, proposal: ActionProposal
+    conn: sqlite3.Connection, proposal: ActionProposal, *, commit: bool = True
 ) -> Event | None:
     values = {change.path: change.value for change in proposal.decision.state_changes}
     memory = values.get("memory")
@@ -576,6 +581,7 @@ def record_delivered_experience(
         event,
         {agent_id: summary for agent_id in participants},
         factual_statement=_declarative_fact(message),
+        commit=commit,
     )
 
 

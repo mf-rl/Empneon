@@ -1493,6 +1493,124 @@ def test_dialogue_delivery_closes_none_action_without_native_changes(
     assert relationship is None
 
 
+def test_dialogue_delivery_concurrent_acknowledgements_apply_effects_once(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "memory.sqlite3"))
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(
+        ai_sims_server.HERMES,
+        "dialogue",
+        lambda _payload, _context: {
+            "dialogue": "I hear you.",
+            "emotion": "warm",
+            "intent": "reassure",
+            "relationship": {
+                "friendship_delta": 0,
+                "romance_delta": 0,
+                "trust_delta": 1,
+            },
+            "memory": {"importance": 0.8, "summary": "Karmine reassured Bernard."},
+            "animation": "friendly_chat",
+        },
+    )
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "message": "Can I trust you?",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    barrier = threading.Barrier(2)
+    responses = []
+    errors = []
+
+    def acknowledge() -> None:
+        try:
+            barrier.wait()
+            responses.append(
+                ai_sims_server.confirm_dialogue_delivery(
+                    {"decision_id": result["decision_id"], "status": "displayed"}
+                )
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=acknowledge) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert sorted(response["status"] for response in responses) == [
+        "already_displayed",
+        "displayed",
+    ]
+    with open_db(core_db) as conn:
+        relationship = RelationshipStore(conn).get("karmine", "bernard")
+        observations = ObservationStore(conn).get_for_agent("karmine")
+    assert relationship is not None and relationship.trust == pytest.approx(0.51)
+    assert len(observations) == 1
+
+
+def test_dialogue_delivery_retry_rolls_back_failed_none_closure(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    decision = Decision(
+        "karmine",
+        "respond",
+        target_id="bernard",
+        state_changes=(
+            StateDelta("dialogue", "set", "I hear you."),
+            StateDelta("relationship.trust", "increment", 1),
+        ),
+    )
+    with open_db(core_db) as conn:
+        ai_sims_server.empneon_state.sync_sim(conn, {"id": "karmine", "name": "Karmine"})
+        ai_sims_server.empneon_state.sync_sim(conn, {"id": "bernard", "name": "Bernard"})
+        event = Event("delivered turn", ["karmine", "bernard"])
+        ai_sims_server.empneon_state.record_pending_event(conn, event)
+        ActionRecordStore(conn).propose(event.id, decision, "none")
+
+    original_confirm = ActionRecordStore.confirm
+
+    def interrupt_closure(self, result, adapter_action, **kwargs):
+        raise RuntimeError("interrupted none closure")
+
+    monkeypatch.setattr(ActionRecordStore, "confirm", interrupt_closure)
+    with pytest.raises(RuntimeError, match="interrupted none closure"):
+        ai_sims_server.confirm_dialogue_delivery(
+            {"decision_id": decision.id, "status": "displayed"}
+        )
+
+    with open_db(core_db) as conn:
+        assert DocumentMemoryStore(conn).get(
+            "thesims4.dialogue-delivery", decision.id
+        ) is None
+        assert ActionRecordStore(conn).get_proposal(decision.id) is not None
+        assert ActionRecordStore(conn).get(decision.id) is None
+        assert RelationshipStore(conn).get("karmine", "bernard") is None
+        assert ObservationStore(conn).get_for_agent("karmine") == []
+
+    monkeypatch.setattr(ActionRecordStore, "confirm", original_confirm)
+    assert ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": decision.id, "status": "displayed"}
+    ) == {"decision_id": decision.id, "status": "displayed"}
+    with open_db(core_db) as conn:
+        relationship = RelationshipStore(conn).get("karmine", "bernard")
+        assert relationship is not None and relationship.trust == pytest.approx(0.51)
+        assert len(ObservationStore(conn).get_for_agent("karmine")) == 1
+        record = ActionRecordStore(conn).get(decision.id)
+        assert record is not None and record.result.applied_changes == ()
+
+
 def test_relationship_source_diagnostic_separates_native_and_empneon(tmp_path) -> None:
     with open_db(tmp_path / "core.sqlite3") as conn:
         ai_sims_server.empneon_state.sync_sim(conn, {"id": "karmine", "name": "Karmine"})

@@ -999,7 +999,7 @@ class EmpneonTextInputLength(HasTunableSingletonFactory, AutoFactoryInit):
 def show_empneon_message_dialog(actor, target, transcript=""):
     if actor is None or target is None:
         write_marker("Empneon Social canceled: actor or target unavailable")
-        return
+        return False
     target_name = sim_full_name(getattr(target, "sim_info", target))
     message_input = UiTextInput(sort_order=0, restricted_characters=None)
     message_input.default_text = raw_text("Type a message...")
@@ -1043,6 +1043,7 @@ def show_empneon_message_dialog(actor, target, transcript=""):
 
     dialog.add_listener(on_response)
     dialog.show_dialog()
+    return True
 
 
 def submit_empneon_chat(actor, target, message, transcript=""):
@@ -1076,13 +1077,17 @@ def report_dialogue_delivery(actor, payload, data):
 
     def worker():
         try:
-            post_json(
+            delivered = post_json(
                 "/dialogue-result",
                 {"decision_id": decision_id, "status": "displayed"},
                 timeout=10,
             )
             action = str(data.get("suggested_action") or data.get("animation") or "")
-            if payload is not None and action != "none":
+            if (
+                delivered.get("status") == "displayed"
+                and payload is not None
+                and action != "none"
+            ):
                 with _AUTONOMY_RESPONSES_LOCK:
                     _AUTONOMY_RESPONSES.append((payload, data, None))
         except Exception as exc:
@@ -1127,8 +1132,8 @@ def show_empneon_chat_result(actor, target, data, error, transcript=""):
         dialogue,
         details,
     ).strip()
-    show_empneon_message_dialog(actor, target, transcript)
-    if data.get("decision_id"):
+    displayed = show_empneon_message_dialog(actor, target, transcript)
+    if displayed and data.get("decision_id"):
         report_dialogue_delivery(actor, payload, data)
     write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
 

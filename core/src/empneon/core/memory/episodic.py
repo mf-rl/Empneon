@@ -64,7 +64,7 @@ class EpisodicMemoryStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def create(self, event: Event) -> Event:
+    def create(self, event: Event, *, commit: bool = True) -> Event:
         now = int(time.time())
         event.created_at = now
         self._conn.execute(
@@ -76,7 +76,8 @@ class EpisodicMemoryStore:
             "INSERT OR IGNORE INTO event_participants(event_id, agent_id) VALUES (?,?)",
             [(event.id, agent_id) for agent_id in event.participant_ids],
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return event
 
     def get(self, event_id: str) -> Event | None:
@@ -131,7 +132,7 @@ class ObservationStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def create(self, observation: Observation) -> Observation:
+    def create(self, observation: Observation, *, commit: bool = True) -> Observation:
         self._conn.execute(
             "INSERT INTO event_observations(id, event_id, agent_id, perception, observed_at)"
             " VALUES (?,?,?,?,?)",
@@ -143,7 +144,8 @@ class ObservationStore:
                 observation.observed_at,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return observation
 
     def get_for_event(self, event_id: str) -> list[Observation]:
@@ -165,8 +167,11 @@ class BeliefStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def create(self, belief: Belief) -> Belief:
-        with self._conn:
+    def create(self, belief: Belief, *, commit: bool = True) -> Belief:
+        if commit:
+            with self._conn:
+                self._insert(belief)
+        else:
             self._insert(belief)
         return belief
 
