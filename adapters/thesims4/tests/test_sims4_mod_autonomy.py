@@ -909,6 +909,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             if not agent._ACTION_RESULT_OUTBOX and not agent._ACTION_RESULT_RESPONSES:
                 break
 
+    assert agent._outbox_delay(1000000) == 32
+
     agent.autonomous_tick(None)
     agent._AUTONOMY_IN_FLIGHT = True
     agent.autonomous_tick(None)
@@ -977,6 +979,21 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert executed[0] is not interaction
     assert executed[0].affordance is mixer
     assert len(payloads) == 1
+
+    with monkeypatch.context() as unrelated_patch:
+        unrelated_patch.setattr(
+            agent,
+            "post_json",
+            lambda _path, body, timeout=None: body,
+        )
+        agent.report_action_result(
+            "decision-unrelated",
+            "friendly_chat",
+            "failed",
+            "player session canceled",
+        )
+        pump_outbox()
+    assert agent._AUTONOMY_IN_FLIGHT is True
 
     executed[0].finishing_type = "FinishingType.NATURAL"
     executed[0].finishing_callback(executed[0])
@@ -1351,14 +1368,28 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "suggested_action": "none",
         "relationship": {},
     }
+    dialogue_attempts = {}
 
     def console_post(path, body, timeout=None):
         console_calls.append((path, body))
         if path == "/chat":
             return dict(console_response)
         if path == "/dialogue-result":
+            decision_id = body["decision_id"]
+            dialogue_attempts[decision_id] = dialogue_attempts.get(decision_id, 0) + 1
+            if dialogue_attempts[decision_id] == 1:
+                raise RuntimeError("dialogue response lost")
             return {"decision_id": body["decision_id"], "status": "displayed"}
         return {"decision_id": body["decision_id"], "status": body["status"]}
+
+    def pump_dialogue_outbox():
+        for _attempt in range(100):
+            agent.process_autonomy_responses(None)
+            if (
+                not agent._DIALOGUE_DELIVERY_OUTBOX
+                and not agent._DIALOGUE_DELIVERY_RESPONSES
+            ):
+                break
 
     with monkeypatch.context() as console_patch:
         console_patch.setattr(agent, "active_sim", lambda _connection: pie_interaction.sim)
@@ -1372,22 +1403,34 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             ),
         )
         agent.ai_chat("Bob", "|", "Hello", _connection="sync")
+        assert agent._DIALOGUE_DELIVERY_OUTBOX[0]["body"]["decision_id"] == (
+            "decision-console"
+        )
+        pump_dialogue_outbox()
         sync_calls = list(console_calls)
         console_response["decision_id"] = "decision-console-async"
         agent.ai_chat_async("Bob", "|", "Hello", _connection="async")
         assert agent._CONSOLE_CHAT_RESPONSES
-        agent.process_autonomy_responses(None)
+        pump_dialogue_outbox()
     assert sync_calls[0][1]["available_actions"] == []
     assert [call[0] for call in sync_calls] == [
         "/chat",
         "/dialogue-result",
-    ]
-    assert console_calls[2][1]["available_actions"] == []
-    assert [call[0] for call in console_calls[2:]] == [
-        "/chat",
         "/dialogue-result",
     ]
+    assert console_calls[3][1]["available_actions"] == []
+    assert [call[0] for call in console_calls[3:]] == [
+        "/chat",
+        "/dialogue-result",
+        "/dialogue-result",
+    ]
+    assert dialogue_attempts == {
+        "decision-console": 2,
+        "decision-console-async": 2,
+    }
+    assert any("delivery retrying" in line for line in console_output)
     assert agent._CONSOLE_CHAT_RESPONSES == []
+    assert agent._DIALOGUE_DELIVERY_OUTBOX == []
 
     queued = len(agent._AUTONOMY_RESPONSES)
     with monkeypatch.context() as delivery_patch:

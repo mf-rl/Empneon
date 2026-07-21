@@ -38,12 +38,15 @@ _AUTONOMY_ALARM = None
 _AUTONOMY_RESPONSE_ALARM = None
 _AUTONOMY_CURSOR = 0
 _AUTONOMY_IN_FLIGHT = False
+_AUTONOMY_OPERATION_ID = None
 _AUTONOMY_RESPONSES = []
 _CHAT_RESPONSES = []
 _CONSOLE_CHAT_RESPONSES = []
 _SESSION_EVENTS = []
 _ACTION_RESULT_OUTBOX = []
 _ACTION_RESULT_RESPONSES = []
+_DIALOGUE_DELIVERY_OUTBOX = []
+_DIALOGUE_DELIVERY_RESPONSES = []
 _RESPONSE_PUMP_TICK = 0
 _CONVERSATION_SESSIONS = {}
 _AUTONOMY_RESPONSES_LOCK = threading.Lock()
@@ -774,7 +777,7 @@ def nearby_sim_payloads(*excluded):
 
 
 def autonomous_tick(_alarm_handle):
-    global _AUTONOMY_CURSOR, _AUTONOMY_IN_FLIGHT
+    global _AUTONOMY_CURSOR, _AUTONOMY_IN_FLIGHT, _AUTONOMY_OPERATION_ID
     if _AUTONOMY_IN_FLIGHT:
         return
     candidates = instanced_npc_infos()
@@ -813,15 +816,21 @@ def autonomous_tick(_alarm_handle):
         "available_actions": AVAILABLE_ACTIONS,
     }
     _AUTONOMY_IN_FLIGHT = True
+    operation_id = uuid.uuid4().hex
+    _AUTONOMY_OPERATION_ID = operation_id
 
     def worker():
+        global _AUTONOMY_IN_FLIGHT, _AUTONOMY_OPERATION_ID
         try:
             data = post_json("/autonomous", payload)
             with _AUTONOMY_RESPONSES_LOCK:
-                _AUTONOMY_RESPONSES.append((payload, data, selected_interaction))
+                _AUTONOMY_RESPONSES.append(
+                    (payload, data, selected_interaction, operation_id)
+                )
         except Exception:
-            global _AUTONOMY_IN_FLIGHT
-            _AUTONOMY_IN_FLIGHT = False
+            if _AUTONOMY_OPERATION_ID == operation_id:
+                _AUTONOMY_IN_FLIGHT = False
+                _AUTONOMY_OPERATION_ID = None
             write_marker(traceback.format_exc())
 
     thread = threading.Thread(target=worker)
@@ -829,8 +838,12 @@ def autonomous_tick(_alarm_handle):
     thread.start()
 
 
+def _outbox_delay(attempts):
+    return 2 ** min(attempts, 5)
+
+
 def process_autonomy_responses(_alarm_handle):
-    global _AUTONOMY_IN_FLIGHT, _RESPONSE_PUMP_TICK
+    global _AUTONOMY_IN_FLIGHT, _AUTONOMY_OPERATION_ID, _RESPONSE_PUMP_TICK
     with _AUTONOMY_RESPONSES_LOCK:
         _RESPONSE_PUMP_TICK += 1
         chat_item = _CHAT_RESPONSES.pop(0) if _CHAT_RESPONSES else None
@@ -838,6 +851,11 @@ def process_autonomy_responses(_alarm_handle):
         session_event = _SESSION_EVENTS.pop(0) if _SESSION_EVENTS else None
         action_result = (
             _ACTION_RESULT_RESPONSES.pop(0) if _ACTION_RESULT_RESPONSES else None
+        )
+        dialogue_delivery = (
+            _DIALOGUE_DELIVERY_RESPONSES.pop(0)
+            if _DIALOGUE_DELIVERY_RESPONSES
+            else None
         )
         item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
     if chat_item is not None:
@@ -872,7 +890,6 @@ def process_autonomy_responses(_alarm_handle):
             elif event == "action_confirmation_failed" and turn_id == session.turn_id:
                 session.action_confirmation_failed(turn_id, detail)
     if action_result is not None:
-        _AUTONOMY_IN_FLIGHT = False
         outbox_id, error = action_result
         outbox_item = next(
             (entry for entry in _ACTION_RESULT_OUTBOX if entry["id"] == outbox_id),
@@ -882,6 +899,10 @@ def process_autonomy_responses(_alarm_handle):
             outbox_item["in_flight"] = False
             if error is None:
                 _ACTION_RESULT_OUTBOX.remove(outbox_item)
+                operation_id = outbox_item["autonomy_operation_id"]
+                if operation_id is not None and operation_id == _AUTONOMY_OPERATION_ID:
+                    _AUTONOMY_IN_FLIGHT = False
+                    _AUTONOMY_OPERATION_ID = None
                 if outbox_item["session_id"] is not None:
                     body = outbox_item["body"]
                     event = (
@@ -899,8 +920,8 @@ def process_autonomy_responses(_alarm_handle):
                     )
             else:
                 outbox_item["attempts"] += 1
-                outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + min(
-                    2 ** outbox_item["attempts"], 32
+                outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
+                    outbox_item["attempts"]
                 )
                 session = find_conversation_session(outbox_item["session_id"])
                 if (
@@ -917,14 +938,50 @@ def process_autonomy_responses(_alarm_handle):
                             "Action result confirmation failed: {}".format(error),
                         )
                     )
+    if dialogue_delivery is not None:
+        outbox_id, error = dialogue_delivery
+        outbox_item = next(
+            (
+                entry
+                for entry in _DIALOGUE_DELIVERY_OUTBOX
+                if entry["id"] == outbox_id
+            ),
+            None,
+        )
+        if outbox_item is not None:
+            outbox_item["in_flight"] = False
+            if error is None:
+                _DIALOGUE_DELIVERY_OUTBOX.remove(outbox_item)
+            else:
+                outbox_item["attempts"] += 1
+                outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
+                    outbox_item["attempts"]
+                )
+                out(
+                    outbox_item["connection"],
+                    "AI chat delivery retrying: {}".format(error),
+                )
     dispatch_action_result_outbox()
+    dispatch_dialogue_delivery_outbox()
     if item is None:
         return
-    payload, data, selected_interaction = item
-    execute_sims_action(payload, data, selected_interaction)
+    payload, data, selected_interaction, operation_id = item
+    execute_sims_action(
+        payload,
+        data,
+        selected_interaction,
+        autonomy_operation_id=operation_id,
+    )
 
 
-def execute_sims_action(payload, data, interaction, session_id=None, turn_id=None):
+def execute_sims_action(
+    payload,
+    data,
+    interaction,
+    session_id=None,
+    turn_id=None,
+    autonomy_operation_id=None,
+):
     decision_id = str(data.get("decision_id") or "")
     action = str(data.get("suggested_action") or data.get("animation") or "")
     owned_session = find_conversation_session(session_id) if session_id is not None else None
@@ -1047,6 +1104,7 @@ def execute_sims_action(payload, data, interaction, session_id=None, turn_id=Non
                 changes,
                 session_id=session_id,
                 turn_id=turn_id,
+                autonomy_operation_id=autonomy_operation_id,
             )
 
         callback(finished)
@@ -1073,6 +1131,7 @@ def execute_sims_action(payload, data, interaction, session_id=None, turn_id=Non
             [],
             session_id=session_id,
             turn_id=turn_id,
+            autonomy_operation_id=autonomy_operation_id,
         )
 
 
@@ -1084,6 +1143,7 @@ def report_action_result(
     changes=None,
     session_id=None,
     turn_id=None,
+    autonomy_operation_id=None,
 ):
     body = {
         "decision_id": decision_id,
@@ -1112,6 +1172,7 @@ def report_action_result(
                 "body": body,
                 "session_id": session_id,
                 "turn_id": turn_id,
+                "autonomy_operation_id": autonomy_operation_id,
                 "attempts": 0,
                 "next_tick": _RESPONSE_PUMP_TICK,
                 "in_flight": False,
@@ -1163,6 +1224,62 @@ def dispatch_action_result_outbox():
             write_marker(traceback.format_exc())
         with _AUTONOMY_RESPONSES_LOCK:
             _ACTION_RESULT_RESPONSES.append((outbox_id, error))
+
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+    return True
+
+
+def enqueue_dialogue_delivery(connection, decision_id):
+    existing = next(
+        (
+            item
+            for item in _DIALOGUE_DELIVERY_OUTBOX
+            if item["body"]["decision_id"] == decision_id
+        ),
+        None,
+    )
+    if existing is not None:
+        return False
+    _DIALOGUE_DELIVERY_OUTBOX.append(
+        {
+            "id": uuid.uuid4().hex,
+            "body": {"decision_id": decision_id, "status": "displayed"},
+            "connection": connection,
+            "attempts": 0,
+            "next_tick": _RESPONSE_PUMP_TICK,
+            "in_flight": False,
+        }
+    )
+    return True
+
+
+def dispatch_dialogue_delivery_outbox():
+    item = next(
+        (
+            entry
+            for entry in _DIALOGUE_DELIVERY_OUTBOX
+            if not entry["in_flight"]
+            and entry["next_tick"] <= _RESPONSE_PUMP_TICK
+        ),
+        None,
+    )
+    if item is None:
+        return False
+    item["in_flight"] = True
+    outbox_id = item["id"]
+    body = dict(item["body"])
+
+    def worker():
+        error = None
+        try:
+            post_json("/dialogue-result", body, timeout=10)
+        except Exception as exc:
+            error = str(exc)
+            write_marker(traceback.format_exc())
+        with _AUTONOMY_RESPONSES_LOCK:
+            _DIALOGUE_DELIVERY_RESPONSES.append((outbox_id, error))
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
@@ -1727,13 +1844,7 @@ def deliver_console_chat(connection, speaker_name, data):
     decision_id = str(data.get("decision_id") or "")
     if not decision_id:
         return
-    delivered = post_json(
-        "/dialogue-result",
-        {"decision_id": decision_id, "status": "displayed"},
-        timeout=10,
-    )
-    if delivered.get("status") in ("displayed", "already_displayed"):
-        return
+    enqueue_dialogue_delivery(connection, decision_id)
 
 
 @command("ai.chat")
