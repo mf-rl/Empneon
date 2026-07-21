@@ -114,9 +114,11 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-20): PARTIAL** — Directed storage and persistence pass. Automated fixes
-now resolve names and reject copied, recycled, or evasive romantic dialogue; a release retest must
-still verify a confirmed native romance consequence.
+**Current status (2026-07-20): PARTIAL** — Name resolution and a confirmed friendship consequence
+now pass in the release retest. Directed storage and persistence already pass; a confirmed native
+romance consequence remains unverified. Semantic classification, near-copy rejection, clean
+repetition retries, and relevant offline responses pass automated tests but require a new release
+retest before Test 5 can pass.
 
 - Prerequisite: two Sims with a known relationship.
 - Action: note `ai.relationship <Target Name>`, complete an Empneon Social, then run it again.

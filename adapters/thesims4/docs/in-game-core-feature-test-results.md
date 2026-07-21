@@ -127,6 +127,40 @@ restarted both the game and backend before the final verification.
   complete verification passed: Core 168, Sims 4 54, Godot 1, integration 3, and release 18 tests
   (`244 passed` total), plus Ruff, mypy, and Python compilation.
 
+**Release retest after remediation (2026-07-20):**
+
+- With Bernard active, `ai.relationship Cam Sandya` resolved successfully and reported Cam →
+  Bernard friendship `0`, romance `0`, trust `50`, respect `50`, and resentment `0`.
+- After an Empneon Social friendship request, the same name-based command reported friendship `7`
+  with all other displayed values unchanged. This verifies name resolution and a confirmed native
+  friendship consequence.
+- Bernard's diagnostic correctly showed no reverse relationship because the measured edge is Cam
+  → Bernard. Cam's diagnostic/timeline is still required to record that directed edge directly.
+- This exchange does not test romance; Test 5 remains partial until an accepted invitation produces
+  a completed native flirt and a confirmed romance consequence.
+
+**Second automated remediation after the Karmine retest (2026-07-20):**
+
+- The Karmine transcript reproduced a near-copy (`It's just looking at you...`) that escaped the
+  previous exact-match guard. A later response degraded to the generic “Give me a moment...” text
+  after both grounded model attempts reused stale conversation history.
+- The existing model response now classifies the current player interaction as friendly, romantic
+  compliment, romantic invitation, hostile, informational, or neutral. This uses the same model
+  generation rather than adding a classifier request. Direct romantic invitations retain the
+  deterministic accept-or-decline consent boundary; compliments do not.
+- Near-copy detection now uses token-sequence similarity. When a response copies the current
+  message or an earlier reply, the second model attempt keeps identity, state, relationship,
+  memories, and the current message but removes recent dialogue history.
+- If model routing falls back to Core CLOD 1, the Sims adapter now returns a conservative,
+  interaction-relevant response instead of the generic model-unavailable message. Usage remains
+  attributed to `core-rules`, and native confirmation is still required for consequences.
+- Automated coverage now reproduces the Karmine near-copy, verifies clean retry history, separates
+  romantic compliments from invitations, covers all six fallback categories, and verifies the
+  provider-unavailable CLOD 1 path. A new packaged release must still retest accepted romance and
+  native confirmation in game.
+- Final verification passed: Core 168, Sims 4 60, Godot 1, cross-adapter 3, and release 18 tests
+  (`250 passed` total), plus Ruff, mypy (50 source files), and the deterministic CLOD1 scenario.
+
 **Procedure:** Recorded `ai.relationship Billie Jang`, asked Billie on a date through Empneon
 Social, then queried the relationship again.
 
