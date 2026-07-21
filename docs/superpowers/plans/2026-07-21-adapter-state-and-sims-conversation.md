@@ -1217,7 +1217,7 @@ py -3.12 -m ruff check core/src core/tests adapters/thesims4/src adapters/thesim
 py -3.12 -m mypy core/src adapters/thesims4/src adapters/godot/src
 py -3.12 -m py_compile adapters/thesims4/backend/ai_sims_server.py adapters/thesims4/backend/empneon_state.py adapters/thesims4/ts4script/ai_sims_agent.py
 $env:PYTHONPATH='core\src'
-py -3.12 -m empneon.cli.regress core/scenarios/clod1-regressions.json
+py -3.12 -m empneon.benchmarks.regression core/scenarios/clod1-regressions.json
 git diff --check
 ```
 

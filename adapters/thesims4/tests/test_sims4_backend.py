@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import sqlite3
@@ -8,7 +9,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from empneon.core.contracts import (
     AgentStateSnapshot,
     CognitiveRequest,
@@ -115,7 +115,7 @@ def test_unified_database_is_the_only_active_default() -> None:
 def test_prepare_database_adopts_legacy_core_without_modifying_it(tmp_path) -> None:
     old = tmp_path / "empneon_core.sqlite3"
     new = tmp_path / "empneon_core_memory.sqlite3"
-    with open_db(old) as conn:
+    with contextlib.closing(open_db(old)) as conn:
         AgentStore(conn).create(
             Agent("bella", "Bella", game_id="bella", adapter="sims4")
         )
@@ -127,7 +127,7 @@ def test_prepare_database_adopts_legacy_core_without_modifying_it(tmp_path) -> N
         str(new), str(old), str(tmp_path / "ai_sims_memory.sqlite3")
     )
 
-    with open_db(new) as conn:
+    with contextlib.closing(open_db(new)) as conn:
         assert AgentStore(conn).get("bella").name == "Bella"
     assert old.read_bytes() == before
     assert status.active_path == str(new.resolve())

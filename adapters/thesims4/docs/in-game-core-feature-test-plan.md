@@ -6,6 +6,9 @@ data first.
 
 ## Common setup
 
+Test 5 is the exception to the release setup below: use the source-build development workflow in
+`setup.md` so the installed mod and backend both come from the feature worktree.
+
 1. Extract the release, run `install_mod.ps1`, then run `run_backend.ps1`.
 2. Enable **Custom Content and Mods** and **Script Mods Allowed**, restart the game, and load a
    household with two controllable Sims and at least one NPC.

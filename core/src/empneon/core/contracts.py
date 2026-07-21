@@ -16,6 +16,14 @@ def _mapping(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _integer(value: object) -> int:
+    return int(value) if isinstance(value, (str, bytes, int, float)) else 0
+
+
+def _items(value: object) -> list[object]:
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
 def _bounded(mapping: Mapping[str, object], key: str, low: float, high: float) -> None:
     value = mapping.get(key)
     if value is not None and (
@@ -65,15 +73,15 @@ class AgentStateSnapshot:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "AgentStateSnapshot":
         return cls(
-            schema_version=int(value.get("schema_version", 0)),
+            schema_version=_integer(value.get("schema_version")),
             adapter=str(value.get("adapter") or ""),
             agent_id=str(value.get("agent_id") or ""),
             affect=_mapping(value.get("affect")),
             needs=_mapping(value.get("needs")),
-            effects=list(value.get("effects") or []),
+            effects=_items(value.get("effects")),
             relationships=_mapping(value.get("relationships")),
-            goals=list(value.get("goals") or []),
-            intentions=list(value.get("intentions") or []),
+            goals=_items(value.get("goals")),
+            intentions=_items(value.get("intentions")),
             capabilities=_mapping(value.get("capabilities")),
             native=_mapping(value.get("native")),
         )

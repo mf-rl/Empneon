@@ -55,12 +55,19 @@ def feature_hash(text: str, dimensions: int = 384) -> list[float]:
     return [value / norm for value in vector] if norm else vector
 
 
-def _mapping(value: object) -> dict[object, object]:
-    return dict(value) if isinstance(value, Mapping) else {}
+def _mapping(value: object) -> dict[str, object]:
+    return {str(key): item for key, item in value.items()} if isinstance(value, Mapping) else {}
 
 
 def _items(value: object) -> list[object]:
     return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _number(mapping: Mapping[str, object], key: str, default: float = 0.0) -> float:
+    value = mapping.get(key, default)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return default
 
 
 def cognition_priority(
@@ -94,7 +101,7 @@ class Sims4Adapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
         self._payload = payload
 
-    def _sim_data(self) -> dict[object, object]:
+    def _sim_data(self) -> dict[str, object]:
         sim = self._payload.get("sim")
         speaker = self._payload.get("speaker")
         selected = sim if isinstance(sim, Mapping) else speaker
@@ -105,7 +112,7 @@ class Sims4Adapter:
         listener = _mapping(self._payload.get("listener"))
         relationship = _mapping(self._payload.get("relationship"))
         listener_id = str(listener.get("id") or "")
-        needs = {
+        needs: dict[str, object] = {
             str(name): {
                 "level": max(0.0, min(1.0, float(value) / 100)),
                 "urgency": max(0.0, min(1.0, 1 - float(value) / 100)),
@@ -113,18 +120,18 @@ class Sims4Adapter:
             for name, value in _mapping(speaker.get("needs")).items()
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         }
-        relationships = {}
+        relationships: dict[str, object] = {}
         if listener_id:
             relationships[listener_id] = {
                 "affinity": max(
                     -1.0,
-                    min(1.0, float(relationship.get("friendship", 0)) / 100),
+                    min(1.0, _number(relationship, "friendship") / 100),
                 ),
                 "romance": max(
-                    0.0, min(1.0, float(relationship.get("romance", 0)) / 100)
+                    0.0, min(1.0, _number(relationship, "romance") / 100)
                 ),
                 "trust": max(
-                    0.0, min(1.0, float(relationship.get("trust", 50)) / 100)
+                    0.0, min(1.0, _number(relationship, "trust", 50) / 100)
                 ),
             }
         mood = str(speaker.get("current_mood") or "unknown")
