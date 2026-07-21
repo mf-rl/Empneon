@@ -259,6 +259,8 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     for probe in (
         "sim_needs",
+        "sim_effects",
+        "sim_sentiments",
         "sim_moodlets",
         "sim_aspiration",
         "sim_career",
@@ -278,6 +280,16 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         stat_type=type("Cooking", (), {}),
         get_value=lambda: 7,
     )
+    inspired = type(
+        "Inspired", (), {"guid64": "buff-inspired", "polarity": "unknown"}
+    )
+    modded_aurora = type(
+        "ModdedAuroraState", (), {"guid64": "buff-modded", "polarity": "unknown"}
+    )
+    adoring = type(
+        "Adoring", (), {"guid64": "sentiment-adoring", "polarity": "positive"}
+    )
+    bernard = type("SentimentTarget", (), {"sim_id": "bernard"})()
     rich_info = SimpleNamespace(
         sim_id="bella",
         full_name="Bella",
@@ -288,7 +300,13 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             get_all_commodities=lambda: [hunger, internal_stat]
         ),
         buff_component=SimpleNamespace(
-            get_all_buffs=lambda: [SimpleNamespace(buff_type=type("Uncomfortable", (), {}))]
+            get_all_buffs=lambda: [
+                SimpleNamespace(buff_type=inspired),
+                SimpleNamespace(buff_type=modded_aurora),
+            ]
+        ),
+        sentiment_tracker=SimpleNamespace(
+            sentiments={bernard: SimpleNamespace(sentiment=adoring)}
         ),
         aspiration_tracker=SimpleNamespace(
             active_aspiration=type("MasterChef", (), {})
@@ -303,7 +321,31 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert rich_payload["age"] == 42
     assert rich_payload["current_mood"] == "uncomfortable"
     assert rich_payload["needs"] == {"hunger": 18}
-    assert rich_payload["moodlets"] == ["Uncomfortable"]
+    assert rich_payload["moodlets"] == ["Inspired", "ModdedAuroraState"]
+    assert rich_payload["effects"] == [
+        {
+            "kind": "moodlet",
+            "label": "Inspired",
+            "id": "buff-inspired",
+            "polarity": "unknown",
+        },
+        {
+            "kind": "moodlet",
+            "label": "ModdedAuroraState",
+            "id": "buff-modded",
+            "polarity": "unknown",
+        },
+        {
+            "kind": "sentiment",
+            "label": "Adoring",
+            "id": "sentiment-adoring",
+            "polarity": "positive",
+            "target_id": "bernard",
+        },
+    ]
+    assert rich_payload["native"]["mood"] == rich_payload["current_mood"]
+    assert rich_payload["native"]["buffs"][1]["label"] == "ModdedAuroraState"
+    assert rich_payload["native"]["sentiments"][0]["target_id"] == "bernard"
     assert rich_payload["aspiration"] == "MasterChef"
     assert rich_payload["career"] == "Painter"
     assert rich_payload["skills"] == {"Cooking": 7}

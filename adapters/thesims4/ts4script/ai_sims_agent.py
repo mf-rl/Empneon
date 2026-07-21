@@ -321,7 +321,27 @@ def sim_age(sim_info):
             return None
 
 
-def sim_moodlets(sim_info):
+def native_game_item(value, kind):
+    source = getattr(value, "buff_type", None) or getattr(
+        value, "sentiment", None
+    ) or value
+    identifier = (
+        getattr(source, "guid64", None)
+        or getattr(source, "id", None)
+        or short_trait_name(source)
+    )
+    polarity = text_value(getattr(source, "polarity", None), "unknown").casefold()
+    if polarity not in ("positive", "negative", "neutral"):
+        polarity = "unknown"
+    return {
+        "kind": kind,
+        "label": short_trait_name(source),
+        "id": str(identifier or ""),
+        "polarity": polarity,
+    }
+
+
+def sim_effects(sim_info):
     component = getattr(sim_info, "buff_component", None)
     if component is None:
         try:
@@ -331,16 +351,43 @@ def sim_moodlets(sim_info):
     try:
         source = getattr(component, "get_all_buffs", None)
         buffs = source() if callable(source) else source or []
-        return [
-            name
-            for name in (
-                short_trait_name(getattr(buff, "buff_type", buff))
-                for buff in list(buffs)[:20]
-            )
-            if name
-        ]
+        return [native_game_item(buff, "moodlet") for buff in buffs]
     except Exception:
         return []
+
+
+def sim_sentiments(sim_info):
+    tracker = getattr(sim_info, "sentiment_tracker", None)
+    items = None
+    for attr in ("get_all_sentiments", "sentiments", "values"):
+        try:
+            source = getattr(tracker, attr, None)
+            if source is None:
+                continue
+            items = source() if callable(source) else source
+            break
+        except Exception:
+            pass
+    if items is None:
+        return []
+    pairs = items.items() if isinstance(items, dict) else (
+        (None, item) for item in items
+    )
+    records = []
+    for target, sentiment in pairs:
+        try:
+            record = native_game_item(sentiment, "sentiment")
+            target_id = getattr(target, "sim_id", target)
+            if target_id not in (None, ""):
+                record["target_id"] = str(target_id)
+            records.append(record)
+        except Exception:
+            pass
+    return records
+
+
+def sim_moodlets(sim_info):
+    return [item["label"] for item in sim_effects(sim_info) if item["label"]]
 
 
 def sim_aspiration(sim_info):
@@ -395,14 +442,26 @@ def sim_household(sim_info):
 
 
 def sim_info_payload(sim_info):
+    effects = sim_effects(sim_info) + sim_sentiments(sim_info)
+    moodlets = [item for item in effects if item["kind"] == "moodlet"]
+    sentiments = [item for item in effects if item["kind"] == "sentiment"]
+    mood = sim_mood(sim_info)
     return {
         "id": str(getattr(sim_info, "sim_id", sim_full_name(sim_info))),
         "name": sim_full_name(sim_info),
         "age": sim_age(sim_info),
         "traits": sim_traits(sim_info),
-        "current_mood": sim_mood(sim_info),
+        "current_mood": mood,
         "needs": sim_needs(sim_info),
-        "moodlets": sim_moodlets(sim_info),
+        "moodlets": [item["label"] for item in moodlets if item["label"]],
+        "effects": effects,
+        "intentions": [],
+        "native": {
+            "mood": mood,
+            "buffs": moodlets,
+            "moodlets": moodlets,
+            "sentiments": sentiments,
+        },
         "aspiration": sim_aspiration(sim_info),
         "career": sim_career(sim_info),
         "skills": sim_skills(sim_info),
