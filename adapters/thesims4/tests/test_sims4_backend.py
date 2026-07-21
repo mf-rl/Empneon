@@ -1248,6 +1248,42 @@ def test_failed_action_records_replay_but_applies_no_consequences(
     assert diagnostics["accessible_memories"] == []
 
 
+def test_action_confirmation_is_idempotent_after_lost_response(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    proposal = ai_sims_server.autonomous_action(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "event": {"type": "autonomous_social", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    payload = {
+        "decision_id": proposal["decision_id"],
+        "action": "friendly_chat",
+        "status": "succeeded",
+        "changes": [
+            {
+                "path": "relationship.friendship",
+                "operation": "increment",
+                "value": 5,
+            }
+        ],
+    }
+
+    first = ai_sims_server.confirm_action(payload)
+    second = ai_sims_server.confirm_action(payload)
+
+    assert second == first
+    with open_db(core_db) as conn:
+        relationship = RelationshipStore(conn).get("bella", "mortimer")
+    assert relationship is not None
+    assert relationship.strength == 0.05
+
+
 def test_successful_confirmation_applies_validated_identity_consequences(
     tmp_path, monkeypatch
 ) -> None:

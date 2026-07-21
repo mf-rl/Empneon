@@ -2080,7 +2080,19 @@ def confirm_action(payload):
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(decision_id)
         if proposal is None:
-            raise ValueError("unknown or already confirmed action proposal")
+            existing = actions.get(decision_id)
+            if (
+                existing is not None
+                and existing.result.status == result.status
+                and existing.result.applied_changes == result.applied_changes
+                and existing.result.reason == result.reason
+            ):
+                return {
+                    "decision_id": existing.decision.id,
+                    "status": existing.result.status,
+                    "consequences": len(existing.result.applied_changes),
+                }
+            raise ValueError("unknown or conflicting action proposal")
         if proposal.adapter_action != action:
             raise ValueError("confirmed action does not match its proposal")
         empneon_state.apply_confirmed_consequences(conn, proposal, result)

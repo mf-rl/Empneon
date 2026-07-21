@@ -60,13 +60,16 @@ class AgentStateSnapshot:
             if isinstance(need, Mapping):
                 _bounded(need, "level", 0.0, 1.0)
                 _bounded(need, "urgency", 0.0, 1.0)
+        for effect in self.effects:
+            if isinstance(effect, Mapping):
+                _bounded(effect, "intensity", 0.0, 1.0)
         for relationship in self.relationships.values():
             if isinstance(relationship, Mapping):
                 _bounded(relationship, "affinity", -1.0, 1.0)
                 _bounded(relationship, "romance", 0.0, 1.0)
                 _bounded(relationship, "trust", 0.0, 1.0)
         try:
-            json.dumps(dataclasses.asdict(self))
+            json.dumps(dataclasses.asdict(self), allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise ValueError("agent state must be JSON-compatible") from exc
 

@@ -60,6 +60,31 @@ def test_agent_state_snapshot_rejects_out_of_range_values(
         AgentStateSnapshot.from_mapping(data)
 
 
+def test_agent_state_snapshot_rejects_out_of_range_effect_intensity() -> None:
+    with pytest.raises(ValueError, match="intensity"):
+        AgentStateSnapshot.from_mapping(
+            {
+                "schema_version": 1,
+                "adapter": "test",
+                "agent_id": "alice",
+                "effects": [{"name": "energized", "intensity": 1.01}],
+            }
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_agent_state_snapshot_rejects_nested_non_finite_values(value: float) -> None:
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        AgentStateSnapshot.from_mapping(
+            {
+                "schema_version": 1,
+                "adapter": "test",
+                "agent_id": "alice",
+                "native": {"nested": [{"sensor": value}]},
+            }
+        )
+
+
 def test_generic_event_to_decision_contract() -> None:
     event = WorldEvent(
         type="social_interaction",

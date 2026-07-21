@@ -111,9 +111,13 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             self.affordance = affordance
             self.finishing_type = ""
             self.finishing_callback = None
+            self.canceled = False
 
         def register_on_finishing_callback(self, callback):
             self.finishing_callback = callback
+
+        def cancel(self):
+            self.canceled = True
 
     class FakeAffordanceObjectPair:
         def __init__(self, affordance, target, super_affordance, super_interaction, **kwargs):
@@ -598,6 +602,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     response_dialog = dialogs[-1]
     response_dialog.accepted = False
     response_dialog.listener(response_dialog)
+    agent.process_autonomy_responses(None)
     try:
         next(runner)
     except StopIteration as finished:
@@ -766,6 +771,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         display_session.turn_id = 1
         display_session.phase = "showing_response"
         display_session.transcript = "Alice: Remember our promise?"
+        agent._CONVERSATION_SESSIONS["display-session"] = display_session
         agent.show_empneon_chat_result(
             display_session,
             {
@@ -808,6 +814,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     chat_dialog.text_input_responses = {"message": "Do you?"}
     display_session.dialogue_acknowledged = True
     chat_dialog.listener(chat_dialog)
+    while agent._SESSION_EVENTS:
+        agent.process_autonomy_responses(None)
     assert submitted[-1] == (display_session, "Do you?")
 
     sim_chat = type("native_NPC_social", (), {})
@@ -1063,6 +1071,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     )
     agent.process_autonomy_responses(None)
     assert player_session.phase == "running_native_action"
+    assert player_session.pending_decision == ("decision-3", "friendly_chat")
     assert len(mapped_aops) == 3
     assert mapped_aops[2].affordance is mixer
     assert mapped_aops[2].push_super_on_prepare is True
@@ -1098,11 +1107,63 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "second_submitted",
     ]
 
+    cancellation_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    cancellation_session.turn_id = 1
+    cancellation_session.phase = "running_native_action"
+    cancellation_session.pending_decision = ("decision-cancel-native", "friendly_chat")
+    agent._CONVERSATION_SESSIONS["cancel-native"] = cancellation_session
+    cancellation_reports = []
+    with monkeypatch.context() as cancellation_patch:
+        cancellation_patch.setattr(
+            agent,
+            "post_json",
+            lambda path, body, timeout=None: cancellation_reports.append((path, body)) or body,
+        )
+        cancellation_patch.setattr(
+            agent.threading,
+            "Thread",
+            lambda target: SimpleNamespace(daemon=False, start=target),
+        )
+        agent.execute_sims_action(
+            player_payload,
+            {
+                "decision_id": "decision-cancel-native",
+                "suggested_action": "friendly_chat",
+            },
+            None,
+            session_id=cancellation_session.id,
+            turn_id=1,
+        )
+        native_interaction = cancellation_session.native_interaction
+        cancellation_session.close(canceled=True)
+        agent._CONVERSATION_SESSIONS.pop("cancel-native")
+        native_interaction.finishing_type = "FinishingType.NATURAL"
+        native_interaction.finishing_callback(native_interaction)
+    assert native_interaction.canceled is True
+    assert cancellation_reports == [
+        (
+            "/action-result",
+            {
+                "decision_id": "decision-cancel-native",
+                "action": "friendly_chat",
+                "status": "failed",
+                "reason": "Empneon Social canceled",
+                "changes": [],
+            },
+        )
+    ]
+
     acknowledgement_failure_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
     )
     acknowledgement_failure_session.turn_id = 1
     acknowledgement_failure_session.phase = "showing_response"
+    acknowledgement_failure_session.pending_decision = (
+        "decision-ack-failure",
+        "friendly_chat",
+    )
     agent._CONVERSATION_SESSIONS["ack-failure"] = acknowledgement_failure_session
     action_count = len(mapped_aops)
     agent.finish_displayed_turn(
@@ -1132,6 +1193,17 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert acknowledgement_failure_session.closed is True
     assert len(mapped_aops) == action_count
 
+    retry_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    retry_session.turn_id = 1
+    retry_session.phase = "waiting_for_backend"
+    dialog_count = len(dialogs)
+    retry_session.accept_backend_result(1, None, "provider unavailable")
+    assert retry_session.closed is False
+    assert retry_session.phase == "input"
+    assert len(dialogs) == dialog_count + 1
+
     failed_post_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
     )
@@ -1151,9 +1223,40 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         session_id=failed_post_session.id,
         turn_id=1,
     )
-    assert agent._SESSION_EVENTS[-1][2] == "native_failed"
+    assert agent._SESSION_EVENTS[-1][2] == "action_confirmation_failed"
     agent.process_autonomy_responses(None)
-    assert failed_post_session.closed is True
+    assert failed_post_session.closed is False
+    assert failed_post_session.phase == "action_confirmation_failed"
+
+    retry_success_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    retry_success_session.turn_id = 1
+    retry_success_session.phase = "running_native_action"
+    retry_success_session.pending_decision = ("decision-retry", "friendly_chat")
+    retry_success_session.action_result_started = True
+    agent._CONVERSATION_SESSIONS["retry-success"] = retry_success_session
+    retry_attempts = []
+
+    def flaky_post(path, body, timeout=None):
+        retry_attempts.append((path, body))
+        if len(retry_attempts) == 1:
+            raise RuntimeError("reply lost")
+        return body
+
+    monkeypatch.setattr(agent, "post_json", flaky_post)
+    agent.report_action_result(
+        "decision-retry",
+        "friendly_chat",
+        "succeeded",
+        session_id=retry_success_session.id,
+        turn_id=1,
+    )
+    assert len(retry_attempts) == 2
+    assert agent._SESSION_EVENTS[-1][2] == "native_finished"
+    while agent._SESSION_EVENTS and not retry_success_session.closed:
+        agent.process_autonomy_responses(None)
+    assert retry_success_session.closed is True
 
     malformed_reports = []
     malformed_session = agent.EmpneonConversationSession(
@@ -1180,6 +1283,54 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     agent.process_autonomy_responses(None)
     assert malformed_session.closed is True
     monkeypatch.setattr(agent, "post_json", original_post_json)
+
+    console_calls = []
+    console_output = []
+    console_response = {
+        "decision_id": "decision-console",
+        "dialogue": "Console hello.",
+        "suggested_action": "none",
+        "relationship": {},
+    }
+
+    def console_post(path, body, timeout=None):
+        console_calls.append((path, body))
+        if path == "/chat":
+            return dict(console_response)
+        if path == "/dialogue-result":
+            return {"decision_id": body["decision_id"], "status": "displayed"}
+        return {"decision_id": body["decision_id"], "status": body["status"]}
+
+    with monkeypatch.context() as console_patch:
+        console_patch.setattr(agent, "active_sim", lambda _connection: pie_interaction.sim)
+        console_patch.setattr(agent, "post_json", console_post)
+        console_patch.setattr(agent, "out", lambda _connection, text: console_output.append(text))
+        console_patch.setattr(
+            agent.threading,
+            "Thread",
+            lambda target, args=(): SimpleNamespace(
+                daemon=False, start=lambda: target(*args)
+            ),
+        )
+        agent.ai_chat("Bob", "|", "Hello", _connection="sync")
+        sync_calls = list(console_calls)
+        console_response["decision_id"] = "decision-console-async"
+        agent.ai_chat_async("Bob", "|", "Hello", _connection="async")
+        assert agent._CONSOLE_CHAT_RESPONSES
+        agent.process_autonomy_responses(None)
+    assert sync_calls[0][1]["available_actions"] == []
+    assert [call[0] for call in sync_calls] == [
+        "/chat",
+        "/dialogue-result",
+        "/action-result",
+    ]
+    assert console_calls[3][1]["available_actions"] == []
+    assert [call[0] for call in console_calls[3:]] == [
+        "/chat",
+        "/dialogue-result",
+        "/action-result",
+    ]
+    assert agent._CONSOLE_CHAT_RESPONSES == []
 
     queued = len(agent._AUTONOMY_RESPONSES)
     with monkeypatch.context() as delivery_patch:
