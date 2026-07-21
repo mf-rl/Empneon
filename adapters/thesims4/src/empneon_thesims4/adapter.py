@@ -5,7 +5,13 @@ import math
 import re
 from collections.abc import Mapping
 
-from empneon.core.contracts import ActionResult, Decision, StateDelta, WorldEvent
+from empneon.core.contracts import (
+    ActionResult,
+    AgentStateSnapshot,
+    Decision,
+    StateDelta,
+    WorldEvent,
+)
 
 SIMS_ACTIONS = frozenset(
     {
@@ -88,6 +94,53 @@ class Sims4Adapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
         self._payload = payload
 
+    def agent_state(self) -> AgentStateSnapshot:
+        speaker = _mapping(self._payload.get("speaker"))
+        listener = _mapping(self._payload.get("listener"))
+        relationship = _mapping(self._payload.get("relationship"))
+        listener_id = str(listener.get("id") or "")
+        needs = {
+            str(name): {
+                "level": max(0.0, min(1.0, float(value) / 100)),
+                "urgency": max(0.0, min(1.0, 1 - float(value) / 100)),
+            }
+            for name, value in _mapping(speaker.get("needs")).items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        relationships = {}
+        if listener_id:
+            relationships[listener_id] = {
+                "affinity": max(
+                    -1.0,
+                    min(1.0, float(relationship.get("friendship", 0)) / 100),
+                ),
+                "romance": max(
+                    0.0, min(1.0, float(relationship.get("romance", 0)) / 100)
+                ),
+                "trust": max(
+                    0.0, min(1.0, float(relationship.get("trust", 50)) / 100)
+                ),
+            }
+        mood = str(speaker.get("current_mood") or "unknown")
+        native = _mapping(speaker.get("native"))
+        native.setdefault("mood", mood)
+        native.setdefault("moodlets", _items(speaker.get("moodlets")))
+        return AgentStateSnapshot(
+            1,
+            "sims4",
+            str(speaker.get("id") or speaker.get("name") or "unknown-sim"),
+            affect={"tags": [] if mood == "unknown" else [mood]},
+            needs=needs,
+            effects=_items(speaker.get("effects")),
+            relationships=relationships,
+            goals=_items(speaker.get("goals")),
+            intentions=_items(speaker.get("intentions")),
+            capabilities={
+                "actions": _items(self._payload.get("available_actions"))
+            },
+            native=native,
+        )
+
     def observe(self) -> tuple[WorldEvent, ...]:
         sim = self._payload.get("sim")
         speaker = self._payload.get("speaker")
@@ -132,6 +185,7 @@ class Sims4Adapter:
                         self._payload.get("available_actions")
                     ),
                 },
+                agent_state=self.agent_state(),
             ),
         )
 

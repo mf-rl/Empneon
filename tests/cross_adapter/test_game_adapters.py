@@ -6,12 +6,13 @@ import pytest
 from empneon_godot import GodotBridge
 from empneon_thesims4 import Sims4Adapter
 from empneon.core.clod import resolve_clod1
-from empneon.core.contracts import CognitiveRequest, WorldEvent
+from empneon.core.contracts import AgentStateSnapshot, CognitiveRequest, WorldEvent
 
 
 @dataclass(frozen=True)
 class RoundTrip:
     event: WorldEvent
+    agent_state: AgentStateSnapshot
     actor_id: str
     decision_id: str
     evidence_ids: tuple[str, ...]
@@ -31,8 +32,10 @@ def _sims4_round_trip() -> RoundTrip:
     event = adapter.observe()[0]
     decision = resolve_clod1(CognitiveRequest("agent-a", 1, event))
     result = adapter.execute(decision)
+    assert event.agent_state is not None
     return RoundTrip(
         event,
+        event.agent_state,
         decision.actor_id,
         decision.id,
         decision.evidence_ids,
@@ -42,7 +45,17 @@ def _sims4_round_trip() -> RoundTrip:
 
 
 def _godot_round_trip() -> RoundTrip:
-    event = WorldEvent("encounter", ("agent-a", "agent-b"), id="contract-encounter")
+    event = WorldEvent(
+        "encounter",
+        ("agent-a", "agent-b"),
+        id="contract-encounter",
+        agent_state=AgentStateSnapshot(
+            1,
+            "godot",
+            "agent-a",
+            native={"unknown_engine_value": "preserved"},
+        ),
+    )
     bridge = GodotBridge()
     decision = bridge.decide({"agent_id": "agent-a", "event": asdict(event)})
     decision_id = str(decision["id"])
@@ -57,8 +70,11 @@ def _godot_round_trip() -> RoundTrip:
     )
     evidence_ids = decision["evidence_ids"]
     assert isinstance(evidence_ids, (list, tuple))
+    assert event.agent_state is not None
+    assert event.agent_state.native == {"unknown_engine_value": "preserved"}
     return RoundTrip(
         event,
+        event.agent_state,
         str(decision["actor_id"]),
         decision_id,
         tuple(str(item) for item in evidence_ids),
@@ -77,3 +93,6 @@ def test_adapter_preserves_generic_contracts(round_trip: Callable[[], RoundTrip]
     assert completed.event.id in completed.evidence_ids
     assert completed.result_decision_id == completed.decision_id
     assert completed.result_status == "succeeded"
+    assert completed.agent_state.schema_version == 1
+    assert completed.agent_state.adapter in {"sims4", "godot"}
+    assert completed.agent_state.agent_id == completed.actor_id

@@ -69,6 +69,42 @@ def test_malformed_optional_cognition_facts_are_neutral() -> None:
     assert event.facts["available_actions"] == []
 
 
+def test_sims_payload_becomes_normalized_agent_state_without_losing_native_values() -> None:
+    event = Sims4Adapter(
+        {
+            "speaker": {
+                "id": "karmine",
+                "current_mood": "uncomfortable",
+                "needs": {"hunger": 63},
+                "native": {
+                    "mood": "Mood_Uncomfortable",
+                    "moodlets": [{"label": "Custom DLC Moodlet"}],
+                },
+            },
+            "listener": {"id": "bernard"},
+            "relationship": {"friendship": 7, "romance": 12, "trust": 50},
+            "available_actions": ["friendly_chat", "flirt"],
+        }
+    ).observe()[0]
+
+    assert event.agent_state is not None
+    assert event.agent_state.affect == {"tags": ["uncomfortable"]}
+    assert event.agent_state.needs == {
+        "hunger": {"level": 0.63, "urgency": 0.37}
+    }
+    assert event.agent_state.relationships["bernard"] == {
+        "affinity": 0.07,
+        "romance": 0.12,
+        "trust": 0.5,
+    }
+    assert event.agent_state.capabilities == {
+        "actions": ["friendly_chat", "flirt"]
+    }
+    assert event.agent_state.native["moodlets"] == [
+        {"label": "Custom DLC Moodlet"}
+    ]
+
+
 def test_conversation_response_becomes_validated_sims_action() -> None:
     adapter = Sims4Adapter(
         {
