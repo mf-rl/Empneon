@@ -78,7 +78,11 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     interactions.ParticipantType = SimpleNamespace(Actor="actor")
     element_utils = ModuleType("element_utils")
     element_utils.sleep_until_next_tick_element = lambda: "next-tick"
-    element_utils.run_child = lambda _timeline, element: element
+
+    def run_child(_timeline, element):
+        yield element
+
+    element_utils.run_child = run_child
     interactions_base = ModuleType("interactions.base")
     super_interaction = ModuleType("interactions.base.super_interaction")
     super_interaction.SuperInteraction = type("SuperInteraction", (), {})

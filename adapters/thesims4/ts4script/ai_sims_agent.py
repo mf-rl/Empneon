@@ -297,7 +297,7 @@ class EmpneonSocialInteraction(SuperInteraction):
                 if session.actor is None or session.target is None:
                     session.close(canceled=True)
                     break
-                yield element_utils.run_child(
+                yield from element_utils.run_child(
                     timeline, element_utils.sleep_until_next_tick_element()
                 )
             return True
