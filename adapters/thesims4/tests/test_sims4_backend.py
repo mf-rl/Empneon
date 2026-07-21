@@ -1283,6 +1283,58 @@ def test_action_confirmation_is_idempotent_after_lost_response(
     assert relationship is not None
     assert relationship.strength == 0.05
 
+    failed_proposal = ai_sims_server.autonomous_action(
+        {
+            "speaker": {"id": "cassandra", "name": "Cassandra"},
+            "listener": {"id": "don", "name": "Don"},
+            "event": {"type": "autonomous_social", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    failed_payload = {
+        "decision_id": failed_proposal["decision_id"],
+        "action": "friendly_chat",
+        "status": "failed",
+        "reason": "canceled",
+        "changes": [],
+    }
+    ai_sims_server.confirm_action(failed_payload)
+    conflicting = dict(failed_payload)
+    conflicting["action"] = "flirt"
+    with pytest.raises(ValueError, match="conflicting"):
+        ai_sims_server.confirm_action(conflicting)
+
+
+def test_dialogue_delivery_is_terminal_for_actionless_proposal(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", core_db)
+    proposal = ai_sims_server.chat(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "message": "Hello.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": [],
+        }
+    )
+    assert proposal["animation"] == "none"
+
+    delivered = ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": proposal["decision_id"], "status": "displayed"}
+    )
+
+    assert delivered["status"] == "displayed"
+    with open_db(core_db) as conn:
+        actions = ActionRecordStore(conn)
+        assert actions.get_proposal(proposal["decision_id"]) is None
+        record = actions.get(proposal["decision_id"])
+    assert record is not None
+    assert record.result.status == "succeeded"
+    assert record.result.applied_changes == ()
+
 
 def test_successful_confirmation_applies_validated_identity_consequences(
     tmp_path, monkeypatch

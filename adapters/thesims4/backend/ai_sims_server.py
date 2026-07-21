@@ -2081,8 +2081,13 @@ def confirm_action(payload):
         proposal = actions.get_proposal(decision_id)
         if proposal is None:
             existing = actions.get(decision_id)
+            receipt = DocumentMemoryStore(conn).get(
+                "thesims4.action-result", decision_id
+            )
             if (
                 existing is not None
+                and isinstance(receipt, dict)
+                and receipt.get("action") == action
                 and existing.result.status == result.status
                 and existing.result.applied_changes == result.applied_changes
                 and existing.result.reason == result.reason
@@ -2095,6 +2100,12 @@ def confirm_action(payload):
             raise ValueError("unknown or conflicting action proposal")
         if proposal.adapter_action != action:
             raise ValueError("confirmed action does not match its proposal")
+        DocumentMemoryStore(conn).set(
+            "thesims4.action-result",
+            decision_id,
+            {"action": action},
+            commit=False,
+        )
         empneon_state.apply_confirmed_consequences(conn, proposal, result)
         record = actions.confirm(result, action)
     return {

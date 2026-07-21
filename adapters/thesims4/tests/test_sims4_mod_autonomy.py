@@ -602,7 +602,6 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     response_dialog = dialogs[-1]
     response_dialog.accepted = False
     response_dialog.listener(response_dialog)
-    agent.process_autonomy_responses(None)
     try:
         next(runner)
     except StopIteration as finished:
@@ -637,6 +636,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             else:
                 raise AssertionError("missing participant kept the session alive")
         dialog_count = len(dialogs)
+        agent._ACTION_RESULT_OUTBOX[:] = []
+        agent._ACTION_RESULT_RESPONSES[:] = []
         late_reports = []
         with monkeypatch.context() as late_patch:
             late_patch.setattr(
@@ -661,6 +662,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
                 )
             )
             agent.process_autonomy_responses(None)
+            for _attempt in range(10):
+                if late_reports:
+                    break
+                agent.process_autonomy_responses(None)
         assert len(dialogs) == dialog_count
         assert late_reports == [
             (
@@ -673,7 +678,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
                     "changes": [],
                 },
             )
-        ]
+        ], agent._ACTION_RESULT_OUTBOX
 
     displayed_cancel_interaction = agent.EmpneonSocialInteraction()
     displayed_cancel_interaction.sim = SimpleNamespace(
@@ -814,8 +819,6 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     chat_dialog.text_input_responses = {"message": "Do you?"}
     display_session.dialogue_acknowledged = True
     chat_dialog.listener(chat_dialog)
-    while agent._SESSION_EVENTS:
-        agent.process_autonomy_responses(None)
     assert submitted[-1] == (display_session, "Do you?")
 
     sim_chat = type("native_NPC_social", (), {})
@@ -900,6 +903,12 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         lambda target: SimpleNamespace(daemon=False, start=target),
     )
 
+    def pump_outbox():
+        for _attempt in range(100):
+            agent.process_autonomy_responses(None)
+            if not agent._ACTION_RESULT_OUTBOX and not agent._ACTION_RESULT_RESPONSES:
+                break
+
     agent.autonomous_tick(None)
     agent._AUTONOMY_IN_FLIGHT = True
     agent.autonomous_tick(None)
@@ -971,6 +980,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     executed[0].finishing_type = "FinishingType.NATURAL"
     executed[0].finishing_callback(executed[0])
+    pump_outbox()
     assert payloads[1] == (
         "/action-result",
         {
@@ -993,6 +1003,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     executed[1].finishing_type = "FinishingType.DISPLACED"
     executed[1].finishing_callback(executed[1])
+    pump_outbox()
     assert payloads[2] == (
         "/action-result",
         {
@@ -1081,6 +1092,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     worker_dialog_count = len(dialogs)
     executed[2].finishing_type = "FinishingType.NATURAL"
     executed[2].finishing_callback(executed[2])
+    pump_outbox()
     assert payloads[4][0] == "/action-result"
     assert payloads[4][1]["decision_id"] == "decision-3"
     assert payloads[4][1]["status"] == "succeeded"
@@ -1141,6 +1153,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         agent._CONVERSATION_SESSIONS.pop("cancel-native")
         native_interaction.finishing_type = "FinishingType.NATURAL"
         native_interaction.finishing_callback(native_interaction)
+        pump_outbox()
     assert native_interaction.canceled is True
     assert cancellation_reports == [
         (
@@ -1223,10 +1236,47 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         session_id=failed_post_session.id,
         turn_id=1,
     )
-    assert agent._SESSION_EVENTS[-1][2] == "action_confirmation_failed"
-    agent.process_autonomy_responses(None)
+    pump_outbox()
     assert failed_post_session.closed is False
     assert failed_post_session.phase == "action_confirmation_failed"
+    failed_item = next(
+        item
+        for item in agent._ACTION_RESULT_OUTBOX
+        if item["body"]["decision_id"] == "decision-post-failure"
+    )
+    assert failed_item["paused"] is True
+    retry_dialog = dialogs[-1]
+    retry_dialog.accepted = True
+    retry_dialog.listener(retry_dialog)
+    assert failed_post_session.phase == "confirming_native_action"
+    assert failed_item["paused"] is False
+    monkeypatch.setattr(agent, "post_json", lambda _path, body, timeout=None: body)
+    pump_outbox()
+    agent.process_autonomy_responses(None)
+    assert failed_post_session.phase == "waiting_for_backend"
+
+    close_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    close_session.turn_id = 1
+    close_session.phase = "running_native_action"
+    close_session.pending_decision = ("decision-close", "friendly_chat")
+    agent._CONVERSATION_SESSIONS["close-confirmation"] = close_session
+    agent.report_action_result(
+        "decision-close",
+        "friendly_chat",
+        "succeeded",
+        session_id=close_session.id,
+        turn_id=1,
+    )
+    close_item = agent._ACTION_RESULT_OUTBOX[-1]
+    close_item["paused"] = True
+    close_session.action_confirmation_failed(1, "backend down")
+    close_dialog = dialogs[-1]
+    close_dialog.accepted = False
+    close_dialog.listener(close_dialog)
+    assert close_session.closed is True
+    assert close_item["paused"] is False
 
     retry_success_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
@@ -1237,10 +1287,14 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     retry_success_session.action_result_started = True
     agent._CONVERSATION_SESSIONS["retry-success"] = retry_success_session
     retry_attempts = []
+    retry_ticks = []
 
     def flaky_post(path, body, timeout=None):
+        if body["decision_id"] == "decision-close":
+            return body
         retry_attempts.append((path, body))
-        if len(retry_attempts) == 1:
+        retry_ticks.append(agent._RESPONSE_PUMP_TICK)
+        if len(retry_attempts) < 3:
             raise RuntimeError("reply lost")
         return body
 
@@ -1248,15 +1302,20 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     agent.report_action_result(
         "decision-retry",
         "friendly_chat",
-        "succeeded",
+        "failed",
+        "interaction canceled",
         session_id=retry_success_session.id,
         turn_id=1,
     )
-    assert len(retry_attempts) == 2
-    assert agent._SESSION_EVENTS[-1][2] == "native_finished"
-    while agent._SESSION_EVENTS and not retry_success_session.closed:
-        agent.process_autonomy_responses(None)
-    assert retry_success_session.closed is True
+    agent._CONVERSATION_SESSIONS.pop("retry-success")
+    pump_outbox()
+    assert len(retry_attempts) == 3
+    assert retry_ticks[1] - retry_ticks[0] >= 2
+    assert retry_ticks[2] - retry_ticks[1] >= 4
+    assert not any(
+        item["body"]["decision_id"] == "decision-retry"
+        for item in agent._ACTION_RESULT_OUTBOX
+    )
 
     malformed_reports = []
     malformed_session = agent.EmpneonConversationSession(
@@ -1277,9 +1336,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         session_id=malformed_session.id,
         turn_id=1,
     )
+    pump_outbox()
     assert malformed_reports[-1][0] == "/action-result"
     assert malformed_reports[-1][1]["status"] == "failed"
-    assert agent._SESSION_EVENTS[-1][2] == "native_failed"
     agent.process_autonomy_responses(None)
     assert malformed_session.closed is True
     monkeypatch.setattr(agent, "post_json", original_post_json)
@@ -1322,13 +1381,11 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert [call[0] for call in sync_calls] == [
         "/chat",
         "/dialogue-result",
-        "/action-result",
     ]
-    assert console_calls[3][1]["available_actions"] == []
-    assert [call[0] for call in console_calls[3:]] == [
+    assert console_calls[2][1]["available_actions"] == []
+    assert [call[0] for call in console_calls[2:]] == [
         "/chat",
         "/dialogue-result",
-        "/action-result",
     ]
     assert agent._CONSOLE_CHAT_RESPONSES == []
 
@@ -1397,6 +1454,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         {"decision_id": "decision-5", "animation": "friendly_chat"},
         None,
     )
+    pump_outbox()
     assert payloads[-1][0] == "/action-result"
     assert payloads[-1][1]["status"] == "failed"
     assert "friendly_chat" in payloads[-1][1]["reason"]

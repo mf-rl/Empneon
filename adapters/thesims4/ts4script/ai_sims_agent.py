@@ -42,6 +42,9 @@ _AUTONOMY_RESPONSES = []
 _CHAT_RESPONSES = []
 _CONSOLE_CHAT_RESPONSES = []
 _SESSION_EVENTS = []
+_ACTION_RESULT_OUTBOX = []
+_ACTION_RESULT_RESPONSES = []
+_RESPONSE_PUMP_TICK = 0
 _CONVERSATION_SESSIONS = {}
 _AUTONOMY_RESPONSES_LOCK = threading.Lock()
 _GAME_SESSION_ID = uuid.uuid4().hex
@@ -207,19 +210,22 @@ class EmpneonConversationSession:
         if self.closed or turn_id != self.turn_id:
             return False
         self.phase = "action_confirmation_failed"
-        if self.actor is not None:
-            show_empneon_notification(
-                self.actor,
-                "Empneon confirmation pending",
-                message + " Retry or cancel Empneon Social.",
-            )
+        show_action_confirmation_dialog(self, message)
         return True
 
     def retry_action_confirmation(self):
         if self.closed or self.phase != "action_confirmation_failed" or not self.action_result_body:
             return False
         self.phase = "confirming_native_action"
-        report_action_result(session_id=self.id, turn_id=self.turn_id, **self.action_result_body)
+        resume_action_result(self.action_result_body["decision_id"])
+        return True
+
+    def close_action_confirmation(self):
+        if self.closed or self.phase != "action_confirmation_failed":
+            return False
+        if self.action_result_body:
+            resume_action_result(self.action_result_body["decision_id"])
+        self.close()
         return True
 
     def after_native_action(self, turn_id):
@@ -824,10 +830,15 @@ def autonomous_tick(_alarm_handle):
 
 
 def process_autonomy_responses(_alarm_handle):
+    global _AUTONOMY_IN_FLIGHT, _RESPONSE_PUMP_TICK
     with _AUTONOMY_RESPONSES_LOCK:
+        _RESPONSE_PUMP_TICK += 1
         chat_item = _CHAT_RESPONSES.pop(0) if _CHAT_RESPONSES else None
         console_item = _CONSOLE_CHAT_RESPONSES.pop(0) if _CONSOLE_CHAT_RESPONSES else None
         session_event = _SESSION_EVENTS.pop(0) if _SESSION_EVENTS else None
+        action_result = (
+            _ACTION_RESULT_RESPONSES.pop(0) if _ACTION_RESULT_RESPONSES else None
+        )
         item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
     if chat_item is not None:
         session_id, turn_id, data, error = chat_item
@@ -860,6 +871,53 @@ def process_autonomy_responses(_alarm_handle):
                 session.fail(detail)
             elif event == "action_confirmation_failed" and turn_id == session.turn_id:
                 session.action_confirmation_failed(turn_id, detail)
+    if action_result is not None:
+        _AUTONOMY_IN_FLIGHT = False
+        outbox_id, error = action_result
+        outbox_item = next(
+            (entry for entry in _ACTION_RESULT_OUTBOX if entry["id"] == outbox_id),
+            None,
+        )
+        if outbox_item is not None:
+            outbox_item["in_flight"] = False
+            if error is None:
+                _ACTION_RESULT_OUTBOX.remove(outbox_item)
+                if outbox_item["session_id"] is not None:
+                    body = outbox_item["body"]
+                    event = (
+                        "native_finished"
+                        if body["status"] == "succeeded"
+                        else "native_failed"
+                    )
+                    _SESSION_EVENTS.append(
+                        (
+                            outbox_item["session_id"],
+                            outbox_item["turn_id"],
+                            event,
+                            body.get("reason") or "Native action failed",
+                        )
+                    )
+            else:
+                outbox_item["attempts"] += 1
+                outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + min(
+                    2 ** outbox_item["attempts"], 32
+                )
+                session = find_conversation_session(outbox_item["session_id"])
+                if (
+                    outbox_item["attempts"] >= 3
+                    and outbox_item["body"]["status"] == "succeeded"
+                    and session is not None
+                ):
+                    outbox_item["paused"] = True
+                    _SESSION_EVENTS.append(
+                        (
+                            outbox_item["session_id"],
+                            outbox_item["turn_id"],
+                            "action_confirmation_failed",
+                            "Action result confirmation failed: {}".format(error),
+                        )
+                    )
+    dispatch_action_result_outbox()
     if item is None:
         return
     payload, data, selected_interaction = item
@@ -1039,52 +1097,77 @@ def report_action_result(
         session.action_result_body = dict(body)
         session.action_result_started = True
 
+    existing = next(
+        (
+            item
+            for item in _ACTION_RESULT_OUTBOX
+            if item["body"]["decision_id"] == decision_id
+        ),
+        None,
+    )
+    if existing is None:
+        _ACTION_RESULT_OUTBOX.append(
+            {
+                "id": uuid.uuid4().hex,
+                "body": body,
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "attempts": 0,
+                "next_tick": _RESPONSE_PUMP_TICK,
+                "in_flight": False,
+                "paused": False,
+            }
+        )
+
+
+def resume_action_result(decision_id):
+    item = next(
+        (
+            entry
+            for entry in _ACTION_RESULT_OUTBOX
+            if entry["body"]["decision_id"] == decision_id
+        ),
+        None,
+    )
+    if item is None:
+        return False
+    item["attempts"] = 0
+    item["next_tick"] = _RESPONSE_PUMP_TICK
+    item["paused"] = False
+    return True
+
+
+def dispatch_action_result_outbox():
+    item = next(
+        (
+            entry
+            for entry in _ACTION_RESULT_OUTBOX
+            if not entry["in_flight"]
+            and not entry["paused"]
+            and entry["next_tick"] <= _RESPONSE_PUMP_TICK
+        ),
+        None,
+    )
+    if item is None:
+        return False
+    item["in_flight"] = True
+    outbox_id = item["id"]
+    body = dict(item["body"])
+
     def worker():
-        global _AUTONOMY_IN_FLIGHT
+        error = None
         try:
-            last_error = None
-            for _attempt in range(3):
-                try:
-                    post_json("/action-result", body, timeout=10)
-                    last_error = None
-                    break
-                except Exception as exc:
-                    last_error = exc
-            if last_error is not None:
-                raise last_error
-            write_marker(
-                "confirmed {}: {} ({}){}".format(
-                    decision_id,
-                    action,
-                    status,
-                    " reason=" + str(reason) if reason else "",
-                )
-            )
-            if session_id is not None:
-                event = (
-                    "native_finished" if status == "succeeded" else "native_failed"
-                )
-                detail = reason or "Native action failed"
-                with _AUTONOMY_RESPONSES_LOCK:
-                    _SESSION_EVENTS.append((session_id, turn_id, event, detail))
+            post_json("/action-result", body, timeout=10)
         except Exception as exc:
+            error = str(exc)
             write_marker(traceback.format_exc())
-            if session_id is not None:
-                with _AUTONOMY_RESPONSES_LOCK:
-                    _SESSION_EVENTS.append(
-                        (
-                            session_id,
-                            turn_id,
-                            "action_confirmation_failed",
-                            "Action result confirmation failed: {}".format(exc),
-                        )
-                    )
-        finally:
-            _AUTONOMY_IN_FLIGHT = False
+        with _AUTONOMY_RESPONSES_LOCK:
+            _ACTION_RESULT_RESPONSES.append((outbox_id, error))
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
     thread.start()
+    return True
 
 
 def find_sim_info_by_id(sim_id):
@@ -1218,6 +1301,28 @@ def show_empneon_notification(owner, title, text):
         text=raw_text(text),
     )
     notification.show_dialog()
+
+
+def show_action_confirmation_dialog(session, message):
+    if session.actor is None:
+        session.close_action_confirmation()
+        return False
+    dialog = UiDialogTextInputOkCancel.TunableFactory().default(
+        session.actor,
+        title=raw_text("Empneon confirmation pending"),
+        text=raw_text(message + " Select OK to retry or Cancel to close."),
+        text_inputs=FrozenAttributeDict({}),
+    )
+
+    def on_response(response):
+        if getattr(response, "accepted", False):
+            session.retry_action_confirmation()
+        else:
+            session.close_action_confirmation()
+
+    dialog.add_listener(on_response)
+    dialog.show_dialog()
+    return True
 
 
 class EmpneonTextInputLength(HasTunableSingletonFactory, AutoFactoryInit):
@@ -1456,15 +1561,7 @@ def continue_displayed_turn(session):
     data = session.response_data or {}
     action = str(data.get("suggested_action") or data.get("animation") or "none")
     if action == "none":
-        session.phase = "confirming_native_action"
-        session.action_result_started = True
-        report_action_result(
-            data.get("decision_id"),
-            action,
-            "succeeded",
-            session_id=session.id,
-            turn_id=session.turn_id,
-        )
+        session.after_native_action(session.turn_id)
         return True
     session.phase = "running_native_action"
     execute_sims_action(
@@ -1636,18 +1733,7 @@ def deliver_console_chat(connection, speaker_name, data):
         timeout=10,
     )
     if delivered.get("status") in ("displayed", "already_displayed"):
-        action = str(data.get("suggested_action") or data.get("animation") or "none")
-        post_json(
-            "/action-result",
-            {
-                "decision_id": decision_id,
-                "action": action,
-                "status": "succeeded",
-                "reason": None,
-                "changes": [],
-            },
-            timeout=10,
-        )
+        return
 
 
 @command("ai.chat")
