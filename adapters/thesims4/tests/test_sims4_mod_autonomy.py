@@ -268,6 +268,69 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "sim_household",
     ):
         assert hasattr(agent, probe)
+
+    primitive_values = ("RawModBuff", 73, False, None)
+    primitive_items = [
+        agent.native_game_item(value, "moodlet") for value in primitive_values
+    ]
+    assert [
+        (item["label"], item["id"]) for item in primitive_items
+    ] == [(value, value) for value in primitive_values]
+
+    class BrokenBuff:
+        @property
+        def buff_type(self):
+            raise RuntimeError("broken mod buff")
+
+    isolated_effects = agent.sim_effects(
+        SimpleNamespace(
+            buff_component=SimpleNamespace(
+                get_all_buffs=lambda: ["FirstBuff", BrokenBuff(), "LastBuff"]
+            )
+        )
+    )
+    assert [item["label"] for item in isolated_effects] == [
+        "FirstBuff",
+        "LastBuff",
+    ]
+    fallback_target = type("FallbackTarget", (), {"sim_id": "fallback-target"})()
+    fallback_sentiment = type(
+        "FallbackSentiment",
+        (),
+        {"guid64": "fallback-sentiment", "polarity": "positive"},
+    )
+    fallback_records = agent.sim_sentiments(
+        SimpleNamespace(
+            sentiment_tracker=SimpleNamespace(
+                get_all_sentiments=lambda: None,
+                sentiments={
+                    fallback_target: SimpleNamespace(sentiment=fallback_sentiment)
+                },
+            )
+        )
+    )
+    assert fallback_records == [
+        {
+            "kind": "sentiment",
+            "label": "FallbackSentiment",
+            "id": "fallback-sentiment",
+            "polarity": "positive",
+            "target_id": "fallback-target",
+        }
+    ]
+    all_moodlet_labels = ["Moodlet{}".format(index) for index in range(25)]
+    uncapped_payload = agent.sim_info_payload(
+        SimpleNamespace(
+            buff_component=SimpleNamespace(
+                get_all_buffs=lambda: all_moodlet_labels
+            )
+        )
+    )
+    assert uncapped_payload["moodlets"] == all_moodlet_labels
+    assert [
+        item["label"] for item in uncapped_payload["native"]["moodlets"]
+    ] == all_moodlet_labels
+
     hunger = SimpleNamespace(
         stat_type=type("motive_Hunger", (), {}),
         get_value=lambda: 18,

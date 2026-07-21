@@ -322,21 +322,25 @@ def sim_age(sim_info):
 
 
 def native_game_item(value, kind):
-    source = getattr(value, "buff_type", None) or getattr(
-        value, "sentiment", None
-    ) or value
-    identifier = (
+    source = getattr(value, "buff_type", None)
+    if source is None:
+        source = getattr(value, "sentiment", None)
+    if source is None:
+        source = value
+    primitive = source is None or isinstance(source, (str, int, float, bool))
+    label = source if primitive else short_trait_name(source)
+    identifier = source if primitive else (
         getattr(source, "guid64", None)
         or getattr(source, "id", None)
-        or short_trait_name(source)
+        or label
     )
     polarity = text_value(getattr(source, "polarity", None), "unknown").casefold()
     if polarity not in ("positive", "negative", "neutral"):
         polarity = "unknown"
     return {
         "kind": kind,
-        "label": short_trait_name(source),
-        "id": str(identifier or ""),
+        "label": label,
+        "id": identifier if primitive else str(identifier or ""),
         "polarity": polarity,
     }
 
@@ -351,9 +355,18 @@ def sim_effects(sim_info):
     try:
         source = getattr(component, "get_all_buffs", None)
         buffs = source() if callable(source) else source or []
-        return [native_game_item(buff, "moodlet") for buff in buffs]
     except Exception:
         return []
+    records = []
+    try:
+        for buff in buffs:
+            try:
+                records.append(native_game_item(buff, "moodlet"))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return records
 
 
 def sim_sentiments(sim_info):
@@ -364,8 +377,10 @@ def sim_sentiments(sim_info):
             source = getattr(tracker, attr, None)
             if source is None:
                 continue
-            items = source() if callable(source) else source
-            break
+            candidate = source() if callable(source) else source
+            if candidate is not None:
+                items = candidate
+                break
         except Exception:
             pass
     if items is None:
