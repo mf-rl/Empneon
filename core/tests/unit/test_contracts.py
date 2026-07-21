@@ -1,13 +1,63 @@
+import dataclasses
+import json
+
 import pytest
 
 from empneon.core.contracts import (
     ActionResult,
+    AgentStateSnapshot,
     CognitiveRequest,
     Decision,
     StateDelta,
     WorldEvent,
 )
 from empneon.core.ports import GameAdapter
+
+
+def test_agent_state_snapshot_is_json_compatible_and_embedded_in_event() -> None:
+    snapshot = AgentStateSnapshot.from_mapping(
+        {
+            "schema_version": 1,
+            "adapter": "test",
+            "agent_id": "alice",
+            "affect": {"tags": ["calm"], "valence": 0.2, "intensity": 0.5},
+            "needs": {"energy": {"level": 0.8, "urgency": 0.2}},
+            "native": {"unknown_mod_state": "preserved"},
+        }
+    )
+    event = WorldEvent("observation", ("alice",), agent_state=snapshot)
+
+    encoded = json.loads(json.dumps(dataclasses.asdict(event)))
+
+    assert encoded["agent_state"]["native"] == {
+        "unknown_mod_state": "preserved"
+    }
+    assert encoded["agent_state"]["effects"] == []
+
+
+@pytest.mark.parametrize(
+    "section,key,value",
+    [
+        ("affect", "valence", 1.1),
+        ("affect", "intensity", -0.1),
+        ("relationships", "affinity", -1.1),
+        ("relationships", "romance", 1.1),
+    ],
+)
+def test_agent_state_snapshot_rejects_out_of_range_values(
+    section: str, key: str, value: float
+) -> None:
+    data: dict[str, object] = {
+        "schema_version": 1,
+        "adapter": "test",
+        "agent_id": "alice",
+    }
+    data[section] = (
+        {"bob": {key: value}} if section == "relationships" else {key: value}
+    )
+
+    with pytest.raises(ValueError, match=key):
+        AgentStateSnapshot.from_mapping(data)
 
 
 def test_generic_event_to_decision_contract() -> None:

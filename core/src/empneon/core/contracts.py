@@ -1,12 +1,82 @@
 """Game-independent contracts exchanged by adapters and the cognitive runtime."""
 
+import dataclasses
+import json
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
 DeltaOperation = Literal["set", "increment", "append", "remove"]
 ActionStatus = Literal["succeeded", "rejected", "failed"]
+
+
+def _mapping(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _bounded(mapping: Mapping[str, object], key: str, low: float, high: float) -> None:
+    value = mapping.get(key)
+    if value is not None and (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not low <= float(value) <= high
+    ):
+        raise ValueError(f"agent state {key} must be between {low} and {high}")
+
+
+@dataclass(frozen=True)
+class AgentStateSnapshot:
+    schema_version: int
+    adapter: str
+    agent_id: str
+    affect: dict[str, object] = field(default_factory=dict)
+    needs: dict[str, object] = field(default_factory=dict)
+    effects: list[object] = field(default_factory=list)
+    relationships: dict[str, object] = field(default_factory=dict)
+    goals: list[object] = field(default_factory=list)
+    intentions: list[object] = field(default_factory=list)
+    capabilities: dict[str, object] = field(default_factory=dict)
+    native: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1:
+            raise ValueError("unsupported agent state schema_version")
+        if not self.adapter.strip() or not self.agent_id.strip():
+            raise ValueError("agent state adapter and agent_id are required")
+        _bounded(self.affect, "valence", -1.0, 1.0)
+        _bounded(self.affect, "arousal", 0.0, 1.0)
+        _bounded(self.affect, "intensity", 0.0, 1.0)
+        for need in self.needs.values():
+            if isinstance(need, Mapping):
+                _bounded(need, "level", 0.0, 1.0)
+                _bounded(need, "urgency", 0.0, 1.0)
+        for relationship in self.relationships.values():
+            if isinstance(relationship, Mapping):
+                _bounded(relationship, "affinity", -1.0, 1.0)
+                _bounded(relationship, "romance", 0.0, 1.0)
+                _bounded(relationship, "trust", 0.0, 1.0)
+        try:
+            json.dumps(dataclasses.asdict(self))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("agent state must be JSON-compatible") from exc
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> "AgentStateSnapshot":
+        return cls(
+            schema_version=int(value.get("schema_version", 0)),
+            adapter=str(value.get("adapter") or ""),
+            agent_id=str(value.get("agent_id") or ""),
+            affect=_mapping(value.get("affect")),
+            needs=_mapping(value.get("needs")),
+            effects=list(value.get("effects") or []),
+            relationships=_mapping(value.get("relationships")),
+            goals=list(value.get("goals") or []),
+            intentions=list(value.get("intentions") or []),
+            capabilities=_mapping(value.get("capabilities")),
+            native=_mapping(value.get("native")),
+        )
 
 
 @dataclass(frozen=True)
@@ -19,6 +89,7 @@ class WorldEvent:
     facts: dict[str, object] = field(default_factory=dict)
     happened_at: int = field(default_factory=lambda: int(time.time()))
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    agent_state: AgentStateSnapshot | None = None
 
     def __post_init__(self) -> None:
         if not self.type.strip():
