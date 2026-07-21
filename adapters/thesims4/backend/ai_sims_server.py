@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -34,6 +35,7 @@ from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, R
 from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineExceeded
 from empneon.core.scheduler.selection import CognitionRoute
 from empneon.core.scheduler.usage import UsageStore
+from empneon.core.state import save_agent_state
 from empneon.db.connection import open_db
 from empneon.providers.llm import (
     ConfiguredProviderRouter,
@@ -207,7 +209,7 @@ a fact introduced only by the Sim's generated reply.
 Use this exact shape with concrete values:
 {
   "dialogue": "expressive in-character reply",
-  "emotion": "tense",
+  "expressed_emotion": "tense",
   "intent": "deflect",
   "player_interaction_kind": "friendly",
   "relationship": {
@@ -219,13 +221,15 @@ Use this exact shape with concrete values:
     "importance": 0.4,
     "summary": "One concrete event memory."
   },
-  "animation": "awkward_chat"
+  "suggested_action": "friendly_chat"
 }
 
 Classify the player's current message as exactly one of: friendly, romantic_compliment,
 romantic_invitation, hostile, informational, or neutral. A romantic compliment is not an
 invitation: respond freely without forcing an acceptance or rejection. A romantic invitation
 must be accepted or declined directly.
+The intent field describes the dialogue; it does not select a game action.
+Choose suggested_action only from the current request's available actions, or use none.
 """
 
 PLAYER_INTERACTION_KINDS = (
@@ -242,7 +246,7 @@ DIALOGUE_SCHEMA = {
     "additionalProperties": False,
     "properties": {
         "dialogue": {"type": "string"},
-        "emotion": {"type": "string"},
+        "expressed_emotion": {"type": "string"},
         "intent": {"type": "string"},
         "player_interaction_kind": {
             "type": "string",
@@ -272,32 +276,38 @@ DIALOGUE_SCHEMA = {
             },
             "required": ["importance", "summary"],
         },
-        "animation": {
-            "type": "string",
-            "enum": [
-                "friendly_chat",
-                "funny_chat",
-                "romantic_chat",
-                "awkward_chat",
-                "angry_chat",
-                "sad_chat",
-                "apologize",
-                "argue",
-                "flirt",
-                "laugh",
-            ],
-        },
+        "suggested_action": {"type": "string", "enum": ["none"]},
     },
     "required": [
         "dialogue",
-        "emotion",
+        "expressed_emotion",
         "intent",
         "player_interaction_kind",
         "relationship",
         "memory",
-        "animation",
+        "suggested_action",
     ],
 }
+
+
+def available_actions(value):
+    return tuple(
+        dict.fromkeys(
+            str(action)
+            for action in (value if isinstance(value, (list, tuple)) else ())
+            if str(action) in ("friendly_chat", "apologize", "flirt")
+        )
+    )
+
+
+def dialogue_schema(value):
+    schema = json.loads(json.dumps(DIALOGUE_SCHEMA))
+    schema["properties"]["suggested_action"] = {
+        "type": "string",
+        "enum": list(available_actions(value)) + ["none"],
+    }
+    return schema
+
 
 DIRECTOR_SCHEMA = {
     "type": "object",
@@ -932,7 +942,22 @@ def clamp_float(value, low=0.0, high=1.0):
     return max(low, min(high, value))
 
 
-def normalize_response(raw):
+def sanitize_action_proposal(response, actions):
+    allowed = set(available_actions(actions))
+    action = str(response.get("suggested_action") or "none")
+    if action not in allowed:
+        action = "none"
+    dialogue = str(response.get("dialogue") or "").casefold()
+    if action == "flirt" and re.search(
+        r"\bno\b|not interested|rather stay friends|do not want|don't want",
+        dialogue,
+    ):
+        action = "none"
+    response["suggested_action"] = action
+    return response
+
+
+def normalize_response(raw, available_actions=()):
     if not isinstance(raw, dict):
         raw = {}
 
@@ -952,23 +977,16 @@ def normalize_response(raw):
     ).strip()
     if player_interaction_kind not in PLAYER_INTERACTION_KINDS:
         player_interaction_kind = "neutral"
-    animation = str(raw.get("animation") or "friendly_chat").strip()
-    if animation not in (
-        "friendly_chat",
-        "funny_chat",
-        "romantic_chat",
-        "awkward_chat",
-        "angry_chat",
-        "sad_chat",
-        "apologize",
-        "argue",
-        "flirt",
-        "laugh",
-    ):
-        animation = "friendly_chat"
-    return {
+    expressed_emotion = str(
+        raw.get("expressed_emotion") or raw.get("emotion") or "neutral"
+    ).strip().lower()
+    suggested_action = str(
+        raw.get("suggested_action") or raw.get("animation") or "none"
+    ).strip()
+    response = {
         "dialogue": dialogue,
-        "emotion": str(raw.get("emotion") or "neutral").strip().lower(),
+        "expressed_emotion": expressed_emotion,
+        "emotion": expressed_emotion,
         "intent": str(raw.get("intent") or "respond").strip(),
         "player_interaction_kind": player_interaction_kind,
         "relationship": {
@@ -985,8 +1003,12 @@ def normalize_response(raw):
             "importance": clamp_float(memory.get("importance")),
             "summary": str(memory.get("summary") or "").strip(),
         },
-        "animation": animation,
+        "suggested_action": suggested_action,
+        "animation": suggested_action,
     }
+    sanitize_action_proposal(response, available_actions)
+    response["animation"] = response["suggested_action"]
+    return response
 
 
 def extract_json(text):
@@ -1028,7 +1050,7 @@ def extract_json(text):
     return json.loads(quoted_keys)
 
 
-def fallback_response(text):
+def fallback_response(text, available_actions=()):
     return normalize_response(
         {
             "dialogue": "I couldn't form a reliable response. Please try again.",
@@ -1036,8 +1058,9 @@ def fallback_response(text):
             "intent": "respond",
             "relationship": {},
             "memory": {"importance": 0.0, "summary": ""},
-            "animation": "friendly_chat",
-        }
+            "suggested_action": "none",
+        },
+        available_actions,
     )
 
 
@@ -1285,6 +1308,8 @@ def build_chat_prompt(payload, context):
             )
         )
     recent_conversation = "\n".join(conversation_lines) or "None yet"
+    snapshot = dataclasses.asdict(Sims4Adapter(payload).agent_state())
+    actions = available_actions(payload.get("available_actions"))
 
     return """Role assignment:
 You are {speaker_name}, the Speaker.
@@ -1331,6 +1356,20 @@ Location:
 Nearby Sims:
 {nearby}
 
+Current normalized snapshot:
+{snapshot}
+
+Native state:
+{native_state}
+
+Available actions:
+{available_actions}
+- friendly_chat: continue a friendly conversation.
+- apologize: perform an apology.
+- flirt: perform a romantic social action.
+- none: dialogue only; perform no Sims action.
+Intent describes the reply and never selects an action.
+
 Recent conversation:
 {recent_conversation}
 
@@ -1376,6 +1415,9 @@ Player says:
         memories=memory_lines,
         location=context["location"],
         nearby=nearby,
+        snapshot=dumps(snapshot),
+        native_state=dumps(snapshot["native"]),
+        available_actions=", ".join(actions) or "none",
         message=payload.get("message") or "",
     )
 
@@ -1501,24 +1543,6 @@ def response_grounding_issue(payload, response, context):
         phrase in dialogue for phrase in uncertainty
     ):
         return "state uncertainty because no supporting memory exists"
-    local_kind = classify_player_interaction(message)
-    model_kind = response.get("player_interaction_kind")
-    interaction_kind = (
-        "romantic_invitation"
-        if local_kind == "romantic_invitation"
-        else model_kind or local_kind
-    )
-    if interaction_kind == "romantic_invitation":
-        romance = response.get("relationship") or {}
-        romance_delta = romance.get("romance_delta", 0) if isinstance(romance, dict) else 0
-        declines = r"\bno\b|not interested|rather stay friends|do not want|don't want"
-        if re.search(declines, dialogue):
-            return "do not add romance when declining" if romance_delta else ""
-        accepts = ("yes", "would like", "i'd like", "let's", "sounds good")
-        if not any(phrase in dialogue for phrase in accepts):
-            return "directly accept or decline the romantic invitation"
-        if response.get("intent") != "flirt" or romance_delta <= 0:
-            return "accepted romantic invitations require flirt intent and positive romance"
     return ""
 
 
@@ -1670,8 +1694,9 @@ def reasoning_fallback_response(payload, context):
                 "importance": 0.2,
                 "summary": "{} {}".format(payload.get("message") or "", dialogue).strip(),
             },
-            "animation": animation,
-        }
+            "suggested_action": animation,
+        },
+        payload.get("available_actions"),
     )
 
 
@@ -1684,14 +1709,17 @@ class HermesRuntime:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                schema=DIALOGUE_SCHEMA,
+                schema=dialogue_schema(payload.get("available_actions")),
                 schema_name="sims_dialogue",
                 task="large",
             )
             try:
-                response = normalize_response(extract_json(content))
+                response = normalize_response(
+                    extract_json(content), payload.get("available_actions")
+                )
             except (ValueError, json.JSONDecodeError):
-                response = fallback_response(content)
+                response = fallback_response(content, payload.get("available_actions"))
+            sanitize_action_proposal(response, payload.get("available_actions"))
             issue = response_grounding_issue(payload, response, context)
             if not response_has_role_confusion(response, context) and not issue:
                 return response
@@ -1834,6 +1862,8 @@ def chat(payload):
             persist_core_agent(conn, speaker)
             persist_core_agent(conn, listener)
             persist_core_event(conn, event)
+            if event.agent_state is not None:
+                save_agent_state(conn, event.agent_state)
             actions.propose(event.id, decision, action)
             usage = UsageStore(conn)
             if generations:
@@ -1959,6 +1989,11 @@ def persist_core_event(conn, event):
             "source": event.facts.get("source") or "sims4",
             "message": message,
             "summary": message or event.type,
+            "agent_state": (
+                dataclasses.asdict(event.agent_state)
+                if event.agent_state is not None
+                else None
+            ),
         }
     )
     empneon_state.record_pending_event(

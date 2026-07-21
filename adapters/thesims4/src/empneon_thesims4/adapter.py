@@ -193,7 +193,7 @@ class Sims4Adapter:
         )
 
     def execute(self, decision: Decision, /) -> ActionResult:
-        supported = {"dialogue", "emotion", "memory"}
+        supported = {"animation", "dialogue", "emotion", "memory"}
         unsupported = [
             change.path
             for change in decision.state_changes
@@ -210,10 +210,24 @@ class Sims4Adapter:
             return ActionResult(
                 decision.id, "rejected", reason="no supported Sims action available"
             )
-        applied = decision.state_changes + (StateDelta("animation", "set", action),)
+        applied = decision.state_changes
+        if not any(change.path == "animation" for change in applied):
+            applied += (StateDelta("animation", "set", action),)
         return ActionResult(decision.id, "succeeded", applied)
 
     def action_for(self, decision: Decision) -> str | None:
+        configured = self._payload.get("available_actions")
+        available = {
+            str(action)
+            for action in (
+                configured if isinstance(configured, (list, tuple)) else SIMS_ACTIONS
+            )
+            if str(action) in SIMS_ACTIONS
+        }
+        for change in decision.state_changes:
+            if change.path == "animation":
+                action = str(change.value)
+                return action if action == "none" or action in available else None
         return self._action_for(decision.intent)
 
     def decision_from_response(self, response: Mapping[str, object], event_id: str) -> Decision:
@@ -222,13 +236,32 @@ class Sims4Adapter:
         memory = response.get("memory")
         changes = [
             StateDelta("dialogue", "set", str(response.get("dialogue") or "...")),
-            StateDelta("emotion", "set", str(response.get("emotion") or "neutral")),
+            StateDelta(
+                "emotion",
+                "set",
+                str(
+                    response.get("expressed_emotion")
+                    or response.get("emotion")
+                    or "neutral"
+                ),
+            ),
             StateDelta("memory", "append", memory if isinstance(memory, Mapping) else {}),
         ]
         changes.extend(
             StateDelta(f"relationship.{key.removesuffix('_delta')}", "increment", value)
             for key, value in relationship_data.items()
             if key.endswith("_delta")
+        )
+        changes.append(
+            StateDelta(
+                "animation",
+                "set",
+                str(
+                    response.get("suggested_action")
+                    or response.get("animation")
+                    or "none"
+                ),
+            )
         )
         event = self.observe()[0]
         return Decision(
@@ -247,6 +280,7 @@ class Sims4Adapter:
                 "My language model is unavailable, so I can't answer reliably right now."
             ),
             "emotion": "neutral",
+            "expressed_emotion": "neutral",
             "intent": decision.intent,
             "relationship": {
                 "friendship_delta": 0,
@@ -254,7 +288,8 @@ class Sims4Adapter:
                 "trust_delta": 0,
             },
             "memory": {"importance": 0.0, "summary": ""},
-            "animation": "friendly_chat",
+            "suggested_action": "none",
+            "animation": "none",
         }
         relationship = response["relationship"]
         assert isinstance(relationship, dict)
@@ -262,6 +297,10 @@ class Sims4Adapter:
         for change in changes:
             if change.path.startswith("relationship."):
                 relationship[f"{change.path.split('.', 1)[1]}_delta"] = change.value
+            elif change.path == "emotion":
+                response["expressed_emotion"] = response["emotion"] = change.value
+            elif change.path == "animation":
+                response["suggested_action"] = response["animation"] = change.value
             elif change.path in response:
                 response[change.path] = change.value
         return response

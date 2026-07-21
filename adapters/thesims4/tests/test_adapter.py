@@ -141,7 +141,7 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
     event = adapter.observe()[0]
     response = {
         "dialogue": "Hello, Mortimer.",
-        "emotion": "happy",
+        "expressed_emotion": "happy",
         "intent": "greet",
         "relationship": {
             "friendship_delta": 1,
@@ -149,7 +149,7 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
             "trust_delta": 0,
         },
         "memory": {"importance": 0.4, "summary": "Bella greeted Mortimer."},
-        "animation": "friendly_chat",
+        "suggested_action": "friendly_chat",
     }
 
     decision = adapter.decision_from_response(response, event.id)
@@ -160,7 +160,25 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
     assert event.location == "Goth Manor"
     assert event.facts["relationship"] == {"friendship": 72, "trust": 60}
     assert result.applied_changes[-1] == StateDelta("animation", "set", "friendly_chat")
-    assert adapter.response_for(decision, result) == response
+    returned = adapter.response_for(decision, result)
+    assert returned["expressed_emotion"] == returned["emotion"] == "happy"
+    assert returned["suggested_action"] == returned["animation"] == "friendly_chat"
+
+
+def test_action_metadata_wins_over_descriptive_intent() -> None:
+    adapter = Sims4Adapter(
+        {"speaker": {"id": "bella"}, "available_actions": ["friendly_chat", "flirt"]}
+    )
+    decision = adapter.decision_from_response(
+        {
+            "dialogue": "That sounds lovely.",
+            "intent": "arbitrary descriptive intent",
+            "suggested_action": "flirt",
+        },
+        adapter.observe()[0].id,
+    )
+
+    assert adapter.action_for(decision) == "flirt"
 
 
 def test_autonomous_npc_event_maps_to_available_action() -> None:

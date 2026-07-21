@@ -17,7 +17,7 @@ from empneon.core.identity.serialization import export_agent
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
-from empneon.core.memory.episodic import Event
+from empneon.core.memory.episodic import EpisodicMemoryStore, Event
 from empneon.core.replay import replay_action_record
 from empneon.core.runtime import ActionRecordStore
 from empneon.core.scheduler.usage import UsageStore
@@ -566,7 +566,7 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
     )
     assert ai_sims_server.response_grounding_issue(
         {"message": "Would you like to go on a date?"}, ignored, context
-    )
+    ) == ""
 
     for message in (
         "Would you go out with me sometime?",
@@ -575,7 +575,7 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
     ):
         assert ai_sims_server.response_grounding_issue(
             {"message": message}, ignored, context
-        ) == "directly accept or decline the romantic invitation"
+        ) == ""
 
     accepted = ai_sims_server.normalize_response(
         {
@@ -657,6 +657,70 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
     )
     assert fallback["intent"] == "set_boundary"
     assert fallback["relationship"]["romance_delta"] == 0
+
+
+def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    payload = {
+        "message": "I would love to take you on a date sometime.",
+        "available_actions": ["friendly_chat", "apologize", "flirt"],
+    }
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": "That's sweet! A date sounds like fun. You have a certain charm.",
+            "expressed_emotion": "confidence",
+            "intent": "friendly",
+            "player_interaction_kind": "romantic_compliment",
+            "suggested_action": "friendly_chat",
+            "relationship": {
+                "friendship_delta": 1,
+                "romance_delta": 0,
+                "trust_delta": 50,
+            },
+            "memory": {
+                "importance": 0.75,
+                "summary": "Bernard invited Karmine on a date.",
+            },
+        },
+        payload["available_actions"],
+    )
+
+    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
+    assert response["dialogue"].startswith("That's sweet!")
+    assert response["suggested_action"] == "friendly_chat"
+    assert response["relationship"]["trust_delta"] == 10
+
+
+def test_action_metadata_is_request_scoped_and_does_not_replace_dialogue() -> None:
+    actions = ["friendly_chat", "flirt"]
+
+    unavailable = ai_sims_server.normalize_response(
+        {"dialogue": "I can talk, but I cannot do that.", "suggested_action": "argue"},
+        actions,
+    )
+    declined = ai_sims_server.normalize_response(
+        {
+            "dialogue": "No, I would rather stay friends.",
+            "suggested_action": "flirt",
+        },
+        actions,
+    )
+
+    assert unavailable["dialogue"] == "I can talk, but I cannot do that."
+    assert unavailable["suggested_action"] == "none"
+    assert declined["suggested_action"] == "none"
+    assert ai_sims_server.dialogue_schema(actions)["properties"]["suggested_action"] == {
+        "type": "string",
+        "enum": ["friendly_chat", "flirt", "none"],
+    }
 
 
 def test_repetition_retry_removes_recent_conversation_history(monkeypatch) -> None:
@@ -1248,10 +1312,14 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(result["decision_id"])
         record = actions.get(result["decision_id"])
+        diagnostics = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
+        observed = EpisodicMemoryStore(conn).get(proposal.event_id)
     assert result["action_status"] == "proposed"
     assert result["animation"] == "friendly_chat"
     assert proposal is not None
     assert record is None
+    assert diagnostics["agent_state"]["agent_id"] == "bella"
+    assert json.loads(observed.description)["agent_state"]["agent_id"] == "bella"
 
 
 def test_generated_memory_is_episodic_only_after_game_confirmation(

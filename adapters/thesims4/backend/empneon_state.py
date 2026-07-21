@@ -32,8 +32,9 @@ from empneon.core.memory.episodic import (
     ObservationStore,
 )
 from empneon.core.memory.vector import VectorMemoryStore
-from empneon.core.runtime import ActionProposal
 from empneon.core.contracts import ActionResult
+from empneon.core.runtime import ActionProposal
+from empneon.core.state import load_agent_state
 from empneon.db.connection import open_db
 from empneon_thesims4.adapter import feature_hash
 
@@ -258,8 +259,10 @@ def sim_diagnostics(conn: sqlite3.Connection, agent_id: str) -> dict[str, object
     identity = export_identity(conn, agent_id)
     observations = ObservationStore(conn).get_for_agent(agent_id)
     events = EpisodicMemoryStore(conn)
+    snapshot = load_agent_state(conn, agent_id)
     return {
         **identity,
+        "agent_state": dataclasses.asdict(snapshot) if snapshot is not None else None,
         "observations": [dataclasses.asdict(item) for item in observations],
         "beliefs": [
             dataclasses.asdict(item) for item in BeliefStore(conn).get_for_agent(agent_id)
