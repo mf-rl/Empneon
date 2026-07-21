@@ -161,6 +161,24 @@ restarted both the game and backend before the final verification.
 - Final verification passed: Core 168, Sims 4 60, Godot 1, cross-adapter 3, and release 18 tests
   (`250 passed` total), plus Ruff, mypy (50 source files), and the deterministic CLOD1 scenario.
 
+**Follow-up Karmine release evidence (2026-07-20):**
+
+- For “I would love to take you on a date sometime,” decision
+  `e9475b34-8b67-4a7c-acb8-9dff5fa0bdd9` proposed `intent=friendly`, friendship `+1`, and romance
+  `0`. Native confirmation used `friendly_chat` and observed friendship `-2`; no romance was
+  applied.
+- For “Would you like to be my girlfriend?”, decision
+  `8e11d0e7-6913-4f7f-93c2-213dc1ca8d0e` returned `intent=recall` and copied the preceding player
+  date message. The native action then failed because no compatible `friendly_chat` was available.
+- Usage confirms both requests stayed on LM Studio/CLOD 3. The first sentence was not covered by
+  the conservative invitation phrase matcher. On the second, deterministic fallback evaluated
+  memory-question recall before romantic invitations, so a related earlier player message became
+  the reply.
+- Regression coverage now includes both exact observed sentences. Date-taking language is treated
+  as an invitation, and romantic invitation fallback runs before memory recall. The complete Sims 4
+  adapter suite passes with 61 tests; another packaged release is required for the in-game romance
+  confirmation retest.
+
 **Procedure:** Recorded `ai.relationship Billie Jang`, asked Billie on a date through Empneon
 Social, then queried the relationship again.
 

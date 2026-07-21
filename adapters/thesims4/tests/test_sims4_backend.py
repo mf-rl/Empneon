@@ -726,6 +726,10 @@ def test_local_social_classifier_distinguishes_common_player_interactions() -> N
     examples = {
         "Would you go out with me sometime?": "romantic_invitation",
         "Let's be girlfriends.": "romantic_invitation",
+        (
+            "I like you, Karmine. You are very beautiful. "
+            "I would love to take you on a date sometime."
+        ): "romantic_invitation",
         "I'm very attracted to you. You are really hot.": "romantic_compliment",
         "You are very nice. Let's be friends!": "friendly",
         "Where is the garden code item?": "informational",
@@ -783,6 +787,31 @@ def test_reasoning_fallback_responds_relevantly_to_romantic_compliment() -> None
     assert response["player_interaction_kind"] == "romantic_compliment"
     assert "give me a moment" not in response["dialogue"].casefold()
     assert "attracted to you" not in response["dialogue"].casefold()
+
+
+def test_romantic_invitation_fallback_does_not_recall_an_earlier_player_message() -> None:
+    previous_message = (
+        "I like you, Karmine. You are very beautiful. "
+        "I would love to take you on a date sometime."
+    )
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [{"summary": previous_message}],
+        {"summary": previous_message},
+    )
+
+    response = ai_sims_server.reasoning_fallback_response(
+        {"message": "I love you very much. Would you like to be my girlfriend?"},
+        context,
+    )
+
+    assert response["player_interaction_kind"] == "romantic_invitation"
+    assert response["intent"] == "set_boundary"
+    assert response["dialogue"] != previous_message
 
 
 def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:

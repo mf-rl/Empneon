@@ -1413,6 +1413,7 @@ def classify_player_interaction(message):
     value = str(message or "").casefold()
     if re.search(
         r"\b(go(?:ing)? out|go on a date|on a date with|date me|"
+        r"take (?:you|them|him|her) on a date|"
         r"be my (?:girl|boy)friend|be (?:girl|boy)friends|kiss me|marry me|"
         r"be together)\b",
         value,
@@ -1581,6 +1582,12 @@ def reasoning_fallback_response(payload, context):
         intent = "report_needs"
         animation = "awkward_chat"
         trust_delta = 0
+    elif interaction_kind == "romantic_invitation":
+        dialogue = "No, I would rather stay friends."
+        emotion = "awkward"
+        intent = "set_boundary"
+        animation = "awkward_chat"
+        trust_delta = 0
     elif "?" in message and _memory_supports_question(message, context):
         candidates = [
             str(item.get("summary") or "").strip()
@@ -1622,12 +1629,6 @@ def reasoning_fallback_response(payload, context):
         intent = "set_boundary"
         animation = "awkward_chat"
         trust_delta = -1
-    elif interaction_kind == "romantic_invitation":
-        dialogue = "No, I would rather stay friends."
-        emotion = "awkward"
-        intent = "set_boundary"
-        animation = "awkward_chat"
-        trust_delta = 0
     elif interaction_kind == "romantic_compliment":
         dialogue = "That is flattering. Thank you for being honest with me."
         emotion = "flattered"
