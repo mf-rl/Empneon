@@ -2,18 +2,24 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+import pytest
+
+import empneon_godot.bridge as bridge_module
 from empneon_godot import GodotBridge
 from empneon_thesims4 import Sims4Adapter
 from empneon.core.clod import resolve_clod1
 from empneon.core.contracts import (
     AgentStateSnapshot,
     CognitiveRequest,
+    Decision,
     StateDelta,
     WorldEvent,
 )
 
 
-def test_same_scenario_runs_through_both_adapters() -> None:
+def test_same_scenario_runs_through_both_adapters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     path = (
         Path(__file__).parents[2]
         / "adapters"
@@ -69,6 +75,14 @@ def test_same_scenario_runs_through_both_adapters() -> None:
     assert sims_state is not None
     sims_result = sims.execute(expected)
 
+    captured = {}
+    resolve = bridge_module.resolve_clod1
+
+    def capture(godot_request: CognitiveRequest) -> Decision:
+        captured["event"] = godot_request.event
+        return resolve(godot_request)
+
+    monkeypatch.setattr(bridge_module, "resolve_clod1", capture)
     bridge = GodotBridge()
     godot_decision = bridge.decide({"agent_id": request.agent_id, "event": asdict(event)})
     godot_result = bridge.confirm(
@@ -88,9 +102,12 @@ def test_same_scenario_runs_through_both_adapters() -> None:
     assert godot_result["applied_changes"] == (
         {"path": "awareness.godot-b", "operation": "set", "value": True},
     )
-    assert event.agent_state is not None
-    assert sims_state.affect == event.agent_state.affect
-    assert sims_state.needs == event.agent_state.needs
-    assert sims_state.capabilities == event.agent_state.capabilities
+    reconstructed_state = captured["event"].agent_state
+    assert reconstructed_state is not None
+    assert sims_state.affect == reconstructed_state.affect
+    assert sims_state.needs == reconstructed_state.needs
+    assert sims_state.capabilities == reconstructed_state.capabilities
     assert sims_state.adapter == "sims4"
-    assert event.agent_state.adapter == "godot"
+    assert reconstructed_state.adapter == "godot"
+    assert reconstructed_state.agent_id == request.agent_id
+    assert reconstructed_state.native == {"unknown_engine_value": "preserved"}

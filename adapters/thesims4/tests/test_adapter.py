@@ -105,6 +105,27 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
     ]
 
 
+def test_live_sim_payload_uses_same_actor_for_event_and_agent_state() -> None:
+    event = Sims4Adapter(
+        {
+            "sim": {
+                "id": "live-sim",
+                "current_mood": "focused",
+                "needs": {"energy": 63},
+            },
+            "speaker": {"id": "stale-speaker", "current_mood": "sad"},
+            "available_actions": ["idle"],
+        }
+    ).observe()[0]
+
+    assert event.agent_state is not None
+    assert event.actor_ids[0] == event.agent_state.agent_id == "live-sim"
+    assert event.agent_state.affect == {"tags": ["focused"]}
+    assert event.agent_state.needs == {
+        "energy": {"level": 0.63, "urgency": 0.37}
+    }
+
+
 def test_conversation_response_becomes_validated_sims_action() -> None:
     adapter = Sims4Adapter(
         {

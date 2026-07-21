@@ -94,8 +94,14 @@ class Sims4Adapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
         self._payload = payload
 
+    def _sim_data(self) -> dict[object, object]:
+        sim = self._payload.get("sim")
+        speaker = self._payload.get("speaker")
+        selected = sim if isinstance(sim, Mapping) else speaker
+        return _mapping(selected if isinstance(selected, Mapping) else self._payload)
+
     def agent_state(self) -> AgentStateSnapshot:
-        speaker = _mapping(self._payload.get("speaker"))
+        speaker = self._sim_data()
         listener = _mapping(self._payload.get("listener"))
         relationship = _mapping(self._payload.get("relationship"))
         listener_id = str(listener.get("id") or "")
@@ -142,10 +148,7 @@ class Sims4Adapter:
         )
 
     def observe(self) -> tuple[WorldEvent, ...]:
-        sim = self._payload.get("sim")
-        speaker = self._payload.get("speaker")
-        sim_data = sim if isinstance(sim, Mapping) else speaker
-        sim_data = sim_data if isinstance(sim_data, Mapping) else self._payload
+        sim_data = self._sim_data()
         actor_id = str(sim_data.get("id") or sim_data.get("name") or "unknown-sim")
         listener = self._payload.get("listener")
         listener_data = listener if isinstance(listener, Mapping) else {}
