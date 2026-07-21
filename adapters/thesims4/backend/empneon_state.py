@@ -145,6 +145,24 @@ def relationship_view(
     return values
 
 
+def relationship_diagnostic(
+    conn: sqlite3.Connection, agent_id: str, target_id: str
+) -> dict[str, object]:
+    source_id = str(agent_id)
+    target_id = str(target_id)
+    relationship = RelationshipStore(conn).get(source_id, target_id)
+    snapshot = load_agent_state(conn, source_id)
+    observed = snapshot.relationships.get(target_id, {}) if snapshot is not None else {}
+    return {
+        "direction": {"source_id": source_id, "target_id": target_id},
+        "native": {
+            "friendship": round(float(observed.get("affinity", 0)) * 100),
+            "romance": round(float(observed.get("romance", 0)) * 100),
+        },
+        "empneon": {"trust": round((relationship.trust if relationship else 0.5) * 100)},
+    }
+
+
 def save_relationship(
     conn: sqlite3.Connection,
     agent_id: str,
@@ -516,11 +534,9 @@ def relevant_memories(
     return memories
 
 
-def record_confirmed_experience(
-    conn: sqlite3.Connection, proposal: ActionProposal, result: ActionResult
+def record_delivered_experience(
+    conn: sqlite3.Connection, proposal: ActionProposal
 ) -> Event | None:
-    if result.status != "succeeded":
-        return None
     values = {change.path: change.value for change in proposal.decision.state_changes}
     memory = values.get("memory")
     summary = (

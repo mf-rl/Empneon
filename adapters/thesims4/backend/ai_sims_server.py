@@ -27,6 +27,7 @@ from empneon_thesims4 import Sims4Adapter, cognition_priority
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event
+from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.replay import replay_action_record
@@ -766,6 +767,11 @@ def default_relationship():
 def get_relationship(sim_id_value, target_id_value):
     with open_db(CORE_DB_PATH) as conn:
         return empneon_state.relationship_view(conn, sim_id_value, target_id_value)
+
+
+def get_relationship_diagnostic(sim_id_value, target_id_value):
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.relationship_diagnostic(conn, sim_id_value, target_id_value)
 
 
 def save_relationship(sim_id_value, target_id_value, relationship):
@@ -2039,7 +2045,6 @@ def confirm_action(payload):
             if path in (
                 "relationship.friendship",
                 "relationship.romance",
-                "relationship.trust",
             ):
                 valid = operation == "increment" and numeric and -100 <= value <= 100
             elif len(parts) == 2 and parts[0] == "emotion" and re.fullmatch(
@@ -2080,12 +2085,45 @@ def confirm_action(payload):
             raise ValueError("confirmed action does not match its proposal")
         empneon_state.apply_confirmed_consequences(conn, proposal, result)
         record = actions.confirm(result, action)
-        empneon_state.record_confirmed_experience(conn, proposal, result)
     return {
         "decision_id": record.decision.id,
         "status": record.result.status,
         "consequences": len(record.result.applied_changes),
     }
+
+
+def confirm_dialogue_delivery(payload):
+    decision_id = str(payload.get("decision_id") or "").strip()
+    if not decision_id or payload.get("status") != "displayed":
+        raise ValueError("displayed dialogue decision_id is required")
+    with open_db(CORE_DB_PATH) as conn:
+        documents = DocumentMemoryStore(conn)
+        if documents.get("thesims4.dialogue-delivery", decision_id) is not None:
+            return {"decision_id": decision_id, "status": "already_displayed"}
+        actions = ActionRecordStore(conn)
+        proposal = actions.get_proposal(decision_id)
+        if proposal is None:
+            raise ValueError("unknown or already confirmed action proposal")
+        empneon_state.record_delivered_experience(conn, proposal)
+        for change in proposal.decision.state_changes:
+            if change.path == "relationship.trust" and proposal.decision.target_id:
+                relationships = RelationshipStore(conn)
+                relationship = relationships.get(
+                    proposal.decision.actor_id, proposal.decision.target_id
+                ) or Relationship(
+                    proposal.decision.actor_id,
+                    proposal.decision.target_id,
+                    "acquaintance",
+                )
+                relationship.trust = max(
+                    0.0,
+                    min(1.0, relationship.trust + float(change.value or 0) / 100),
+                )
+                relationships.set(relationship)
+        documents.set("thesims4.dialogue-delivery", decision_id, {"displayed": True})
+        if proposal.adapter_action == "none":
+            actions.confirm(ActionResult(decision_id, "succeeded"), "none")
+    return {"decision_id": decision_id, "status": "displayed"}
 
 
 def voice_profile(sim_id_value):
@@ -2227,7 +2265,10 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/relationship":
             sim_id_value = query.get("sim_id", [""])[0]
             target_id_value = query.get("target_id", [""])[0]
-            self.send_json(200, {"relationship": get_relationship(sim_id_value, target_id_value)})
+            self.send_json(
+                200,
+                {"relationship": get_relationship_diagnostic(sim_id_value, target_id_value)},
+            )
             return
         if parsed.path == "/emotion":
             sim_id_value = query.get("sim_id", [""])[0]
@@ -2315,6 +2356,12 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/action-result":
                 try:
                     self.send_json(200, confirm_action(payload))
+                except ValueError as exc:
+                    self.send_json(400, {"error": str(exc)})
+                return
+            if parsed.path == "/dialogue-result":
+                try:
+                    self.send_json(200, confirm_dialogue_delivery(payload))
                 except ValueError as exc:
                     self.send_json(400, {"error": str(exc)})
                 return

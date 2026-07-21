@@ -7,20 +7,29 @@ import threading
 import time
 from pathlib import Path
 
-from empneon.core.contracts import CognitiveRequest, WorldEvent
+import pytest
+
+from empneon.core.contracts import (
+    AgentStateSnapshot,
+    CognitiveRequest,
+    Decision,
+    StateDelta,
+    WorldEvent,
+)
 from empneon.core.identity.emotions import EmotionalState, EmotionalStateStore
 from empneon.core.identity.goals import Goal, GoalStore
 from empneon.core.identity.models import Agent
 from empneon.core.identity.personality import PersonalityStore
-from empneon.core.identity.relationships import RelationshipStore
+from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.serialization import export_agent
 from empneon.core.identity.store import AgentStore
 from empneon.core.identity.voice import VoiceProfileStore
 from empneon.core.memory.documents import DocumentMemoryStore
-from empneon.core.memory.episodic import EpisodicMemoryStore, Event
+from empneon.core.memory.episodic import EpisodicMemoryStore, Event, ObservationStore
 from empneon.core.replay import replay_action_record
 from empneon.core.runtime import ActionRecordStore
 from empneon.core.scheduler.usage import UsageStore
+from empneon.core.state import save_agent_state
 from empneon.db.connection import open_db
 from empneon.providers.llm import GenerationResult, ModelCapabilities
 
@@ -1071,6 +1080,9 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
         "latency_ms": 30,
     }
 
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": result["decision_id"], "status": "displayed"}
+    )
     ai_sims_server.confirm_action(
         {
             "decision_id": result["decision_id"],
@@ -1096,6 +1108,9 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
         }
+    )
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": question["decision_id"], "status": "displayed"}
     )
     ai_sims_server.confirm_action(
         {
@@ -1263,7 +1278,6 @@ def test_successful_confirmation_applies_validated_identity_consequences(
             "status": "succeeded",
             "changes": [
                 {"path": "relationship.romance", "operation": "increment", "value": 5},
-                {"path": "relationship.trust", "operation": "increment", "value": 10},
                 {"path": "emotion.happiness", "operation": "set", "value": 80},
                 {"path": "need.Hunger", "operation": "set", "value": 60},
                 {"path": f"goal.{aspiration.id}.status", "operation": "set", "value": "completed"},
@@ -1278,7 +1292,7 @@ def test_successful_confirmation_applies_validated_identity_consequences(
         replay = replay_action_record(conn, proposal["decision_id"])
         timeline = ai_sims_server.agent_timeline(conn, "bella")
     assert relationship.relationship_type == "romantic"
-    assert relationship.trust == 0.6
+    assert relationship.trust == 0.5
     assert emotion.value == 0.8
     assert goals.get(hunger.id).status == "completed"
     assert goals.get(aspiration.id).status == "completed"
@@ -1387,13 +1401,8 @@ def test_generated_memory_is_episodic_only_after_game_confirmation(
         )
     assert "Bella greeted Mortimer." not in {item["summary"] for item in before}
 
-    ai_sims_server.confirm_action(
-        {
-            "decision_id": result["decision_id"],
-            "action": result["animation"],
-            "status": "succeeded",
-            "changes": [],
-        }
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": result["decision_id"], "status": "displayed"}
     )
 
     with open_db(core_db) as conn:
@@ -1401,6 +1410,115 @@ def test_generated_memory_is_episodic_only_after_game_confirmation(
             conn, "bella", "greeted Mortimer"
         )
     assert "Bella greeted Mortimer." in {item["summary"] for item in after}
+
+
+def test_dialogue_delivery_records_experience_and_empneon_trust_once(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "memory.sqlite3"))
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(
+        ai_sims_server.HERMES,
+        "dialogue",
+        lambda _payload, _context: {
+            "dialogue": "I hear you.",
+            "emotion": "warm",
+            "intent": "reassure",
+            "relationship": {
+                "friendship_delta": 0,
+                "romance_delta": 0,
+                "trust_delta": 1,
+            },
+            "memory": {"importance": 0.8, "summary": "Karmine reassured Bernard."},
+            "animation": "friendly_chat",
+        },
+    )
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "message": "Can I trust you?",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_actions": ["friendly_chat"],
+        }
+    )
+    decision_id = result["decision_id"]
+
+    delivered = ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": decision_id, "status": "displayed"}
+    )
+    assert delivered == {"decision_id": decision_id, "status": "displayed"}
+
+    with open_db(core_db) as conn:
+        proposal = ActionRecordStore(conn).get_proposal(decision_id)
+        relationship = RelationshipStore(conn).get("karmine", "bernard")
+        observations = len(ObservationStore(conn).get_for_agent("karmine"))
+    assert proposal is not None
+    assert relationship is not None and relationship.trust == pytest.approx(0.51)
+    assert observations == 1
+    assert ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": decision_id, "status": "displayed"}
+    ) == {"decision_id": decision_id, "status": "already_displayed"}
+
+
+def test_dialogue_delivery_closes_none_action_without_native_changes(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    decision = Decision(
+        "karmine",
+        "respond",
+        target_id="bernard",
+        state_changes=(StateDelta("dialogue", "set", "I hear you."),),
+    )
+    with open_db(core_db) as conn:
+        ai_sims_server.empneon_state.sync_sim(conn, {"id": "karmine", "name": "Karmine"})
+        ai_sims_server.empneon_state.sync_sim(conn, {"id": "bernard", "name": "Bernard"})
+        event = Event("delivered turn", ["karmine", "bernard"])
+        ai_sims_server.empneon_state.record_pending_event(conn, event)
+        ActionRecordStore(conn).propose(event.id, decision, "none")
+
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": decision.id, "status": "displayed"}
+    )
+
+    with open_db(core_db) as conn:
+        record = ActionRecordStore(conn).get(decision.id)
+        relationship = RelationshipStore(conn).get("karmine", "bernard")
+    assert record is not None and record.result.status == "succeeded"
+    assert record.result.applied_changes == ()
+    assert relationship is None
+
+
+def test_relationship_source_diagnostic_separates_native_and_empneon(tmp_path) -> None:
+    with open_db(tmp_path / "core.sqlite3") as conn:
+        ai_sims_server.empneon_state.sync_sim(conn, {"id": "karmine", "name": "Karmine"})
+        ai_sims_server.empneon_state.sync_sim(conn, {"id": "bernard", "name": "Bernard"})
+        RelationshipStore(conn).set(
+            Relationship("karmine", "bernard", "acquaintance", trust=0.51)
+        )
+        save_agent_state(
+            conn,
+            AgentStateSnapshot(
+                1,
+                "sims4",
+                "karmine",
+                relationships={"bernard": {"affinity": 0.07, "romance": 0.12}},
+            ),
+        )
+
+        diagnostic = ai_sims_server.empneon_state.relationship_diagnostic(
+            conn, "karmine", "bernard"
+        )
+
+    assert diagnostic == {
+        "direction": {"source_id": "karmine", "target_id": "bernard"},
+        "native": {"friendship": 7, "romance": 12},
+        "empneon": {"trust": 51},
+    }
 
 
 def test_adapter_memory_is_stored_by_core(tmp_path, monkeypatch) -> None:

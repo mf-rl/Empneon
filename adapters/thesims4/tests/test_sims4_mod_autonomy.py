@@ -437,6 +437,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert relationship["romance"] == 15
 
     relationship_queries = []
+    relationship_output = []
     with monkeypatch.context() as command_patch:
         command_patch.setattr(
             agent,
@@ -454,11 +455,21 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             agent,
             "query_json",
             lambda path, query: relationship_queries.append((path, query))
-            or {"relationship": {}},
+            or {
+                "relationship": {
+                    "direction": {"source_id": "cam-id", "target_id": "bella"},
+                    "native": {"friendship": 7, "romance": 12},
+                    "empneon": {"trust": 51},
+                }
+            },
         )
+        command_patch.setattr(agent, "out", lambda _connection, text: relationship_output.append(text))
         agent.ai_relationship("Cam", "Sadya")
     assert relationship_queries == [
         ("/relationship", {"sim_id": "cam-id", "target_id": "bella"})
+    ]
+    assert relationship_output == [
+        "relationship Cam Sadya -> Bella: Sims friendship 7, Sims romance 12, Empneon trust 51"
     ]
 
     save_reports = []
@@ -561,19 +572,40 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     ]
 
     notification_count = len(notifications)
-    agent.show_empneon_chat_result(
-        pie_interaction.sim,
-        pie_interaction.target,
-        {
-            "dialogue": "I remember.",
-            "emotion": "warm",
-            "intent": "reassure",
-            "animation": "friendly_chat",
-            "relationship": {"trust_delta": 2},
-        },
-        None,
-        "Alice: Remember our promise?",
-    )
+    delivery_reports = []
+    with monkeypatch.context() as delivery_patch:
+        delivery_patch.setattr(
+            agent,
+            "post_json",
+            lambda path, payload, timeout=90: delivery_reports.append(
+                (path, payload, timeout)
+            ),
+        )
+
+        class ImmediateThread:
+            daemon = False
+
+            def __init__(self, target):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        delivery_patch.setattr(agent.threading, "Thread", ImmediateThread)
+        agent.show_empneon_chat_result(
+            pie_interaction.sim,
+            pie_interaction.target,
+            {
+                "decision_id": "decision-displayed",
+                "dialogue": "I remember.",
+                "emotion": "warm",
+                "intent": "reassure",
+                "animation": "friendly_chat",
+                "relationship": {"trust_delta": 2},
+            },
+            None,
+            "Alice: Remember our promise?",
+        )
     chat_dialog = dialogs[-1]
     assert chat_dialog.kwargs["title"]() == "Bob says:"
     assert "Alice: Remember our promise?" in chat_dialog.kwargs["text"]()
@@ -582,6 +614,13 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     assert hasattr(chat_dialog.kwargs["text_inputs"], "message")
     assert chat_dialog.show_kwargs == {}
     assert len(notifications) == notification_count
+    assert delivery_reports == [
+        (
+            "/dialogue-result",
+            {"decision_id": "decision-displayed", "status": "displayed"},
+            10,
+        )
+    ]
     chat_dialog.accepted = True
     chat_dialog.text_input_responses = {"message": "Do you?"}
     chat_dialog.listener(chat_dialog)
@@ -796,18 +835,23 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         player_data,
         None,
     )
+    assert payloads[3] == (
+        "/dialogue-result",
+        {"decision_id": "decision-3", "status": "displayed"},
+    )
+    agent.process_autonomy_responses(None)
     assert len(mapped_aops) == 3
     assert mapped_aops[2].affordance is mixer
     assert mapped_aops[2].push_super_on_prepare is True
     assert executed[2].affordance is mixer
-    assert len(payloads) == 3
+    assert len(payloads) == 4
     assert relationship_bits == {("mortimer", has_met)}
 
     executed[2].finishing_type = "FinishingType.NATURAL"
     executed[2].finishing_callback(executed[2])
-    assert payloads[3][0] == "/action-result"
-    assert payloads[3][1]["decision_id"] == "decision-3"
-    assert payloads[3][1]["status"] == "succeeded"
+    assert payloads[4][0] == "/action-result"
+    assert payloads[4][1]["decision_id"] == "decision-3"
+    assert payloads[4][1]["status"] == "succeeded"
 
     bad_parent = type("EmpneonSocialInteraction", (), {})
     bad_parent.all_affordances_gen = classmethod(

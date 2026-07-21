@@ -1071,6 +1071,31 @@ def submit_empneon_chat(actor, target, message, transcript=""):
     thread.start()
 
 
+def report_dialogue_delivery(actor, payload, data):
+    decision_id = str(data.get("decision_id") or "")
+
+    def worker():
+        try:
+            post_json(
+                "/dialogue-result",
+                {"decision_id": decision_id, "status": "displayed"},
+                timeout=10,
+            )
+            action = str(data.get("suggested_action") or data.get("animation") or "")
+            if payload is not None and action != "none":
+                with _AUTONOMY_RESPONSES_LOCK:
+                    _AUTONOMY_RESPONSES.append((payload, data, None))
+        except Exception as exc:
+            message = "Dialogue delivery confirmation failed: {}".format(exc)
+            write_marker(message)
+            with _AUTONOMY_RESPONSES_LOCK:
+                _CHAT_RESPONSES.append((actor, None, None, message, ""))
+
+    thread = threading.Thread(target=worker)
+    thread.daemon = True
+    thread.start()
+
+
 def show_empneon_chat_result(actor, target, data, error, transcript=""):
     target_name = sim_full_name(getattr(target, "sim_info", target))
     if error:
@@ -1078,8 +1103,6 @@ def show_empneon_chat_result(actor, target, data, error, transcript=""):
         write_marker("Empneon Social failed: " + error)
         return
     payload = data.pop("_empneon_payload", None)
-    if payload is not None and data.get("decision_id"):
-        execute_sims_action(payload, data, None)
     relationship = data.get("relationship") or {}
     details = "Emotion: {} | Intent: {} | Suggested action: {}".format(
         data.get("emotion", "neutral"),
@@ -1105,6 +1128,8 @@ def show_empneon_chat_result(actor, target, data, error, transcript=""):
         details,
     ).strip()
     show_empneon_message_dialog(actor, target, transcript)
+    if data.get("decision_id"):
+        report_dialogue_delivery(actor, payload, data)
     write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
 
 
@@ -1433,16 +1458,16 @@ def ai_relationship(*args, _connection=None):
         out(_connection, "AI relationship error: {}".format(exc))
         return
     rel = data.get("relationship") or {}
+    native = rel.get("native") or {}
+    empneon = rel.get("empneon") or {}
     out(
         _connection,
-        "relationship {} -> {}: friendship {}, romance {}, trust {}, respect {}, resentment {}".format(
+        "relationship {} -> {}: Sims friendship {}, Sims romance {}, Empneon trust {}".format(
             target_label,
             active["name"],
-            rel.get("friendship", 0),
-            rel.get("romance", 0),
-            rel.get("trust", 0),
-            rel.get("respect", 0),
-            rel.get("resentment", 0),
+            native.get("friendship", 0),
+            native.get("romance", 0),
+            empneon.get("trust", 50),
         ),
     )
 
