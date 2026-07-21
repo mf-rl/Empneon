@@ -155,9 +155,20 @@ class EmpneonConversationSession:
         return self.turn_id
 
     def close(self, canceled=False):
+        pending_decision = self.pending_decision
+        self.pending_decision = None
         self.closed = True
         self.canceled = bool(canceled)
         self.phase = "closed"
+        if self.canceled and pending_decision is not None:
+            decision_id, action = pending_decision
+            report_action_result(
+                decision_id,
+                action,
+                "failed",
+                "Empneon Social canceled",
+                [],
+            )
 
     def accept_backend_result(self, turn_id, data, error):
         if turn_id != self.turn_id:
@@ -175,6 +186,7 @@ class EmpneonConversationSession:
     def fail(self, message):
         if self.closed:
             return False
+        self.pending_decision = None
         if self.actor is not None:
             show_empneon_notification(self.actor, "Empneon error", message)
         write_marker(message)
@@ -1336,7 +1348,15 @@ def show_empneon_chat_result(session, data, error):
         details,
     ).strip()
     session.transcript = transcript
-    session.pending_decision = data.get("decision_id")
+    decision_id = data.get("decision_id")
+    session.pending_decision = (
+        (
+            decision_id,
+            str(data.get("suggested_action") or data.get("animation") or "none"),
+        )
+        if decision_id
+        else None
+    )
     displayed = show_empneon_message_dialog(session, transcript, data)
     if displayed and data.get("decision_id"):
         report_dialogue_delivery(
@@ -1369,6 +1389,7 @@ def continue_displayed_turn(session):
     ):
         return False
     data = session.response_data or {}
+    session.pending_decision = None
     action = str(data.get("suggested_action") or data.get("animation") or "none")
     if action == "none":
         session.after_native_action(session.turn_id)

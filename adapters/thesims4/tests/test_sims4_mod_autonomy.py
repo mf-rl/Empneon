@@ -670,6 +670,74 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             )
         ]
 
+    displayed_cancel_interaction = agent.EmpneonSocialInteraction()
+    displayed_cancel_interaction.sim = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="displayed-cancel", full_name="Alice")
+    )
+    displayed_cancel_interaction.target = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
+    )
+    displayed_cancel_runner = displayed_cancel_interaction._run_interaction_gen(
+        "timeline"
+    )
+    assert next(displayed_cancel_runner) == "next-tick"
+    displayed_cancel_session = agent._CONVERSATION_SESSIONS["displayed-cancel"]
+    displayed_cancel_session.turn_id = 1
+    displayed_cancel_session.phase = "waiting_for_backend"
+    with monkeypatch.context() as displayed_cancel_patch:
+        displayed_cancel_patch.setattr(
+            agent, "report_dialogue_delivery", lambda *_args, **_kwargs: None
+        )
+        displayed_cancel_session.accept_backend_result(
+            1,
+            {
+                "decision_id": "displayed-cancel-decision",
+                "dialogue": "Wait for me.",
+                "suggested_action": "friendly_chat",
+            },
+            None,
+        )
+    assert displayed_cancel_session.phase == "showing_response"
+    cancel_dialog_count = len(dialogs)
+    displayed_cancel_reports = []
+    with monkeypatch.context() as displayed_cancel_patch:
+        displayed_cancel_patch.setattr(
+            agent,
+            "post_json",
+            lambda path, payload, timeout=None: displayed_cancel_reports.append(
+                (path, payload)
+            )
+            or payload,
+        )
+        displayed_cancel_patch.setattr(
+            agent.threading,
+            "Thread",
+            lambda target: SimpleNamespace(daemon=False, start=target),
+        )
+        displayed_cancel_runner.close()
+        agent._SESSION_EVENTS.append(
+            (
+                displayed_cancel_session.id,
+                1,
+                "dialogue_displayed",
+                None,
+            )
+        )
+        agent.process_autonomy_responses(None)
+    assert len(dialogs) == cancel_dialog_count
+    assert displayed_cancel_reports == [
+        (
+            "/action-result",
+            {
+                "decision_id": "displayed-cancel-decision",
+                "action": "friendly_chat",
+                "status": "failed",
+                "reason": "Empneon Social canceled",
+                "changes": [],
+            },
+        )
+    ]
+
     notification_count = len(notifications)
     delivery_reports = []
     with monkeypatch.context() as delivery_patch:
