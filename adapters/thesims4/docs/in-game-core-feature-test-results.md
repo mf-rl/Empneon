@@ -222,6 +222,22 @@ and `0.53` Bernard → Billie).
 name-resolution defects are remediated in automated tests; a new release must still verify the
 dialogue behavior and a positive native romance consequence in game.
 
+**Source-build handoff (2026-07-21):**
+
+- The observed accepted-sounding Karmine response was “That's sweet! A date sounds like fun. You
+  have a certain charm.” It was previously rejected because non-romantic request-scoped action
+  metadata was incorrectly allowed to invalidate otherwise grounded dialogue.
+- Automated regression now preserves that exact dialogue while retaining its request-scoped
+  `friendly_chat` proposal. Descriptive dialogue intent and native action selection remain separate.
+- Automated coverage also confirms that displayed turns, not generated turns, commit cognitive
+  memory and Empneon trust; native friendship/romance persists only after the selected action
+  finishes and the game reports its tracks; queued multi-turn sessions wait for that result; and
+  manual cancellation suppresses a late backend response.
+- **Status remains PARTIAL.** No 2026-07-21 in-game source-build result is recorded. Run the focused
+  Test 5 procedure, including the manual-cancel repetition, and append the exact player message,
+  displayed response, relationship output before/after, decision ID, native finishing result, and
+  session continued/closed state before marking this test passed.
+
 ## Test 6: Private observations and beliefs
 
 **Status:** PARTIAL / RECALL CONSISTENCY FAILED

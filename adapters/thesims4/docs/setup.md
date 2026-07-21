@@ -33,6 +33,22 @@ py -3.12 -m pip install -e .\core -e .\adapters\thesims4
 Python 3.12 may be replaced with any installed Python version supported by
 `pyproject.toml`.
 
+### Source-build development run
+
+To test the current worktree without creating a release, run from `adapters/thesims4`:
+
+```powershell
+py -3.12 .\build_mod.py
+.\install_mod.ps1
+$env:PYTHONPATH='..\..\core\src;src'
+py -3.12 .\backend\ai_sims_server.py
+```
+
+`build_mod.py` creates the current `Empneon_TheSims4.ts4script` and
+`Empneon_TheSims4.package`; `install_mod.ps1` installs those source-built artifacts. The explicit
+`PYTHONPATH` makes the backend import Core and the adapter from this worktree. This workflow does
+not build or install a release archive.
+
 ## Install and Run
 
 1. Configure and start an OpenAI-compatible provider. The default is LM Studio at

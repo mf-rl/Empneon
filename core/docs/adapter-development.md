@@ -11,6 +11,18 @@ separate package that depends on Empneon Core.
 
 Do not add game types, action names, engine objects, or provider details to Core.
 
+## State snapshots
+
+Attach the latest `AgentStateSnapshot` to `WorldEvent.agent_state`. The common snapshot has
+`affect`, `needs`, `effects`, `relationships`, `goals`, `intentions`, `capabilities`, and `native`
+sections. Adapters may leave unsupported sections empty; do not invent values.
+
+Normalize common values before crossing the boundary: affect valence and relationship affinity
+use `-1.0..1.0`; affect arousal/intensity, need level/urgency, and relationship romance/trust use
+`0.0..1.0`. Preserve richer engine-only fields under `native` as JSON-compatible data instead of
+discarding them or adding them to Core. Core persists the latest snapshot for each agent; a newer
+observation replaces that stored snapshot.
+
 ## Contract flow
 
 1. Translate an observed game occurrence into `WorldEvent`.
@@ -28,6 +40,12 @@ Do not add game types, action names, engine objects, or provider details to Core
 
 Rejected or failed actions require a reason. Rejected actions cannot claim applied changes.
 Never report success before the engine confirms the action.
+
+A dialogue `intent` describes what the response means. Request-scoped action metadata proposes
+which currently available native action to run; it does not rewrite the dialogue intent. Treat
+both as proposals. Persist cognitive memory and trust only after the dialogue is delivered, and
+persist native relationship changes only from game-observed friendship or romance tracks after
+the selected action finishes. Queue acceptance alone confirms neither outcome.
 
 ## Minimal adapter
 

@@ -114,19 +114,29 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-20): PARTIAL** — Name resolution and a confirmed friendship consequence
-now pass in the release retest. Directed storage and persistence already pass; a confirmed native
-romance consequence remains unverified. Semantic classification, near-copy rejection, clean
-repetition retries, and relevant offline responses pass automated tests but require a new release
-retest before Test 5 can pass.
+**Current status (2026-07-21): PARTIAL** — Automated coverage now includes the previously rejected
+accepted-sounding Karmine date reply, request-scoped action metadata, delivered-turn confirmation,
+held multi-turn queue ordering, and late-result suppression after cancellation. Live source-build
+evidence is still required; Test 5 is not passed.
 
-- Prerequisite: two Sims with a known relationship.
-- Action: note `ai.relationship <Target Name>`, complete an Empneon Social, then run it again.
-- Expected game result: the native social completes before Empneon reports success.
+- Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
+  start the source backend as documented in `setup.md`.
+- Action: record `ai.relationship Karmine`, start **Empneon Social** with Karmine, and submit a
+  romantic invitation. Continue for at least one more turn. Repeat once, manually cancelling the
+  queued Empneon Social while the backend is still working.
+- Expected game result: the original grounded dialogue is displayed; Empneon Social stays in the
+  queue while waiting; autonomy does not interrupt the session; each displayed turn updates
+  memory and Empneon trust; each selected native action finishes before another input is
+  submitted; only game-observed friendship/romance changes persist; manual queue cancellation
+  suppresses the late backend result.
 - Expected diagnostic result: `/diagnostics/sim?sim_id=<ACTOR_ID>` shows the actor-to-target Core
   relationship. Friendship/trust are normalized, and a confirmed positive romance consequence
   marks the relationship romantic. Query the target separately to verify that directed edges can
   differ.
+- Evidence to capture for each run: exact player message and displayed response, before/after
+  `ai.relationship` output, decision ID, selected native action and finishing result, and whether
+  the session continued or closed. For the cancellation run, record that no late dialogue, memory,
+  trust, or native action appeared.
 - Persistence: save/reload and compare both directions again.
 - Cleanup: none; use a disposable save if relationship changes matter.
 
