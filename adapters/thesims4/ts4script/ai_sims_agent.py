@@ -7,6 +7,7 @@ import uuid
 
 import alarms
 import clock
+import element_utils
 import game_services
 import services
 import sims4.commands
@@ -39,6 +40,8 @@ _AUTONOMY_CURSOR = 0
 _AUTONOMY_IN_FLIGHT = False
 _AUTONOMY_RESPONSES = []
 _CHAT_RESPONSES = []
+_SESSION_EVENTS = []
+_CONVERSATION_SESSIONS = {}
 _AUTONOMY_RESPONSES_LOCK = threading.Lock()
 _GAME_SESSION_ID = uuid.uuid4().hex
 _NEW_GAME_SESSION_PENDING = False
@@ -127,6 +130,74 @@ def _stop_services(*args, **kwargs):
 game_services.stop_services = _stop_services
 
 
+class EmpneonConversationSession:
+    def __init__(self, interaction, actor, target):
+        self.interaction = interaction
+        self.actor = actor
+        self.target = target
+        self.id = uuid.uuid4().hex
+        self.turn_id = 0
+        self.phase = "input"
+        self.transcript = ""
+        self.closed = False
+        self.canceled = False
+        self.pending_decision = None
+        self.next_message = None
+
+    def begin_turn(self):
+        if self.closed or self.phase != "input":
+            return None
+        self.turn_id += 1
+        self.phase = "waiting_for_backend"
+        return self.turn_id
+
+    def close(self, canceled=False):
+        self.closed = True
+        self.canceled = bool(canceled)
+        self.phase = "closed"
+
+    def accept_backend_result(self, turn_id, data, error):
+        if turn_id != self.turn_id:
+            return False
+        if self.closed:
+            report_canceled_proposal(data)
+            return False
+        self.phase = "showing_response"
+        show_empneon_chat_result(self, data, error)
+        return True
+
+    def after_native_action(self, turn_id):
+        if self.closed or turn_id != self.turn_id:
+            return False
+        message = self.next_message
+        self.next_message = None
+        if message:
+            self.phase = "input"
+            if self.begin_turn() is not None:
+                submit_empneon_chat(self, message)
+        else:
+            self.close()
+        return True
+
+
+def find_conversation_session(session_id):
+    return next(
+        (session for session in _CONVERSATION_SESSIONS.values() if session.id == session_id),
+        None,
+    )
+
+
+def report_canceled_proposal(data):
+    if data and data.get("decision_id"):
+        report_action_result(
+            data["decision_id"],
+            data.get("suggested_action") or data.get("animation") or "none",
+            "failed",
+            "Empneon Social canceled",
+            [],
+        )
+
+
 class EmpneonSocialInteraction(SuperInteraction):
     def get_name(self, *args, **kwargs):
         return LocalizationHelperTuning.get_raw_text("Empneon Social")
@@ -141,16 +212,31 @@ class EmpneonSocialInteraction(SuperInteraction):
     def _run_interaction_gen(self, timeline):
         actor = getattr(self, "sim", None)
         target = getattr(self, "target", None)
+        actor_id = str(getattr(getattr(actor, "sim_info", None), "sim_id", ""))
+        if not actor_id or target is None or actor_id in _CONVERSATION_SESSIONS:
+            return False
         write_marker(
             "Empneon Social selected: {} -> {}".format(
                 sim_full_name(getattr(actor, "sim_info", actor)),
                 sim_full_name(getattr(target, "sim_info", target)),
             )
         )
-        show_empneon_message_dialog(actor, target)
-        if False:
-            yield None
-        return True
+        session = EmpneonConversationSession(self, actor, target)
+        _CONVERSATION_SESSIONS[actor_id] = session
+        try:
+            show_empneon_message_dialog(session)
+            while not session.closed:
+                if session.actor is None or session.target is None:
+                    session.close(canceled=True)
+                    break
+                yield element_utils.run_child(
+                    timeline, element_utils.sleep_until_next_tick_element()
+                )
+            return True
+        finally:
+            if not session.closed:
+                session.close(canceled=True)
+            _CONVERSATION_SESSIONS.pop(actor_id, None)
 
 
 def install_empneon_social(sim):
@@ -681,19 +767,30 @@ def autonomous_tick(_alarm_handle):
 def process_autonomy_responses(_alarm_handle):
     with _AUTONOMY_RESPONSES_LOCK:
         chat_item = _CHAT_RESPONSES.pop(0) if _CHAT_RESPONSES else None
+        session_event = _SESSION_EVENTS.pop(0) if _SESSION_EVENTS else None
         item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
     if chat_item is not None:
-        try:
-            show_empneon_chat_result(*chat_item)
-        except Exception:
-            write_marker(traceback.format_exc())
+        session_id, turn_id, data, error = chat_item
+        session = find_conversation_session(session_id)
+        if session is None or session.closed:
+            report_canceled_proposal(data)
+        else:
+            try:
+                session.accept_backend_result(turn_id, data, error)
+            except Exception:
+                write_marker(traceback.format_exc())
+    if session_event is not None:
+        session_id, turn_id, event = session_event
+        session = find_conversation_session(session_id)
+        if session is not None and event == "native_finished":
+            session.after_native_action(turn_id)
     if item is None:
         return
     payload, data, selected_interaction = item
     execute_sims_action(payload, data, selected_interaction)
 
 
-def execute_sims_action(payload, data, interaction):
+def execute_sims_action(payload, data, interaction, session_id=None, turn_id=None):
     decision_id = str(data.get("decision_id") or "")
     action = str(data.get("suggested_action") or data.get("animation") or "")
     speaker_id = str(payload["speaker"]["id"])
@@ -806,6 +903,8 @@ def execute_sims_action(payload, data, interaction):
                 "succeeded" if succeeded else "failed",
                 None if succeeded else finishing_type or "interaction canceled",
                 changes,
+                session_id=session_id,
+                turn_id=turn_id,
             )
 
         callback(finished)
@@ -820,10 +919,26 @@ def execute_sims_action(payload, data, interaction):
             )
         )
     except Exception as exc:
-        report_action_result(decision_id, action, "failed", str(exc), [])
+        report_action_result(
+            decision_id,
+            action,
+            "failed",
+            str(exc),
+            [],
+            session_id=session_id,
+            turn_id=turn_id,
+        )
 
 
-def report_action_result(decision_id, action, status, reason=None, changes=None):
+def report_action_result(
+    decision_id,
+    action,
+    status,
+    reason=None,
+    changes=None,
+    session_id=None,
+    turn_id=None,
+):
     body = {
         "decision_id": decision_id,
         "action": action,
@@ -848,6 +963,9 @@ def report_action_result(decision_id, action, status, reason=None, changes=None)
             write_marker(traceback.format_exc())
         finally:
             _AUTONOMY_IN_FLIGHT = False
+            if session_id is not None:
+                with _AUTONOMY_RESPONSES_LOCK:
+                    _SESSION_EVENTS.append((session_id, turn_id, "native_finished"))
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
@@ -996,9 +1114,12 @@ class EmpneonTextInputLength(HasTunableSingletonFactory, AutoFactoryInit):
         )
 
 
-def show_empneon_message_dialog(actor, target, transcript=""):
+def show_empneon_message_dialog(session, transcript="", response_data=None):
+    actor = session.actor
+    target = session.target
     if actor is None or target is None:
         write_marker("Empneon Social canceled: actor or target unavailable")
+        session.close(canceled=True)
         return False
     target_name = sim_full_name(getattr(target, "sim_info", target))
     message_input = UiTextInput(sort_order=0, restricted_characters=None)
@@ -1024,6 +1145,10 @@ def show_empneon_message_dialog(actor, target, transcript=""):
     def on_response(response):
         if not getattr(response, "accepted", False):
             write_marker("Empneon Social input canceled")
+            if response_data is None:
+                session.close(canceled=True)
+            else:
+                finish_displayed_turn(session, response_data, None)
             return
         responses = getattr(response, "text_input_responses", {}) or {}
         value = responses.get("message")
@@ -1039,14 +1164,23 @@ def show_empneon_message_dialog(actor, target, transcript=""):
         if not message:
             show_empneon_notification(actor, "Empneon Social", "Enter a message before sending.")
             return
-        submit_empneon_chat(actor, target, message, transcript)
+        if response_data is not None:
+            finish_displayed_turn(session, response_data, message)
+            return
+        turn_id = session.begin_turn()
+        if turn_id is not None:
+            session.transcript = transcript
+            submit_empneon_chat(session, message)
 
     dialog.add_listener(on_response)
     dialog.show_dialog()
     return True
 
 
-def submit_empneon_chat(actor, target, message, transcript=""):
+def submit_empneon_chat(session, message):
+    actor = session.actor
+    target = session.target
+    turn_id = session.turn_id
     payload = chat_payload_for_target(
         actor,
         getattr(target, "sim_info", None),
@@ -1054,16 +1188,17 @@ def submit_empneon_chat(actor, target, message, transcript=""):
         "pie_menu",
     )
     speaker_name = sim_full_name(getattr(actor, "sim_info", actor))
-    transcript = "{}\n\n{}: {}".format(transcript, speaker_name, message).strip()
+    transcript = "{}\n\n{}: {}".format(session.transcript, speaker_name, message).strip()
+    session.transcript = transcript
     show_empneon_notification(actor, "Empneon Social", "Thinking...")
 
     def worker():
         try:
             data = post_json("/chat", payload)
             data["_empneon_payload"] = payload
-            result = (actor, target, data, None, transcript)
+            result = (session.id, turn_id, data, None)
         except Exception as exc:
-            result = (actor, target, None, str(exc), transcript)
+            result = (session.id, turn_id, None, str(exc))
         with _AUTONOMY_RESPONSES_LOCK:
             _CHAT_RESPONSES.append(result)
 
@@ -1072,7 +1207,7 @@ def submit_empneon_chat(actor, target, message, transcript=""):
     thread.start()
 
 
-def report_dialogue_delivery(actor, payload, data):
+def report_dialogue_delivery(actor, payload, data, queue_native=True):
     decision_id = str(data.get("decision_id") or "")
 
     def worker():
@@ -1085,6 +1220,7 @@ def report_dialogue_delivery(actor, payload, data):
             action = str(data.get("suggested_action") or data.get("animation") or "")
             if (
                 delivered.get("status") == "displayed"
+                and queue_native
                 and payload is not None
                 and action != "none"
             ):
@@ -1093,21 +1229,22 @@ def report_dialogue_delivery(actor, payload, data):
         except Exception as exc:
             message = "Dialogue delivery confirmation failed: {}".format(exc)
             write_marker(message)
-            with _AUTONOMY_RESPONSES_LOCK:
-                _CHAT_RESPONSES.append((actor, None, None, message, ""))
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
     thread.start()
 
 
-def show_empneon_chat_result(actor, target, data, error, transcript=""):
+def show_empneon_chat_result(session, data, error):
+    actor = session.actor
+    target = session.target
     target_name = sim_full_name(getattr(target, "sim_info", target))
     if error:
         show_empneon_notification(actor, "Empneon error", error)
         write_marker("Empneon Social failed: " + error)
+        session.close()
         return
-    payload = data.pop("_empneon_payload", None)
+    payload = data.get("_empneon_payload")
     relationship = data.get("relationship") or {}
     details = "Emotion: {} | Intent: {} | Suggested action: {}".format(
         data.get("emotion", "neutral"),
@@ -1127,15 +1264,36 @@ def show_empneon_chat_result(actor, target, data, error, transcript=""):
         details += "\nEmpneon state: " + ", ".join(deltas)
     dialogue = str(data.get("dialogue") or "...")
     transcript = "{}\n\n{}: {}\n\n{}".format(
-        transcript,
+        session.transcript,
         target_name,
         dialogue,
         details,
     ).strip()
-    displayed = show_empneon_message_dialog(actor, target, transcript)
+    session.transcript = transcript
+    session.pending_decision = data.get("decision_id")
+    displayed = show_empneon_message_dialog(session, transcript, data)
     if displayed and data.get("decision_id"):
-        report_dialogue_delivery(actor, payload, data)
+        report_dialogue_delivery(actor, payload, data, queue_native=False)
     write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
+
+
+def finish_displayed_turn(session, data, next_message):
+    if session.closed or session.phase != "showing_response":
+        return False
+    session.next_message = next_message
+    action = str(data.get("suggested_action") or data.get("animation") or "none")
+    if action == "none":
+        session.after_native_action(session.turn_id)
+        return True
+    session.phase = "running_native_action"
+    execute_sims_action(
+        data.pop("_empneon_payload", None),
+        data,
+        None,
+        session_id=session.id,
+        turn_id=session.turn_id,
+    )
+    return True
 
 
 def split_chat_args(args):

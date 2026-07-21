@@ -47,7 +47,7 @@ def test_tuning_package_uses_interaction_resource_type() -> None:
     assert resource_type == 0xE882D22F
 
 
-def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
+def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> None:
     project = Path(__file__).parents[1]
     monkeypatch.setenv("HOME", str(project / "tests"))
     monkeypatch.setenv("USERPROFILE", str(project / "tests"))
@@ -76,6 +76,9 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
 
     interactions = ModuleType("interactions")
     interactions.ParticipantType = SimpleNamespace(Actor="actor")
+    element_utils = ModuleType("element_utils")
+    element_utils.sleep_until_next_tick_element = lambda: "next-tick"
+    element_utils.run_child = lambda _timeline, element: element
     interactions_base = ModuleType("interactions.base")
     super_interaction = ModuleType("interactions.base.super_interaction")
     super_interaction.SuperInteraction = type("SuperInteraction", (), {})
@@ -226,6 +229,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "clock": clock,
         "game_services": game_services,
         "interactions": interactions,
+        "element_utils": element_utils,
         "interactions.base": interactions_base,
         "interactions.base.super_interaction": super_interaction,
         "interactions.constraints": constraints,
@@ -528,17 +532,19 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     monkeypatch.setattr(
         agent,
         "submit_empneon_chat",
-        lambda actor, target, message, transcript="": submitted.append(
-            (actor, target, message, transcript)
-        ),
+        lambda session, message: submitted.append((session, message)),
     )
     pie_interaction = agent.EmpneonSocialInteraction()
-    pie_interaction.sim = SimpleNamespace(sim_info=SimpleNamespace(full_name="Alice"))
-    pie_interaction.target = SimpleNamespace(sim_info=SimpleNamespace(full_name="Bob"))
-    try:
-        next(pie_interaction._run_interaction_gen(None))
-    except StopIteration as finished:
-        assert finished.value is True
+    pie_interaction.sim = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="alice", full_name="Alice")
+    )
+    pie_interaction.target = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
+    )
+    runner = pie_interaction._run_interaction_gen("timeline")
+    assert next(runner) == "next-tick"
+    session = agent._CONVERSATION_SESSIONS["alice"]
+    assert session.phase == "input"
     assert selected == ["Empneon Social selected: Alice -> Bob"]
     assert agent.EmpneonSocialInteraction.get_name(None, None) == "Empneon Social"
     assert pie_interaction.get_name() == "Empneon Social"
@@ -567,9 +573,93 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     dialog.accepted = True
     dialog.text_input_responses = {"message": "  Remember our promise?  "}
     dialog.listener(dialog)
-    assert submitted == [
-        (pie_interaction.sim, pie_interaction.target, "Remember our promise?", "")
-    ]
+    assert session.phase == "waiting_for_backend"
+    assert submitted == [(session, "Remember our promise?")]
+    assert next(runner) == "next-tick"
+    session.accept_backend_result(
+        session.turn_id,
+        {
+            "decision_id": "decision-session",
+            "dialogue": "I remember.",
+            "suggested_action": "none",
+        },
+        None,
+    )
+    assert session.phase == "showing_response"
+    response_dialog = dialogs[-1]
+    response_dialog.accepted = False
+    response_dialog.listener(response_dialog)
+    try:
+        next(runner)
+    except StopIteration as finished:
+        assert finished.value is True
+    else:
+        raise AssertionError("closed session kept the interaction alive")
+    assert "alice" not in agent._CONVERSATION_SESSIONS
+
+    for canceled_by in ("queue_cancel", "actor_missing", "target_missing"):
+        canceled_interaction = agent.EmpneonSocialInteraction()
+        canceled_interaction.sim = SimpleNamespace(
+            sim_info=SimpleNamespace(sim_id=canceled_by, full_name="Alice")
+        )
+        canceled_interaction.target = SimpleNamespace(
+            sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
+        )
+        canceled_runner = canceled_interaction._run_interaction_gen("timeline")
+        assert next(canceled_runner) == "next-tick"
+        canceled_session = agent._CONVERSATION_SESSIONS[canceled_by]
+        canceled_session.turn_id = 1
+        if canceled_by == "queue_cancel":
+            canceled_runner.close()
+        elif canceled_by == "actor_missing":
+            canceled_session.actor = None
+        else:
+            canceled_session.target = None
+        if canceled_by != "queue_cancel":
+            try:
+                next(canceled_runner)
+            except StopIteration:
+                pass
+            else:
+                raise AssertionError("missing participant kept the session alive")
+        dialog_count = len(dialogs)
+        late_reports = []
+        with monkeypatch.context() as late_patch:
+            late_patch.setattr(
+                agent,
+                "post_json",
+                lambda path, payload, timeout=None: late_reports.append((path, payload)),
+            )
+            late_patch.setattr(
+                agent.threading,
+                "Thread",
+                lambda target: SimpleNamespace(daemon=False, start=target),
+            )
+            agent._CHAT_RESPONSES.append(
+                (
+                    canceled_session.id,
+                    1,
+                    {
+                        "decision_id": "late-decision",
+                        "suggested_action": "friendly_chat",
+                    },
+                    None,
+                )
+            )
+            agent.process_autonomy_responses(None)
+        assert len(dialogs) == dialog_count
+        assert late_reports == [
+            (
+                "/action-result",
+                {
+                    "decision_id": "late-decision",
+                    "action": "friendly_chat",
+                    "status": "failed",
+                    "reason": "Empneon Social canceled",
+                    "changes": [],
+                },
+            )
+        ]
 
     notification_count = len(notifications)
     delivery_reports = []
@@ -593,19 +683,23 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
                 self.target()
 
         delivery_patch.setattr(agent.threading, "Thread", ImmediateThread)
+        display_session = agent.EmpneonConversationSession(
+            pie_interaction, pie_interaction.sim, pie_interaction.target
+        )
+        display_session.turn_id = 1
+        display_session.phase = "showing_response"
+        display_session.transcript = "Alice: Remember our promise?"
         agent.show_empneon_chat_result(
-            pie_interaction.sim,
-            pie_interaction.target,
+            display_session,
             {
                 "decision_id": "decision-displayed",
                 "dialogue": "I remember.",
                 "emotion": "warm",
                 "intent": "reassure",
-                "animation": "friendly_chat",
+                "suggested_action": "none",
                 "relationship": {"trust_delta": 2},
             },
             None,
-            "Alice: Remember our promise?",
         )
     chat_dialog = dialogs[-1]
     assert chat_dialog.kwargs["title"]() == "Bob says:"
@@ -622,7 +716,10 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             10,
         )
     ]
-    assert agent.show_empneon_message_dialog(None, pie_interaction.target, "not shown") is False
+    missing_actor_session = agent.EmpneonConversationSession(
+        pie_interaction, None, pie_interaction.target
+    )
+    assert agent.show_empneon_message_dialog(missing_actor_session, "not shown") is False
     assert delivery_reports == [
         (
             "/dialogue-result",
@@ -633,12 +730,7 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
     chat_dialog.accepted = True
     chat_dialog.text_input_responses = {"message": "Do you?"}
     chat_dialog.listener(chat_dialog)
-    assert submitted[-1] == (
-        pie_interaction.sim,
-        pie_interaction.target,
-        "Do you?",
-        chat_dialog.kwargs["text"](),
-    )
+    assert submitted[-1] == (display_session, "Do you?")
 
     sim_chat = type("native_NPC_social", (), {})
     target = type(
@@ -839,29 +931,68 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
         "relationship": {},
         "_empneon_payload": player_payload,
     }
-    agent.show_empneon_chat_result(
-        pie_interaction.sim,
-        pie_interaction.target,
-        player_data,
-        None,
+    player_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
     )
+    player_session.turn_id = 1
+    player_session.phase = "showing_response"
+    agent._CONVERSATION_SESSIONS["alice"] = player_session
+    callback_order = []
+    original_post_json = agent.post_json
+
+    def ordered_post_json(path, payload, timeout=None):
+        if path == "/dialogue-result":
+            callback_order.append("displayed")
+        elif path == "/action-result":
+            callback_order.append("native_result_posted")
+        return original_post_json(path, payload, timeout=timeout)
+
+    monkeypatch.setattr(agent, "post_json", ordered_post_json)
+    agent.show_empneon_chat_result(player_session, player_data, None)
     assert payloads[3] == (
         "/dialogue-result",
         {"decision_id": "decision-3", "status": "displayed"},
     )
-    agent.process_autonomy_responses(None)
+    assert agent._AUTONOMY_RESPONSES == []
+    second_turn_dialog = dialogs[-1]
+    second_turn_dialog.accepted = True
+    second_turn_dialog.text_input_responses = {"message": "And tomorrow?"}
+    second_turn_dialog.listener(second_turn_dialog)
+    assert player_session.phase == "running_native_action"
     assert len(mapped_aops) == 3
     assert mapped_aops[2].affordance is mixer
     assert mapped_aops[2].push_super_on_prepare is True
     assert executed[2].affordance is mixer
-    assert len(payloads) == 4
     assert relationship_bits == {("mortimer", has_met)}
 
+    worker_dialog_count = len(dialogs)
     executed[2].finishing_type = "FinishingType.NATURAL"
     executed[2].finishing_callback(executed[2])
     assert payloads[4][0] == "/action-result"
     assert payloads[4][1]["decision_id"] == "decision-3"
     assert payloads[4][1]["status"] == "succeeded"
+    assert len(dialogs) == worker_dialog_count
+    original_after_native_action = player_session.after_native_action
+
+    def after_native_action(turn_id):
+        callback_order.append("native_finished")
+        return original_after_native_action(turn_id)
+
+    player_session.after_native_action = after_native_action
+    monkeypatch.setattr(
+        agent,
+        "submit_empneon_chat",
+        lambda _session, _message: callback_order.append("second_submitted"),
+    )
+    agent.process_autonomy_responses(None)
+    assert player_session.turn_id == 2
+    assert player_session.phase == "waiting_for_backend"
+    assert callback_order == [
+        "displayed",
+        "native_result_posted",
+        "native_finished",
+        "second_submitted",
+    ]
 
     queued = len(agent._AUTONOMY_RESPONSES)
     with monkeypatch.context() as delivery_patch:
@@ -887,9 +1018,12 @@ def test_alarm_submits_one_npc_pair_without_overlap(monkeypatch) -> None:
             "report_dialogue_delivery",
             lambda *_args: delivery_calls.append(_args),
         )
+        unavailable = agent.EmpneonConversationSession(
+            pie_interaction, None, pie_interaction.target
+        )
+        unavailable.phase = "showing_response"
         agent.show_empneon_chat_result(
-            None,
-            pie_interaction.target,
+            unavailable,
             {"decision_id": "decision-not-shown", "dialogue": "No actor."},
             None,
         )
