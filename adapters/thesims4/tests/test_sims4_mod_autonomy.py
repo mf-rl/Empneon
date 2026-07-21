@@ -576,15 +576,24 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert session.phase == "waiting_for_backend"
     assert submitted == [(session, "Remember our promise?")]
     assert next(runner) == "next-tick"
-    session.accept_backend_result(
-        session.turn_id,
-        {
-            "decision_id": "decision-session",
-            "dialogue": "I remember.",
-            "suggested_action": "none",
-        },
-        None,
-    )
+    with monkeypatch.context() as acknowledgement_patch:
+        acknowledgement_patch.setattr(
+            agent,
+            "report_dialogue_delivery",
+            lambda *_args, **_kwargs: agent._SESSION_EVENTS.append(
+                (session.id, session.turn_id, "dialogue_displayed", None)
+            ),
+        )
+        session.accept_backend_result(
+            session.turn_id,
+            {
+                "decision_id": "decision-session",
+                "dialogue": "I remember.",
+                "suggested_action": "none",
+            },
+            None,
+        )
+    agent.process_autonomy_responses(None)
     assert session.phase == "showing_response"
     response_dialog = dialogs[-1]
     response_dialog.accepted = False
@@ -729,6 +738,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     ]
     chat_dialog.accepted = True
     chat_dialog.text_input_responses = {"message": "Do you?"}
+    display_session.dialogue_acknowledged = True
     chat_dialog.listener(chat_dialog)
     assert submitted[-1] == (display_session, "Do you?")
 
@@ -939,6 +949,16 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     agent._CONVERSATION_SESSIONS["alice"] = player_session
     callback_order = []
     original_post_json = agent.post_json
+    delayed_workers = []
+
+    class DelayedThread:
+        daemon = False
+
+        def __init__(self, target):
+            delayed_workers.append(target)
+
+        def start(self):
+            pass
 
     def ordered_post_json(path, payload, timeout=None):
         if path == "/dialogue-result":
@@ -948,16 +968,32 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         return original_post_json(path, payload, timeout=timeout)
 
     monkeypatch.setattr(agent, "post_json", ordered_post_json)
+    monkeypatch.setattr(agent.threading, "Thread", DelayedThread)
     agent.show_empneon_chat_result(player_session, player_data, None)
-    assert payloads[3] == (
-        "/dialogue-result",
-        {"decision_id": "decision-3", "status": "displayed"},
-    )
+    assert len(delayed_workers) == 1
+    assert len(payloads) == 3
+    assert agent._SESSION_EVENTS == []
     assert agent._AUTONOMY_RESPONSES == []
     second_turn_dialog = dialogs[-1]
     second_turn_dialog.accepted = True
     second_turn_dialog.text_input_responses = {"message": "And tomorrow?"}
     second_turn_dialog.listener(second_turn_dialog)
+    assert player_session.phase == "showing_response"
+    assert len(mapped_aops) == 2
+
+    delayed_workers.pop(0)()
+    assert payloads[3] == (
+        "/dialogue-result",
+        {"decision_id": "decision-3", "status": "displayed"},
+    )
+    assert agent._AUTONOMY_RESPONSES == []
+    assert len(mapped_aops) == 2
+    monkeypatch.setattr(
+        agent.threading,
+        "Thread",
+        lambda target: SimpleNamespace(daemon=False, start=target),
+    )
+    agent.process_autonomy_responses(None)
     assert player_session.phase == "running_native_action"
     assert len(mapped_aops) == 3
     assert mapped_aops[2].affordance is mixer
@@ -993,6 +1029,89 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "native_finished",
         "second_submitted",
     ]
+
+    acknowledgement_failure_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    acknowledgement_failure_session.turn_id = 1
+    acknowledgement_failure_session.phase = "showing_response"
+    agent._CONVERSATION_SESSIONS["ack-failure"] = acknowledgement_failure_session
+    action_count = len(mapped_aops)
+    agent.finish_displayed_turn(
+        acknowledgement_failure_session,
+        {
+            "decision_id": "decision-ack-failure",
+            "suggested_action": "friendly_chat",
+            "_empneon_payload": player_payload,
+        },
+        "Never submit",
+    )
+    monkeypatch.setattr(
+        agent,
+        "post_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("ack down")),
+    )
+    agent.report_dialogue_delivery(
+        pie_interaction.sim,
+        player_payload,
+        {"decision_id": "decision-ack-failure"},
+        queue_native=False,
+        session_id=acknowledgement_failure_session.id,
+        turn_id=1,
+    )
+    assert agent._SESSION_EVENTS[-1][2] == "dialogue_failed"
+    agent.process_autonomy_responses(None)
+    assert acknowledgement_failure_session.closed is True
+    assert len(mapped_aops) == action_count
+
+    failed_post_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    failed_post_session.turn_id = 1
+    failed_post_session.phase = "running_native_action"
+    failed_post_session.next_message = "Never submit"
+    agent._CONVERSATION_SESSIONS["failed-post"] = failed_post_session
+    monkeypatch.setattr(
+        agent,
+        "post_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("backend down")),
+    )
+    agent.report_action_result(
+        "decision-post-failure",
+        "friendly_chat",
+        "succeeded",
+        session_id=failed_post_session.id,
+        turn_id=1,
+    )
+    assert agent._SESSION_EVENTS[-1][2] == "native_failed"
+    agent.process_autonomy_responses(None)
+    assert failed_post_session.closed is True
+
+    malformed_reports = []
+    malformed_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    malformed_session.turn_id = 1
+    malformed_session.phase = "running_native_action"
+    agent._CONVERSATION_SESSIONS["malformed"] = malformed_session
+    monkeypatch.setattr(
+        agent,
+        "post_json",
+        lambda path, body, timeout=None: malformed_reports.append((path, body)) or body,
+    )
+    agent.execute_sims_action(
+        None,
+        {"decision_id": "decision-malformed", "suggested_action": "friendly_chat"},
+        None,
+        session_id=malformed_session.id,
+        turn_id=1,
+    )
+    assert malformed_reports[-1][0] == "/action-result"
+    assert malformed_reports[-1][1]["status"] == "failed"
+    assert agent._SESSION_EVENTS[-1][2] == "native_failed"
+    agent.process_autonomy_responses(None)
+    assert malformed_session.closed is True
+    monkeypatch.setattr(agent, "post_json", original_post_json)
 
     queued = len(agent._AUTONOMY_RESPONSES)
     with monkeypatch.context() as delivery_patch:

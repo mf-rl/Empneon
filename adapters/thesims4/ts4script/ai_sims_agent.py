@@ -143,6 +143,9 @@ class EmpneonConversationSession:
         self.canceled = False
         self.pending_decision = None
         self.next_message = None
+        self.response_data = None
+        self.response_choice_ready = False
+        self.dialogue_acknowledged = False
 
     def begin_turn(self):
         if self.closed or self.phase != "input":
@@ -163,7 +166,19 @@ class EmpneonConversationSession:
             report_canceled_proposal(data)
             return False
         self.phase = "showing_response"
+        self.response_data = data
+        self.response_choice_ready = False
+        self.dialogue_acknowledged = False
         show_empneon_chat_result(self, data, error)
+        return True
+
+    def fail(self, message):
+        if self.closed:
+            return False
+        if self.actor is not None:
+            show_empneon_notification(self.actor, "Empneon error", message)
+        write_marker(message)
+        self.close()
         return True
 
     def after_native_action(self, turn_id):
@@ -780,10 +795,18 @@ def process_autonomy_responses(_alarm_handle):
             except Exception:
                 write_marker(traceback.format_exc())
     if session_event is not None:
-        session_id, turn_id, event = session_event
+        session_id, turn_id, event, detail = session_event
         session = find_conversation_session(session_id)
-        if session is not None and event == "native_finished":
-            session.after_native_action(turn_id)
+        if session is not None:
+            if event == "dialogue_displayed" and turn_id == session.turn_id:
+                session.dialogue_acknowledged = True
+                continue_displayed_turn(session)
+            elif event == "dialogue_failed" and turn_id == session.turn_id:
+                session.fail(detail)
+            elif event == "native_finished":
+                session.after_native_action(turn_id)
+            elif event == "native_failed" and turn_id == session.turn_id:
+                session.fail(detail)
     if item is None:
         return
     payload, data, selected_interaction = item
@@ -793,9 +816,11 @@ def process_autonomy_responses(_alarm_handle):
 def execute_sims_action(payload, data, interaction, session_id=None, turn_id=None):
     decision_id = str(data.get("decision_id") or "")
     action = str(data.get("suggested_action") or data.get("animation") or "")
-    speaker_id = str(payload["speaker"]["id"])
-    listener_id = str(payload["listener"]["id"])
     try:
+        if not isinstance(payload, dict):
+            raise RuntimeError("missing Empneon action payload")
+        speaker_id = str(payload["speaker"]["id"])
+        listener_id = str(payload["listener"]["id"])
         actor_info = find_sim_info_by_id(listener_id if interaction is None else speaker_id)
         target_info = find_sim_info_by_id(speaker_id if interaction is None else listener_id)
         actor = actor_info.get_sim_instance() if actor_info is not None else None
@@ -959,13 +984,27 @@ def report_action_result(
                     " reason=" + str(reason) if reason else "",
                 )
             )
-        except Exception:
+            if session_id is not None:
+                event = (
+                    "native_finished" if status == "succeeded" else "native_failed"
+                )
+                detail = reason or "Native action failed"
+                with _AUTONOMY_RESPONSES_LOCK:
+                    _SESSION_EVENTS.append((session_id, turn_id, event, detail))
+        except Exception as exc:
             write_marker(traceback.format_exc())
-        finally:
-            _AUTONOMY_IN_FLIGHT = False
             if session_id is not None:
                 with _AUTONOMY_RESPONSES_LOCK:
-                    _SESSION_EVENTS.append((session_id, turn_id, "native_finished"))
+                    _SESSION_EVENTS.append(
+                        (
+                            session_id,
+                            turn_id,
+                            "native_failed",
+                            "Action result confirmation failed: {}".format(exc),
+                        )
+                    )
+        finally:
+            _AUTONOMY_IN_FLIGHT = False
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
@@ -1207,7 +1246,14 @@ def submit_empneon_chat(session, message):
     thread.start()
 
 
-def report_dialogue_delivery(actor, payload, data, queue_native=True):
+def report_dialogue_delivery(
+    actor,
+    payload,
+    data,
+    queue_native=True,
+    session_id=None,
+    turn_id=None,
+):
     decision_id = str(data.get("decision_id") or "")
 
     def worker():
@@ -1217,6 +1263,21 @@ def report_dialogue_delivery(actor, payload, data, queue_native=True):
                 {"decision_id": decision_id, "status": "displayed"},
                 timeout=10,
             )
+            if session_id is not None:
+                status = delivered.get("status")
+                event = (
+                    "dialogue_displayed"
+                    if status == "displayed"
+                    else "dialogue_failed"
+                )
+                detail = (
+                    None
+                    if status == "displayed"
+                    else "Dialogue was not freshly displayed"
+                )
+                with _AUTONOMY_RESPONSES_LOCK:
+                    _SESSION_EVENTS.append((session_id, turn_id, event, detail))
+                return
             action = str(data.get("suggested_action") or data.get("animation") or "")
             if (
                 delivered.get("status") == "displayed"
@@ -1229,6 +1290,11 @@ def report_dialogue_delivery(actor, payload, data, queue_native=True):
         except Exception as exc:
             message = "Dialogue delivery confirmation failed: {}".format(exc)
             write_marker(message)
+            if session_id is not None:
+                with _AUTONOMY_RESPONSES_LOCK:
+                    _SESSION_EVENTS.append(
+                        (session_id, turn_id, "dialogue_failed", message)
+                    )
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
@@ -1273,7 +1339,14 @@ def show_empneon_chat_result(session, data, error):
     session.pending_decision = data.get("decision_id")
     displayed = show_empneon_message_dialog(session, transcript, data)
     if displayed and data.get("decision_id"):
-        report_dialogue_delivery(actor, payload, data, queue_native=False)
+        report_dialogue_delivery(
+            actor,
+            payload,
+            data,
+            queue_native=False,
+            session_id=session.id,
+            turn_id=session.turn_id,
+        )
     write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
 
 
@@ -1281,6 +1354,21 @@ def finish_displayed_turn(session, data, next_message):
     if session.closed or session.phase != "showing_response":
         return False
     session.next_message = next_message
+    session.response_data = data
+    session.response_choice_ready = True
+    continue_displayed_turn(session)
+    return True
+
+
+def continue_displayed_turn(session):
+    if (
+        session.closed
+        or session.phase != "showing_response"
+        or not session.response_choice_ready
+        or not session.dialogue_acknowledged
+    ):
+        return False
+    data = session.response_data or {}
     action = str(data.get("suggested_action") or data.get("animation") or "none")
     if action == "none":
         session.after_native_action(session.turn_id)
