@@ -90,3 +90,63 @@ social are safe game-state cancellations; retrying them automatically could dupl
 social. Regression tests will cover name-to-ID resolution, the additional romantic phrases,
 current-message echo rejection, prior-reply reuse rejection, and preservation of a distinct valid
 response.
+
+## Test 5 follow-up: semantic interaction classification
+
+The release retest showed that keyword-based romantic detection remains too narrow and that a
+grounding retry can reuse the same contaminated conversation history. A near-copy also escaped the
+exact-word-list comparison after adding only one word. The model should interpret social meaning;
+the adapter should enforce integrity and provide deterministic degradation.
+
+### Model-available path
+
+The existing dialogue generation call will also return one `player_interaction_kind` value:
+
+- `friendly`;
+- `romantic_compliment`;
+- `romantic_invitation`;
+- `hostile`;
+- `informational`;
+- `neutral`.
+
+This is not a second model or a second request. The same model classifies the player's message and
+writes the reply together. A romantic compliment may receive any distinct, relevant response and
+does not require acceptance or a romance delta. A romantic invitation must still be accepted or
+declined explicitly; acceptance requires flirt intent and a positive proposed romance delta.
+
+The adapter retains a small local classifier as a safety and offline fallback. It overrides the
+model only for an unmistakable direct romantic invitation or another existing integrity boundary.
+It does not prescribe wording for valid model output.
+
+### Repetition retry
+
+Echo detection will compare normalized ordered word sequences rather than require exact equality.
+For messages of at least six meaningful words, a similarity of `0.8` or greater is an echo. When
+the model copies the current message or reuses a prior reply, the one existing retry rebuilds the
+prompt with `Recent conversation: None yet` while retaining the Sim profile, current game state,
+pair-scoped memories, relationship, and current player message. This removes the repetition source
+without reducing the model to a template or adding another model call.
+
+### Model-unavailable path
+
+When Core degrades the request to provider-free CLOD 1, the Sims adapter will convert its local
+classification into the existing deterministic response shape before the action proposal is
+stored. Offline responses remain conservative and non-creative but relevant:
+
+- needs questions report current critical needs;
+- supported factual questions use accessible memory and unsupported ones admit uncertainty;
+- romantic invitations establish a polite boundary with no romance consequence;
+- romantic compliments acknowledge the sentiment without copying it;
+- hostile messages establish a boundary;
+- friendly and neutral messages acknowledge the speaker naturally.
+
+Core remains responsible for routing, usage telemetry, action records, and confirmation gating.
+The adapter remains responsible for Sims-specific interpretation and dialogue. No database, API,
+provider, or persistence change is required.
+
+### Verification
+
+Regression tests will reproduce Karmine's near-copy and repeated-history fallback, verify that the
+retry prompt omits conversation history, distinguish a romantic compliment from an invitation,
+confirm that an unavailable provider records CLOD 1 while returning a relevant adapter fallback,
+and preserve all existing privacy, consent, and native-confirmation tests.
