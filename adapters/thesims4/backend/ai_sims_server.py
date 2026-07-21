@@ -1310,6 +1310,15 @@ def build_chat_prompt(payload, context):
     recent_conversation = "\n".join(conversation_lines) or "None yet"
     snapshot = dataclasses.asdict(Sims4Adapter(payload).agent_state())
     actions = available_actions(payload.get("available_actions"))
+    action_descriptions = {
+        "friendly_chat": "continue a friendly conversation.",
+        "apologize": "perform an apology.",
+        "flirt": "perform a romantic social action.",
+    }
+    action_explanations = "\n".join(
+        ["- {}: {}".format(action, action_descriptions[action]) for action in actions]
+        + ["- none: dialogue only; perform no Sims action."]
+    )
 
     return """Role assignment:
 You are {speaker_name}, the Speaker.
@@ -1364,10 +1373,7 @@ Native state:
 
 Available actions:
 {available_actions}
-- friendly_chat: continue a friendly conversation.
-- apologize: perform an apology.
-- flirt: perform a romantic social action.
-- none: dialogue only; perform no Sims action.
+{action_explanations}
 Intent describes the reply and never selects an action.
 
 Recent conversation:
@@ -1418,6 +1424,7 @@ Player says:
         snapshot=dumps(snapshot),
         native_state=dumps(snapshot["native"]),
         available_actions=", ".join(actions) or "none",
+        action_explanations=action_explanations,
         message=payload.get("message") or "",
     )
 

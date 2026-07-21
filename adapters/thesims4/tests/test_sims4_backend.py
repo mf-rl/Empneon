@@ -455,6 +455,32 @@ def test_rich_game_state_is_grounded_in_dialogue_prompt() -> None:
         assert expected in prompt
 
 
+def test_prompt_action_explanations_only_include_request_actions_and_none() -> None:
+    payload = {
+        "speaker": {"id": "bella"},
+        "listener": {"id": "mortimer"},
+        "message": "Hello.",
+        "available_actions": ["friendly_chat"],
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Bella"},
+        {"name": "Mortimer"},
+        {},
+        {},
+        [],
+        {},
+    )
+    context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert "- friendly_chat: continue a friendly conversation." in prompt
+    assert "- none: dialogue only; perform no Sims action." in prompt
+    assert "apologize" not in prompt
+    assert "flirt" not in prompt
+
+
 def test_memories_for_pair_uses_current_query_and_preserves_relevance(
     tmp_path, monkeypatch
 ) -> None:
