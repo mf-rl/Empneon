@@ -1505,7 +1505,7 @@ def _dialogue_similarity(left, right):
         len(left), len(right)
     )
     blocks = [block.size for block in matcher.get_matching_blocks() if block.size]
-    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / min(
+    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / max(
         len(left), len(right)
     )
     if secondary_coverage >= 0.25:

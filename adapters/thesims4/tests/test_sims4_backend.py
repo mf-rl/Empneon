@@ -874,6 +874,26 @@ def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
         {"message": exact_fact_message}, exact_fact_reply, context
     ) == ""
 
+    split_fact_message = (
+        "Let's meet Saturday evening at eight. The Blue Velvet downtown has reserved "
+        "our usual table. We can celebrate your promotion there."
+    )
+    split_fact_reply = ai_sims_server.normalize_response(
+        {
+            "dialogue": (
+                "Saturday evening at eight works. I'll meet you outside the Blue Velvet "
+                "downtown."
+            )
+        }
+    )
+    assert ai_sims_server._dialogue_similarity(
+        ai_sims_server._dialogue_words(split_fact_message, context),
+        ai_sims_server._dialogue_words(split_fact_reply["dialogue"], context),
+    ) < 0.72
+    assert ai_sims_server.response_grounding_issue(
+        {"message": split_fact_message}, split_fact_reply, context
+    ) == ""
+
 
 def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
     context = ai_sims_server.build_context(
