@@ -8,6 +8,7 @@ from empneon.core.contracts import (
     AgentStateSnapshot,
     CognitiveRequest,
     Decision,
+    SOCIAL_CATEGORIES,
     StateDelta,
     WorldEvent,
 )
@@ -208,6 +209,38 @@ def test_generic_event_to_decision_contract() -> None:
 
     assert request.event.type == "social_interaction"
     assert decision.evidence_ids == (event.id,)
+
+
+def test_world_event_accepts_common_social_context() -> None:
+    event = WorldEvent(
+        "conversation",
+        ("alice", "bob"),
+        facts={
+            "social": {
+                "incoming_category": "romance",
+                "available_response_categories": list(SOCIAL_CATEGORIES),
+            }
+        },
+    )
+
+    assert event.facts["social"] == {
+        "incoming_category": "romance",
+        "available_response_categories": list(SOCIAL_CATEGORIES),
+    }
+
+
+@pytest.mark.parametrize("category", ["actions", "neutral", "hostile", "romantic"])
+def test_world_event_rejects_unknown_social_category(category: str) -> None:
+    with pytest.raises(ValueError, match="social category"):
+        WorldEvent(
+            "conversation",
+            facts={
+                "social": {
+                    "incoming_category": category,
+                    "available_response_categories": ["friendly"],
+                }
+            },
+        )
 
 
 @pytest.mark.parametrize("clod", [-1, 5])

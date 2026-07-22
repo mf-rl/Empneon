@@ -10,6 +10,14 @@ from typing import Literal
 
 DeltaOperation = Literal["set", "increment", "append", "remove"]
 ActionStatus = Literal["succeeded", "rejected", "failed"]
+SocialCategory = Literal["friendly", "funny", "romance", "mean", "mischief"]
+SOCIAL_CATEGORIES: tuple[SocialCategory, ...] = (
+    "friendly",
+    "funny",
+    "romance",
+    "mean",
+    "mischief",
+)
 
 
 def _mapping(value: object) -> dict[str, object]:
@@ -32,6 +40,21 @@ def _bounded(mapping: Mapping[str, object], key: str, low: float, high: float) -
         or not low <= float(value) <= high
     ):
         raise ValueError(f"agent state {key} must be between {low} and {high}")
+
+
+def _validate_social_context(facts: Mapping[str, object]) -> None:
+    social = facts.get("social")
+    if social is None:
+        return
+    if not isinstance(social, Mapping):
+        raise ValueError("event social context must be a mapping")
+    if social.get("incoming_category") not in SOCIAL_CATEGORIES:
+        raise ValueError("event social category is invalid")
+    available = social.get("available_response_categories")
+    if not isinstance(available, (list, tuple)) or any(
+        category not in SOCIAL_CATEGORIES for category in available
+    ):
+        raise ValueError("event available social category is invalid")
 
 
 @dataclass(frozen=True)
@@ -115,6 +138,7 @@ class WorldEvent:
     def __post_init__(self) -> None:
         if not self.type.strip():
             raise ValueError("event type must not be empty")
+        _validate_social_context(self.facts)
 
 
 @dataclass(frozen=True)

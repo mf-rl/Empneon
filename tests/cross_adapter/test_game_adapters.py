@@ -11,6 +11,7 @@ from empneon.core.contracts import (
     AgentStateSnapshot,
     CognitiveRequest,
     Decision,
+    StateDelta,
     WorldEvent,
 )
 
@@ -151,4 +152,48 @@ def test_godot_round_trip_preserves_common_attraction(
     assert captured["event"].agent_state is not None
     assert captured["event"].agent_state.relationships == {
         "agent-b": {"attraction": 0.4}
+    }
+
+
+def test_non_sims_adapter_can_carry_common_social_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, WorldEvent] = {}
+
+    def capture(request: CognitiveRequest) -> Decision:
+        captured["event"] = request.event
+        return Decision(
+            request.agent_id,
+            "respond_playfully",
+            target_id="agent-b",
+            evidence_ids=(request.event.id,),
+            state_changes=(
+                StateDelta("social.response_category", "set", "funny"),
+                StateDelta("animation", "set", "social.funny"),
+            ),
+        )
+
+    monkeypatch.setattr(bridge_module, "resolve_clod1", capture)
+    decision = GodotBridge().decide(
+        {
+            "agent_id": "agent-a",
+            "event": asdict(
+                WorldEvent(
+                    "conversation",
+                    ("agent-a", "agent-b"),
+                    facts={
+                        "social": {
+                            "incoming_category": "friendly",
+                            "available_response_categories": ["friendly", "funny"],
+                        }
+                    },
+                )
+            ),
+        }
+    )
+
+    assert captured["event"].facts["social"]["incoming_category"] == "friendly"
+    assert {change["path"]: change["value"] for change in decision["state_changes"]} == {
+        "social.response_category": "funny",
+        "animation": "social.funny",
     }
