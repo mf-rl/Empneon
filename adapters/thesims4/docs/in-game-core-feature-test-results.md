@@ -321,6 +321,22 @@ dialogue behavior and a positive native romance consequence in game.
 
 **Current handoff state:**
 
+- **July 22 live romance finding:** Bernard used multiple unambiguous romantic messages, including
+  `You are beautiful, Karmine. I love you`, `Would you like to go on a date with me?`, and
+  `I love you very much. Do you love me too?`. Karmine's replies flowed naturally and accepted the
+  date, but every recorded decision proposed `relationship.romance = 0`; the later decisions also
+  stored friendly intent. The backend's deterministic classifier independently labels these inputs
+  `romantic_compliment`, `romantic_invitation`, and `romantic_compliment`, so more explicit player
+  wording is not required. The provider response is currently allowed to return zero romance even
+  when that classification is romantic. The latest Karmine-to-Bernard snapshot records affinity
+  `0.16`, romance `0.0`, trust `0.5`, and WickedWhims attraction `0.0` / `AMBIVALENT`.
+- This finding is separate from native Sims romance. The held Empneon Social flow intentionally
+  confirms dialogue with no native action and applies only Empneon trust. Even a nonzero model
+  romance proposal would not directly mutate Sims romance. Native romance changes only after an
+  actual Sims romantic interaction succeeds and the adapter observes a before/after romance
+  difference. Test 5 therefore needs two follow-ups: enforce semantically consistent provider
+  classification/deltas, and decide whether a held session may explicitly offer a confirmed native
+  `flirt` action without violating game-observed relationship authority.
 - Test 5 remains **PARTIAL**. The latest need normalization, both-actor context, model-first
   response acceptance, and continuity retry have automated evidence but no post-fix in-game run.
 - The source-built `.ts4script` and `.package` hashes recorded above predate commits `8319e11`
