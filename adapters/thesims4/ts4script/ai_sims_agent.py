@@ -1536,7 +1536,11 @@ def show_empneon_message_dialog(session, transcript="", response_data=None):
     inputs = FrozenAttributeDict({"message": message_input})
     dialog = UiDialogTextInputOkCancel.TunableFactory().default(
         actor,
-        title=raw_text("{} says:".format(target_name)),
+        title=raw_text(
+            "{} says:".format(target_name)
+            if response_data is not None
+            else "Empneon Social with {}".format(target_name)
+        ),
         text=raw_text(
             transcript
             or "What should {} say to {}?".format(sim_full_name(actor.sim_info), target_name)

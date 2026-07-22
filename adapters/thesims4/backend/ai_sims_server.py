@@ -2414,6 +2414,10 @@ def diagnostic_identifier(query, name):
     return value
 
 
+class EmpneonHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = False
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -2660,7 +2664,7 @@ def run():
     with open_db(MEMORY_DB_PATH) as conn:
         empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = EmpneonHTTPServer((HOST, PORT), Handler)
     print("Empneon for The Sims 4 on http://{}:{}".format(HOST, PORT))
     print("Provider: {}".format(PRIMARY_PROVIDER))
     print("Endpoint: {}".format(task_model_config("large").get("endpoint")))

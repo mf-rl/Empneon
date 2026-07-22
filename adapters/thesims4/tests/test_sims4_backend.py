@@ -36,6 +36,10 @@ from empneon.providers.llm import GenerationResult, ModelCapabilities
 from backend import ai_sims_server
 
 
+def test_backend_port_is_exclusive() -> None:
+    assert ai_sims_server.EmpneonHTTPServer.allow_reuse_address is False
+
+
 def test_backend_script_imports_from_outside_release_root(tmp_path) -> None:
     script = Path(ai_sims_server.__file__).resolve()
     core_src = Path(ai_sims_server.ROOT).parents[1] / "core" / "src"

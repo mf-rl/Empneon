@@ -632,6 +632,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         2.0,
     )
     dialog = dialogs[-1]
+    assert dialog.kwargs["title"]() == "Empneon Social with Bob"
     assert hasattr(dialog.kwargs["text_inputs"], "message")
     text_input = dialog.kwargs["text_inputs"]["message"]
     assert callable(text_input.build_msg)
@@ -1351,6 +1352,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert retry_session.closed is False
     assert retry_session.phase == "input"
     assert len(dialogs) == dialog_count + 1
+    assert dialogs[-1].kwargs["title"]() == "Empneon Social with Bob"
 
     failed_post_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
