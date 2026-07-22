@@ -1224,12 +1224,25 @@ def execute_sims_action(
         mapped_interaction = None
         failures = []
         candidates = tuple(target.potential_interactions(context))
+        offered_candidates = []
+        fallback_candidates = []
         for candidate in candidates:
+            available = getattr(candidate.affordance, "all_affordances_gen", None)
+            try:
+                offered = callable(available) and affordance in tuple(
+                    available(context=context)
+                )
+            except Exception as exc:
+                failures.append(
+                    "{}={!r}".format(
+                        getattr(candidate.affordance, "__name__", "unknown"), exc
+                    )
+                )
+                offered = False
+            (offered_candidates if offered else fallback_candidates).append(candidate)
+        for candidate in offered_candidates + fallback_candidates:
             candidate_name = getattr(candidate.affordance, "__name__", "unknown")
             try:
-                available = getattr(candidate.affordance, "all_affordances_gen", None)
-                if not callable(available) or affordance not in tuple(available(context=context)):
-                    continue
                 proposed = AffordanceObjectPair(
                     affordance,
                     target,
@@ -1249,13 +1262,14 @@ def execute_sims_action(
 
         if mapped_aop is None:
             details = "; ".join(failures[:8])
-            if not details:
-                details = (
-                    "no compatible social super-interaction offers {}"
-                ).format(action)
+            summary = "no compatible social super-interaction offers {}".format(
+                action
+            )
+            if details:
+                summary += ": " + details
             raise RuntimeError(
                 "native social failed game selection for {}: {}".format(
-                    action, details
+                    action, summary
                 )
             )
         if mapped_interaction is None:

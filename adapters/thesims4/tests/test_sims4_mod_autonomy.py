@@ -108,6 +108,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     executed = []
     mapped_aops = []
     failed_factories = set()
+    failed_tests = set()
 
 
     class FakeMappedInteraction:
@@ -133,7 +134,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             mapped_aops.append(self)
 
         def test(self, _context):
-            return True
+            return self.super_affordance not in failed_tests
 
         def interaction_factory(self, _context):
             if self.super_affordance in failed_factories:
@@ -1402,6 +1403,11 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             ),
         }
         agent._CONVERSATION_SESSIONS["social-romance"] = romance_session
+        interaction._aop.super_affordance.all_affordances_gen = classmethod(
+            lambda _cls, **_kwargs: iter(
+                (mixer, apologize, funny, mean, mischief)
+            )
+        )
 
         assert agent.continue_displayed_turn(romance_session) is True
         assert romance_session.phase == "running_native_action"
@@ -1427,6 +1433,11 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
                 }
             ],
         },
+    )
+    interaction._aop.super_affordance.all_affordances_gen = classmethod(
+        lambda _cls, **_kwargs: iter(
+            (mixer, apologize, funny, romance, mean, mischief)
+        )
     )
 
     zero_reports = []
@@ -1865,6 +1876,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     incompatible_parent.all_affordances_gen = classmethod(
         lambda _cls, **_kwargs: iter(())
     )
+    failed_tests.add(incompatible_parent)
     target.potential_interactions = lambda _context: [
         SimpleNamespace(affordance=incompatible_parent)
     ]
