@@ -365,12 +365,18 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "Adoring", (), {"guid64": "sentiment-adoring", "polarity": "positive"}
     )
     bernard = type("SentimentTarget", (), {"sim_id": "bernard"})()
+    outgoing = SimpleNamespace(
+        name="Outgoing",
+        guid64=101,
+        trait_description="Enjoys socializing and speaks confidently.",
+    )
     rich_info = SimpleNamespace(
         sim_id="bella",
         full_name="Bella",
-        age=42,
+        gender=SimpleNamespace(name="FEMALE", value=1),
+        age=SimpleNamespace(name="YOUNGADULT", value=5),
         get_mood=lambda: type("mood_uncomfortable", (), {}),
-        trait_tracker=None,
+        trait_tracker=SimpleNamespace(equipped_traits=[outgoing]),
         commodity_tracker=SimpleNamespace(
             get_all_commodities=lambda: [hunger, internal_stat]
         ),
@@ -393,7 +399,27 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         household=SimpleNamespace(id=42, name="Goth Household"),
     )
     rich_payload = agent.sim_info_payload(rich_info)
-    assert rich_payload["age"] == 42
+    assert rich_payload["identity"] == {
+        "gender": {"key": "female", "label": "Female"},
+        "age": {
+            "kind": "life_stage",
+            "value": "young_adult",
+            "label": "Young Adult",
+        },
+        "traits": [
+            {
+                "id": "101",
+                "label": "Outgoing",
+                "description": "Enjoys socializing and speaks confidently.",
+            }
+        ],
+    }
+    assert rich_payload["native"]["identity"] == {
+        "gender": "FEMALE",
+        "age": "YOUNGADULT",
+    }
+    assert rich_payload.get("age") is None
+    assert rich_payload["traits"] == ["Outgoing"]
     assert rich_payload["current_mood"] == "uncomfortable"
     assert rich_payload["needs"] == {"hunger": 18}
     assert rich_payload["moodlets"] == ["Inspired", "ModdedAuroraState"]
@@ -425,6 +451,39 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert rich_payload["career"] == "Painter"
     assert rich_payload["skills"] == {"Cooking": 7}
     assert rich_payload["household"] == {"id": "42", "name": "Goth Household"}
+
+    class BrokenTrait:
+        name = "BrokenTrait"
+
+        @property
+        def trait_description(self):
+            raise RuntimeError("broken mod trait")
+
+    modded_payload = agent.sim_info_payload(
+        SimpleNamespace(
+            gender=SimpleNamespace(name="ROBOT", value=99),
+            age=SimpleNamespace(name="ANCIENT", value=999),
+            trait_tracker=SimpleNamespace(
+                equipped_traits=[outgoing, BrokenTrait()]
+            ),
+        )
+    )
+    assert modded_payload["identity"] == {
+        "gender": {"key": "unknown", "label": "Unknown"},
+        "age": {
+            "kind": "life_stage",
+            "value": "unknown",
+            "label": "Unknown",
+        },
+        "traits": [
+            {
+                "id": "101",
+                "label": "Outgoing",
+                "description": "Enjoys socializing and speaks confidently.",
+            }
+        ],
+    }
+    assert modded_payload["traits"] == ["Outgoing"]
 
     method_info = SimpleNamespace(
         aspiration_tracker=SimpleNamespace(

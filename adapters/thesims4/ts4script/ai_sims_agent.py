@@ -385,20 +385,73 @@ def short_trait_name(trait):
     return ""
 
 
-def sim_traits(sim_info):
+def enum_key(value):
+    raw = getattr(value, "name", None)
+    text = str(raw or value or "").rsplit(".", 1)[-1].strip().casefold()
+    return text.replace("youngadult", "young_adult") or "unknown"
+
+
+def identity_value(key, label=None):
+    return {
+        "key": key,
+        "label": label or key.replace("_", " ").title(),
+    }
+
+
+def sim_trait_records(sim_info):
+    records = []
     tracker = getattr(sim_info, "trait_tracker", None)
-    traits = []
     try:
         equipped = getattr(tracker, "equipped_traits", None)
-        if callable(equipped):
-            equipped = equipped()
-        for trait in equipped or []:
-            name = short_trait_name(trait)
-            if name:
-                traits.append(name)
+        equipped = equipped() if callable(equipped) else equipped
+        for trait in equipped or ():
+            try:
+                label = short_trait_name(trait)
+                if not label:
+                    continue
+                record = {
+                    "id": str(getattr(trait, "guid64", None) or label),
+                    "label": label,
+                }
+                description = text_value(
+                    getattr(trait, "trait_description", None)
+                    or getattr(trait, "description", None),
+                    "",
+                )
+                if description:
+                    record["description"] = description
+                records.append(record)
+            except Exception:
+                pass
     except Exception:
         pass
-    return [trait for trait in traits if trait]
+    return records
+
+
+def sim_traits(sim_info):
+    return [record["label"] for record in sim_trait_records(sim_info)]
+
+
+def sim_identity(sim_info):
+    gender = enum_key(getattr(sim_info, "gender", None))
+    if gender not in ("male", "female"):
+        gender = "unknown"
+    age = enum_key(getattr(sim_info, "age", None))
+    known_ages = (
+        "baby", "infant", "toddler", "child", "teen",
+        "young_adult", "adult", "elder",
+    )
+    if age not in known_ages:
+        age = "unknown"
+    return {
+        "gender": identity_value(gender),
+        "age": {
+            "kind": "life_stage",
+            "value": age,
+            "label": age.replace("_", " ").title(),
+        },
+        "traits": sim_trait_records(sim_info),
+    }
 
 
 def sim_mood(sim_info):
@@ -615,10 +668,12 @@ def sim_info_payload(sim_info):
     moodlets = [item for item in effects if item["kind"] == "moodlet"]
     sentiments = [item for item in effects if item["kind"] == "sentiment"]
     mood = sim_mood(sim_info)
+    identity = sim_identity(sim_info)
     return {
         "id": str(getattr(sim_info, "sim_id", sim_full_name(sim_info))),
         "name": sim_full_name(sim_info),
-        "age": sim_age(sim_info),
+        "age": None,
+        "identity": identity,
         "traits": sim_traits(sim_info),
         "current_mood": mood,
         "needs": sim_needs(sim_info),
@@ -630,6 +685,14 @@ def sim_info_payload(sim_info):
             "buffs": moodlets,
             "moodlets": moodlets,
             "sentiments": sentiments,
+            "identity": {
+                "gender": str(
+                    getattr(getattr(sim_info, "gender", None), "name", "unknown")
+                ),
+                "age": str(
+                    getattr(getattr(sim_info, "age", None), "name", "unknown")
+                ),
+            },
         },
         "aspiration": sim_aspiration(sim_info),
         "career": sim_career(sim_info),
