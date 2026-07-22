@@ -95,7 +95,12 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
     assert event.agent_state is not None
     assert event.agent_state.affect == {"tags": ["uncomfortable"]}
     assert event.agent_state.needs == {
-        "hunger": {"level": 0.63, "urgency": 0.37}
+        "hunger": {
+            "level": pytest.approx(0.815),
+            "urgency": pytest.approx(0.185),
+            "status": "satisfied",
+            "native": {"value": 63, "minimum": -100, "maximum": 100},
+        }
     }
     assert event.agent_state.relationships["bernard"] == {
         "affinity": 0.07,
@@ -111,6 +116,32 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
     assert event.agent_state.native["moodlets"] == [
         {"label": "Custom DLC Moodlet"}
     ]
+
+
+@pytest.mark.parametrize(
+    "native,status,level",
+    [
+        (-100, "critical", 0.0),
+        (-51, "critical", 0.245),
+        (-50, "low", 0.25),
+        (-26, "low", 0.37),
+        (-25, "satisfied", 0.375),
+        (100, "satisfied", 1.0),
+    ],
+)
+def test_sims_need_scale_maps_to_common_status(
+    native: int, status: str, level: float
+) -> None:
+    state = Sims4Adapter(
+        {"speaker": {"id": "bella", "needs": {"hunger": native}}}
+    ).agent_state()
+
+    assert state.needs["hunger"] == {
+        "level": pytest.approx(level),
+        "urgency": pytest.approx(1 - level),
+        "status": status,
+        "native": {"value": native, "minimum": -100, "maximum": 100},
+    }
 
 
 def test_live_sim_payload_uses_same_actor_for_event_and_agent_state() -> None:
@@ -130,7 +161,12 @@ def test_live_sim_payload_uses_same_actor_for_event_and_agent_state() -> None:
     assert event.actor_ids[0] == event.agent_state.agent_id == "live-sim"
     assert event.agent_state.affect == {"tags": ["focused"]}
     assert event.agent_state.needs == {
-        "energy": {"level": 0.63, "urgency": 0.37}
+        "energy": {
+            "level": pytest.approx(0.815),
+            "urgency": pytest.approx(0.185),
+            "status": "satisfied",
+            "native": {"value": 63, "minimum": -100, "maximum": 100},
+        }
     }
 
 

@@ -499,7 +499,7 @@ def _stat_values(tracker):
             getter = getattr(stat, "get_value", None)
             value = getter() if callable(getter) else getattr(stat, "value", None)
             if name and isinstance(value, (int, float)):
-                result[name] = int(round(max(0, min(100, value))))
+                result[name] = int(round(value))
         except Exception:
             pass
     return result
@@ -519,7 +519,7 @@ def sim_needs(sim_info):
         if name.startswith("motive_"):
             name = name[7:]
         if name in allowed:
-            needs[name] = value
+            needs[name] = max(-100, min(100, value))
     return needs
 
 

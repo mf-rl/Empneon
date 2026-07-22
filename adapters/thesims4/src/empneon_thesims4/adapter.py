@@ -97,6 +97,22 @@ def cognition_priority(
     return urgency, preferred_clod, min(1.0, value)
 
 
+def _need_state(value: int | float) -> dict[str, object]:
+    native = max(-100.0, min(100.0, float(value)))
+    level = (native + 100.0) / 200.0
+    status = "critical" if native < -50 else "low" if native < -25 else "satisfied"
+    return {
+        "level": level,
+        "urgency": 1.0 - level,
+        "status": status,
+        "native": {
+            "value": int(native) if native.is_integer() else native,
+            "minimum": -100,
+            "maximum": 100,
+        },
+    }
+
+
 class Sims4Adapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
         self._payload = payload
@@ -113,10 +129,7 @@ class Sims4Adapter:
         relationship = _mapping(self._payload.get("relationship"))
         listener_id = str(listener.get("id") or "")
         needs: dict[str, object] = {
-            str(name): {
-                "level": max(0.0, min(1.0, float(value) / 100)),
-                "urgency": max(0.0, min(1.0, 1 - float(value) / 100)),
-            }
+            str(name): _need_state(value)
             for name, value in _mapping(speaker.get("needs")).items()
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         }

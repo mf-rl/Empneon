@@ -346,7 +346,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     hunger = SimpleNamespace(
         stat_type=type("motive_Hunger", (), {}),
-        get_value=lambda: 18,
+        get_value=lambda: -40,
     )
     internal_stat = SimpleNamespace(
         stat_type=type("commodity_burnout_mentaltracker", (), {}),
@@ -422,7 +422,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert rich_payload.get("age") is None
     assert rich_payload["traits"] == ["Outgoing"]
     assert rich_payload["current_mood"] == "uncomfortable"
-    assert rich_payload["needs"] == {"hunger": 18}
+    assert rich_payload["needs"] == {"hunger": -40}
     assert rich_payload["moodlets"] == ["Inspired", "ModdedAuroraState"]
     assert rich_payload["effects"] == [
         {
@@ -452,6 +452,18 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert rich_payload["career"] == "Painter"
     assert rich_payload["skills"] == {"Cooking": 7}
     assert rich_payload["household"] == {"id": "42", "name": "Goth Household"}
+
+    starving = SimpleNamespace(
+        stat_type=type("motive_Hunger", (), {}),
+        get_value=lambda: -120,
+    )
+    assert agent.sim_needs(
+        SimpleNamespace(
+            commodity_tracker=SimpleNamespace(
+                get_all_commodities=lambda: [starving]
+            )
+        )
+    ) == {"hunger": -100}
 
     class BrokenTrait:
         name = "BrokenTrait"
