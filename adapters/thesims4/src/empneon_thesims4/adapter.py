@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 
 from empneon.core.contracts import (
+    SOCIAL_CATEGORIES,
     ActionResult,
     AgentStateSnapshot,
     Decision,
@@ -28,6 +29,8 @@ SIMS_ACTIONS = frozenset(
         "laugh",
     }
 )
+SOCIAL_ACTIONS = frozenset("social." + category for category in SOCIAL_CATEGORIES)
+SIMS_ACTIONS |= SOCIAL_ACTIONS
 
 INTENT_ACTIONS = {
     "acknowledge": "idle",
@@ -242,7 +245,7 @@ class Sims4Adapter:
         )
 
     def execute(self, decision: Decision, /) -> ActionResult:
-        supported = {"animation", "dialogue", "emotion", "memory"}
+        supported = {"animation", "dialogue", "emotion", "memory", "social"}
         unsupported = [
             change.path
             for change in decision.state_changes
@@ -276,12 +279,20 @@ class Sims4Adapter:
         for change in decision.state_changes:
             if change.path == "animation":
                 action = str(change.value)
+                if action in SOCIAL_ACTIONS:
+                    configured_categories = self._payload.get(
+                        "available_response_categories"
+                    )
+                    categories = (
+                        _items(configured_categories)
+                        if configured_categories is not None
+                        else list(SOCIAL_CATEGORIES)
+                    )
+                    return action if action.removeprefix("social.") in categories else None
                 return action if action == "none" or action in available else None
         return self._action_for(decision.intent)
 
     def decision_from_response(self, response: Mapping[str, object], event_id: str) -> Decision:
-        relationship = response.get("relationship")
-        relationship_data = relationship if isinstance(relationship, Mapping) else {}
         memory = response.get("memory")
         changes = [
             StateDelta("dialogue", "set", str(response.get("dialogue") or "...")),
@@ -296,20 +307,23 @@ class Sims4Adapter:
             ),
             StateDelta("memory", "append", memory if isinstance(memory, Mapping) else {}),
         ]
+        relationship = response.get("relationship")
+        relationship_data = relationship if isinstance(relationship, Mapping) else {}
+        trust_delta = response.get("trust_delta", relationship_data.get("trust_delta"))
+        if isinstance(trust_delta, (int, float)) and not isinstance(trust_delta, bool):
+            changes.append(StateDelta("relationship.trust", "increment", trust_delta))
+        category = str(response.get("response_category") or "friendly")
+        if category not in SOCIAL_CATEGORIES:
+            category = "friendly"
         changes.extend(
-            StateDelta(f"relationship.{key.removesuffix('_delta')}", "increment", value)
-            for key, value in relationship_data.items()
-            if key.endswith("_delta")
-        )
-        changes.append(
-            StateDelta(
-                "animation",
-                "set",
-                str(
-                    response.get("suggested_action")
-                    or response.get("animation")
-                    or "none"
+            (
+                StateDelta("social.response_category", "set", category),
+                StateDelta(
+                    "social.tone_tags",
+                    "set",
+                    list(response.get("tone_tags") or []),
                 ),
+                StateDelta("animation", "set", "social." + category),
             )
         )
         event = self.observe()[0]
@@ -331,21 +345,21 @@ class Sims4Adapter:
             "emotion": "neutral",
             "expressed_emotion": "neutral",
             "intent": decision.intent,
-            "relationship": {
-                "friendship_delta": 0,
-                "romance_delta": 0,
-                "trust_delta": 0,
-            },
+            "response_category": "friendly",
+            "tone_tags": [],
+            "trust_delta": 0,
             "memory": {"importance": 0.0, "summary": ""},
             "suggested_action": "none",
             "animation": "none",
         }
-        relationship = response["relationship"]
-        assert isinstance(relationship, dict)
         changes = result.applied_changes if result is not None else decision.state_changes
         for change in changes:
-            if change.path.startswith("relationship."):
-                relationship[f"{change.path.split('.', 1)[1]}_delta"] = change.value
+            if change.path == "relationship.trust":
+                response["trust_delta"] = change.value
+            elif change.path == "social.response_category":
+                response["response_category"] = change.value
+            elif change.path == "social.tone_tags":
+                response["tone_tags"] = change.value
             elif change.path == "emotion":
                 response["expressed_emotion"] = response["emotion"] = change.value
             elif change.path == "animation":

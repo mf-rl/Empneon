@@ -1430,25 +1430,77 @@ def test_role_confusion_preserves_quoted_and_reported_relationship_history(
     )
 
 
-def test_local_social_classifier_distinguishes_common_player_interactions() -> None:
-    examples = {
-        "Would you go out with me sometime?": "romantic_invitation",
-        "Let's be girlfriends.": "romantic_invitation",
-        (
-            "I like you, Karmine. You are very beautiful. "
-            "I would love to take you on a date sometime."
-        ): "romantic_invitation",
-        "I'm very attracted to you. You are really hot.": "romantic_compliment",
-        "You are very nice. Let's be friends!": "friendly",
-        "Where is the garden code item?": "informational",
-        "I hate you. Leave me alone.": "hostile",
-        "The weather changed today.": "neutral",
-    }
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("Hello. How was your day?", "friendly"),
+        ("That joke was hilarious—tell me another one!", "funny"),
+        ("I love you. Would you go on a date with me?", "romance"),
+        ("I hate you. Leave me alone, idiot.", "mean"),
+        ("Let's prank Bob and lie about what happened.", "mischief"),
+        ("Where is the garden code item?", "friendly"),
+        ("The weather changed today.", "friendly"),
+    ],
+)
+def test_common_social_classifier(message: str, expected: str) -> None:
+    assert ai_sims_server.classify_social_category(message) == expected
 
-    assert {
-        message: ai_sims_server.classify_player_interaction(message)
-        for message in examples
-    } == examples
+
+@pytest.mark.parametrize(
+    "dialogue,expected",
+    [
+        ("Yes, I would love to go on a date with you.", "romance"),
+        ("That was hilarious!", "funny"),
+        ("Go away, you insufferable idiot.", "mean"),
+        ("Let's prank them and pretend we know nothing.", "mischief"),
+        ("I appreciate you asking.", None),
+    ],
+)
+def test_explicit_social_category(dialogue: str, expected: str | None) -> None:
+    assert ai_sims_server.explicit_social_category(dialogue) == expected
+
+
+def test_response_category_derives_action_and_ignores_legacy_authority() -> None:
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": "A date sounds wonderful. I'd love to go.",
+            "response_category": "romance",
+            "tone_tags": ["playful", "hesitant"],
+            "trust_delta": 2,
+            "friendship_delta": 9,
+            "romance_delta": 9,
+            "suggested_action": "social.mean",
+            "relationship": {
+                "friendship_delta": 9,
+                "romance_delta": 9,
+                "trust_delta": 7,
+            },
+            "memory": {"importance": 0.5, "summary": "A date was accepted."},
+        },
+        ["friendly", "funny", "romance", "mean", "mischief"],
+    )
+
+    assert response["response_category"] == "romance"
+    assert response["tone_tags"] == ["playful", "hesitant"]
+    assert response["suggested_action"] == "social.romance"
+    assert response["trust_delta"] == 2
+    assert "friendship_delta" not in response
+    assert "romance_delta" not in response
+    assert "relationship" not in response
+
+
+@pytest.mark.parametrize(
+    "response,error",
+    [
+        ({"response_category": "actions"}, "response_category"),
+        ({"response_category": "friendly", "tone_tags": ["a", "b", "c", "d"]}, "tone_tags"),
+        ({"response_category": "friendly", "tone_tags": ["Playful"]}, "tone_tags"),
+        ({"response_category": "friendly", "tone_tags": ["not valid"]}, "tone_tags"),
+    ],
+)
+def test_invalid_social_response_is_rejected(response: dict, error: str) -> None:
+    with pytest.raises(ValueError, match=error):
+        ai_sims_server.normalize_response(response, ["friendly", "romance"])
 
 
 def test_romantic_compliment_does_not_require_invitation_consent_shape() -> None:
@@ -1532,27 +1584,26 @@ def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
         [],
         {"summary": ""},
     )
-    messages = {
-        "You are very nice. Let's be friends!": "friendly",
-        "I hate you. Leave me alone.": "hostile",
-        "How do you feel about gardening?": "informational",
-        "The weather changed today.": "neutral",
-    }
-
-    responses = {
-        expected: ai_sims_server.reasoning_fallback_response(
-            {"message": message}, context
-        )
-        for message, expected in messages.items()
-    }
-
-    assert set(responses) == set(messages.values())
-    assert all(
-        response["player_interaction_kind"] == kind
-        and "give me a moment" not in response["dialogue"].casefold()
-        for kind, response in responses.items()
+    messages = (
+        ("You are very nice. Let's be friends!", "friendly"),
+        ("I hate you. Leave me alone.", "mean"),
+        ("How do you feel about gardening?", "friendly"),
+        ("The weather changed today.", "friendly"),
     )
-    assert responses["hostile"]["intent"] == "set_boundary"
+
+    responses = [
+        ai_sims_server.reasoning_fallback_response({"message": message}, context)
+        for message, _expected in messages
+    ]
+
+    assert [response["response_category"] for response in responses] == [
+        expected for _message, expected in messages
+    ]
+    assert all(
+        "give me a moment" not in response["dialogue"].casefold()
+        for response in responses
+    )
+    assert responses[1]["intent"] == "set_boundary"
 
 
 def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -> None:

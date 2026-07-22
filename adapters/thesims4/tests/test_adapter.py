@@ -225,7 +225,8 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
             "location": "Goth Manor",
             "relationship": {"friendship": 72, "trust": 60},
             "event": {"type": "player_conversation", "source": "cheat_console"},
-            "available_actions": ["friendly_chat"],
+            "incoming_category": "friendly",
+            "available_response_categories": ["friendly"],
         }
     )
     event = adapter.observe()[0]
@@ -233,13 +234,11 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
         "dialogue": "Hello, Mortimer.",
         "expressed_emotion": "happy",
         "intent": "greet",
-        "relationship": {
-            "friendship_delta": 1,
-            "romance_delta": 0,
-            "trust_delta": 0,
-        },
+        "response_category": "friendly",
+        "tone_tags": ["warm"],
+        "trust_delta": 0,
         "memory": {"importance": 0.4, "summary": "Bella greeted Mortimer."},
-        "suggested_action": "friendly_chat",
+        "suggested_action": "flirt",
     }
 
     decision = adapter.decision_from_response(response, event.id)
@@ -249,26 +248,67 @@ def test_conversation_response_becomes_validated_sims_action() -> None:
     assert event.type == "player_conversation"
     assert event.location == "Goth Manor"
     assert event.facts["relationship"] == {"friendship": 72, "trust": 60}
-    assert result.applied_changes[-1] == StateDelta("animation", "set", "friendly_chat")
+    assert result.applied_changes[-1] == StateDelta("animation", "set", "social.friendly")
     returned = adapter.response_for(decision, result)
     assert returned["expressed_emotion"] == returned["emotion"] == "happy"
-    assert returned["suggested_action"] == returned["animation"] == "friendly_chat"
+    assert returned["response_category"] == "friendly"
+    assert returned["tone_tags"] == ["warm"]
+    assert returned["suggested_action"] == returned["animation"] == "social.friendly"
+    assert "relationship" not in returned
 
 
-def test_action_metadata_wins_over_descriptive_intent() -> None:
+def test_social_response_derives_action_and_ignores_game_owned_deltas() -> None:
     adapter = Sims4Adapter(
-        {"speaker": {"id": "bella"}, "available_actions": ["friendly_chat", "flirt"]}
+        {
+            "speaker": {"id": "bella"},
+            "listener": {"id": "mortimer"},
+            "incoming_category": "friendly",
+            "available_response_categories": ["friendly", "romance"],
+        }
+    )
+    decision = adapter.decision_from_response(
+        {
+            "dialogue": "A date sounds lovely.",
+            "response_category": "romance",
+            "tone_tags": ["playful"],
+            "trust_delta": 2,
+            "suggested_action": "social.mean",
+            "relationship": {"friendship_delta": 9, "romance_delta": 9},
+        },
+        adapter.observe()[0].id,
+    )
+
+    assert adapter.action_for(decision) == "social.romance"
+    assert decision.state_changes[-4:] == (
+        StateDelta("relationship.trust", "increment", 2),
+        StateDelta("social.response_category", "set", "romance"),
+        StateDelta("social.tone_tags", "set", ["playful"]),
+        StateDelta("animation", "set", "social.romance"),
+    )
+    assert not any(
+        change.path in {"relationship.friendship", "relationship.romance"}
+        for change in decision.state_changes
+    )
+
+
+def test_response_category_wins_over_legacy_action_metadata() -> None:
+    adapter = Sims4Adapter(
+        {
+            "speaker": {"id": "bella"},
+            "available_response_categories": ["friendly", "romance"],
+        }
     )
     decision = adapter.decision_from_response(
         {
             "dialogue": "That sounds lovely.",
             "intent": "arbitrary descriptive intent",
-            "suggested_action": "flirt",
+            "response_category": "romance",
+            "suggested_action": "social.mean",
         },
         adapter.observe()[0].id,
     )
 
-    assert adapter.action_for(decision) == "flirt"
+    assert adapter.action_for(decision) == "social.romance"
 
 
 def test_autonomous_npc_event_maps_to_available_action() -> None:

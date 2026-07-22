@@ -25,7 +25,13 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from empneon_thesims4 import Sims4Adapter, cognition_priority
-from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
+from empneon.core.contracts import (
+    SOCIAL_CATEGORIES,
+    ActionResult,
+    CognitiveRequest,
+    Decision,
+    StateDelta,
+)
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event
 from empneon.core.identity.relationships import Relationship, RelationshipStore
@@ -235,14 +241,7 @@ The intent field describes the dialogue; it does not select a game action.
 Choose suggested_action only from the current request's available actions, or use none.
 """
 
-PLAYER_INTERACTION_KINDS = (
-    "friendly",
-    "romantic_compliment",
-    "romantic_invitation",
-    "hostile",
-    "informational",
-    "neutral",
-)
+SOCIAL_ACTIONS = {category: "social." + category for category in SOCIAL_CATEGORIES}
 
 DIALOGUE_SCHEMA = {
     "type": "object",
@@ -251,25 +250,17 @@ DIALOGUE_SCHEMA = {
         "dialogue": {"type": "string"},
         "expressed_emotion": {"type": "string"},
         "intent": {"type": "string"},
-        "player_interaction_kind": {
+        "response_category": {
             "type": "string",
-            "enum": list(PLAYER_INTERACTION_KINDS),
+            "enum": list(SOCIAL_CATEGORIES),
         },
-        "relationship": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "friendship_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "romance_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "trust_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "respect_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "admiration_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "jealousy_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "resentment_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-                "fear_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-            },
-            "required": ["friendship_delta", "romance_delta", "trust_delta"],
+        "tone_tags": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$"},
+            "maxItems": 3,
+            "uniqueItems": True,
         },
+        "trust_delta": {"type": "integer", "minimum": -10, "maximum": 10},
         "memory": {
             "type": "object",
             "additionalProperties": False,
@@ -279,16 +270,15 @@ DIALOGUE_SCHEMA = {
             },
             "required": ["importance", "summary"],
         },
-        "suggested_action": {"type": "string", "enum": ["none"]},
     },
     "required": [
         "dialogue",
         "expressed_emotion",
         "intent",
-        "player_interaction_kind",
-        "relationship",
+        "response_category",
+        "tone_tags",
+        "trust_delta",
         "memory",
-        "suggested_action",
     ],
 }
 
@@ -303,11 +293,22 @@ def available_actions(value):
     )
 
 
+def available_response_categories(value):
+    return tuple(
+        dict.fromkeys(
+            str(category)
+            for category in (value if isinstance(value, (list, tuple)) else ())
+            if str(category) in SOCIAL_CATEGORIES
+        )
+    )
+
+
 def dialogue_schema(value):
     schema = json.loads(json.dumps(DIALOGUE_SCHEMA))
-    schema["properties"]["suggested_action"] = {
+    categories = available_response_categories(value) or SOCIAL_CATEGORIES
+    schema["properties"]["response_category"] = {
         "type": "string",
-        "enum": list(available_actions(value)) + ["none"],
+        "enum": list(categories),
     }
     return schema
 
@@ -973,13 +974,43 @@ def sanitize_action_proposal(response, actions):
     return response
 
 
-def normalize_response(raw, available_actions=()):
+def normalize_response(raw, available_categories=None):
     if not isinstance(raw, dict):
         raw = {}
 
-    relationship = raw.get("relationship")
-    if not isinstance(relationship, dict):
-        relationship = raw
+    categories = (
+        available_response_categories(available_categories)
+        if available_categories is not None
+        else SOCIAL_CATEGORIES
+    )
+    legacy_categories = {
+        "friendly": "friendly",
+        "romantic_compliment": "romance",
+        "romantic_invitation": "romance",
+        "hostile": "mean",
+        "informational": "friendly",
+        "neutral": "friendly",
+    }
+    legacy_kind = str(raw.get("player_interaction_kind") or "")
+    category = str(
+        raw.get("response_category")
+        or legacy_categories.get(legacy_kind)
+        or legacy_kind
+        or "friendly"
+    )
+    if category not in categories:
+        raise ValueError("response_category is invalid or unavailable")
+    tone_tags = raw.get("tone_tags") or []
+    if (
+        not isinstance(tone_tags, list)
+        or len(tone_tags) > 3
+        or len(set(tone_tags)) != len(tone_tags)
+        or any(
+            not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", str(tag))
+            for tag in tone_tags
+        )
+    ):
+        raise ValueError("tone_tags are invalid")
 
     memory = raw.get("memory")
     if isinstance(memory, str):
@@ -988,42 +1019,29 @@ def normalize_response(raw, available_actions=()):
         memory = {}
 
     dialogue = str(raw.get("dialogue") or "").strip() or "..."
-    player_interaction_kind = str(
-        raw.get("player_interaction_kind") or "neutral"
-    ).strip()
-    if player_interaction_kind not in PLAYER_INTERACTION_KINDS:
-        player_interaction_kind = "neutral"
     expressed_emotion = str(
         raw.get("expressed_emotion") or raw.get("emotion") or "neutral"
     ).strip().lower()
-    suggested_action = str(
-        raw.get("suggested_action") or raw.get("animation") or "none"
-    ).strip()
+    relationship = raw.get("relationship")
+    relationship = relationship if isinstance(relationship, dict) else {}
+    trust = raw.get("trust_delta")
+    if trust is None:
+        trust = relationship.get("trust_delta")
     response = {
         "dialogue": dialogue,
         "expressed_emotion": expressed_emotion,
         "emotion": expressed_emotion,
         "intent": str(raw.get("intent") or "respond").strip(),
-        "player_interaction_kind": player_interaction_kind,
-        "relationship": {
-            "friendship_delta": clamp_int(relationship.get("friendship_delta")),
-            "romance_delta": clamp_int(relationship.get("romance_delta")),
-            "trust_delta": clamp_int(relationship.get("trust_delta")),
-            "respect_delta": clamp_int(relationship.get("respect_delta")),
-            "admiration_delta": clamp_int(relationship.get("admiration_delta")),
-            "jealousy_delta": clamp_int(relationship.get("jealousy_delta")),
-            "resentment_delta": clamp_int(relationship.get("resentment_delta")),
-            "fear_delta": clamp_int(relationship.get("fear_delta")),
-        },
+        "response_category": category,
+        "tone_tags": [str(tag) for tag in tone_tags],
+        "trust_delta": clamp_int(trust),
         "memory": {
             "importance": clamp_float(memory.get("importance")),
             "summary": str(memory.get("summary") or "").strip(),
         },
-        "suggested_action": suggested_action,
-        "animation": suggested_action,
+        "suggested_action": SOCIAL_ACTIONS[category],
+        "animation": SOCIAL_ACTIONS[category],
     }
-    sanitize_action_proposal(response, available_actions)
-    response["animation"] = response["suggested_action"]
     return response
 
 
@@ -1066,18 +1084,18 @@ def extract_json(text):
     return json.loads(quoted_keys)
 
 
-def fallback_response(text, available_actions=()):
-    return normalize_response(
+def fallback_response(text, available_categories=None):
+    response = normalize_response(
         {
             "dialogue": "I couldn't form a reliable response. Please try again.",
             "emotion": "neutral",
             "intent": "respond",
-            "relationship": {},
             "memory": {"importance": 0.0, "summary": ""},
-            "suggested_action": "none",
         },
-        available_actions,
+        available_categories,
     )
+    response["suggested_action"] = response["animation"] = "none"
+    return response
 
 
 class CognitionQueue:
@@ -1668,27 +1686,38 @@ def _dialogue_similarity(left, right):
     return max(sequence_ratio, overlap_ratio)
 
 
-def classify_player_interaction(message):
+def explicit_social_category(message):
     value = str(message or "").casefold()
-    if re.search(
-        r"\b(go(?:ing)? out|go on a date|on a date with|date me|"
-        r"take (?:you|them|him|her) on a date|"
-        r"be my (?:girl|boy)friend|be (?:girl|boy)friends|kiss me|marry me|"
-        r"be together)\b",
-        value,
-    ):
+    patterns = (
+        (
+            "romance",
+            r"\b(date|kiss|marry|girlfriend|boyfriend|attracted|attractive|beautiful|"
+            r"gorgeous|handsome|hot|sexy|love you|feelings for|like you romantically)\b",
+        ),
+        ("mean", r"\b(hate|despise|idiot|stupid|insufferable|leave me alone|go away)\b"),
+        ("mischief", r"\b(prank|trick|scare|deceive|pretend|lie about|mess with)\b"),
+        ("funny", r"\b(joke|funny|hilarious|laugh|pun|comedy)\b"),
+    )
+    return next(
+        (category for category, pattern in patterns if re.search(pattern, value)),
+        None,
+    )
+
+
+def classify_social_category(message):
+    return explicit_social_category(message) or "friendly"
+
+
+def classify_player_interaction(message):
+    if _is_romantic_request(message):
         return "romantic_invitation"
-    if re.search(
-        r"\b(attracted|attractive|beautiful|cute|gorgeous|handsome|hot|sexy|"
-        r"have feelings for|love you|like you romantically)\b",
-        value,
-    ):
+    category = explicit_social_category(message)
+    if category == "romance":
         return "romantic_compliment"
-    if re.search(r"\b(hate|despise|idiot|stupid|leave me alone|go away)\b", value):
+    if category == "mean":
         return "hostile"
-    if "?" in value or re.search(
-        r"\b(where|when|who|what|why|how|tell me|explain)\b", value
-    ):
+    value = str(message or "").casefold()
+    if "?" in value:
         return "informational"
     if re.search(r"\b(friend|friends|nice|kind|hello|hi|thank|glad to meet)\b", value):
         return "friendly"
@@ -1696,7 +1725,15 @@ def classify_player_interaction(message):
 
 
 def _is_romantic_request(message):
-    return classify_player_interaction(message) == "romantic_invitation"
+    return bool(
+        re.search(
+            r"\b(go(?:ing)? out|go on a date|on a date with|date me|"
+            r"take (?:you|them|him|her) on a date|"
+            r"be my (?:girl|boy)friend|be (?:girl|boy)friends|kiss me|marry me|"
+            r"be together)\b",
+            str(message or "").casefold(),
+        )
+    )
 
 
 def response_grounding_issue(payload, response, context):
