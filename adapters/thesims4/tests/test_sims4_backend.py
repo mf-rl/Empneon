@@ -854,6 +854,26 @@ def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
         {"message": detailed_message}, detailed_reply, context
     ) == ""
 
+    exact_fact_message = (
+        "Let's meet Saturday evening at eight at the Blue Velvet downtown because the "
+        "jazz band plays, and afterward we can celebrate your promotion."
+    )
+    exact_fact_reply = ai_sims_server.normalize_response(
+        {
+            "dialogue": (
+                "Saturday evening at eight at the Blue Velvet downtown works for me; "
+                "your promotion deserves a proper celebration."
+            )
+        }
+    )
+    assert ai_sims_server._dialogue_similarity(
+        ai_sims_server._dialogue_words(exact_fact_message, context),
+        ai_sims_server._dialogue_words(exact_fact_reply["dialogue"], context),
+    ) < 0.72
+    assert ai_sims_server.response_grounding_issue(
+        {"message": exact_fact_message}, exact_fact_reply, context
+    ) == ""
+
 
 def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
     context = ai_sims_server.build_context(
@@ -1090,6 +1110,65 @@ def test_mirroring_reasoning_fallback_uses_grounded_neutral_dialogue(monkeypatch
     assert len(calls) == 2
     assert response["dialogue"] != message
     assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
+
+
+def test_mirroring_critical_need_fallback_stays_grounded(monkeypatch) -> None:
+    message = "I'm uncomfortable because my hunger need is critical."
+    calls = []
+
+    def fake_llm(*_args, **_kwargs):
+        calls.append(1)
+        return json.dumps({"dialogue": message})
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    payload = {
+        "speaker": {"needs": {"hunger": 10}},
+        "listener": {},
+        "message": message,
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] != message
+    assert "hunger" in response["dialogue"].casefold()
+    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
+
+
+def test_grounding_reasoning_fallback_direct_call_handles_critical_need() -> None:
+    message = "I'm uncomfortable because my hunger need is critical."
+    payload = {
+        "speaker": {"needs": {"hunger": 10}},
+        "listener": {},
+        "message": message,
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.reasoning_fallback_response(payload, context)
+
+    assert response["dialogue"] != message
+    assert "hunger" in response["dialogue"].casefold()
+    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
+    assert not ai_sims_server.response_has_role_confusion(response, context)
 
 
 def test_local_social_classifier_distinguishes_common_player_interactions() -> None:

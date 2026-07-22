@@ -1467,8 +1467,16 @@ Player says:
 
 def response_has_role_confusion(response, context):
     words = set(re.findall(r"\w+", str(response.get("dialogue") or "").casefold()))
-    speaker = set(re.findall(r"\w+", str(context["speaker"].get("name") or "").casefold()))
-    listener = set(re.findall(r"\w+", str(context["listener"].get("name") or "").casefold()))
+    speaker = set(
+        re.findall(
+            r"\w+", str(context.get("speaker", {}).get("name") or "").casefold()
+        )
+    )
+    listener = set(
+        re.findall(
+            r"\w+", str(context.get("listener", {}).get("name") or "").casefold()
+        )
+    )
     return bool({word for word in speaker - listener if len(word) > 1} & words)
 
 
@@ -1496,7 +1504,11 @@ def _dialogue_similarity(left, right):
     overlap_ratio = sum((Counter(left) & Counter(right)).values()) / min(
         len(left), len(right)
     )
-    if max(block.size for block in matcher.get_matching_blocks()) >= 8:
+    blocks = [block.size for block in matcher.get_matching_blocks() if block.size]
+    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / min(
+        len(left), len(right)
+    )
+    if secondary_coverage >= 0.25:
         return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
     return max(sequence_ratio, overlap_ratio)
 
@@ -1737,7 +1749,7 @@ def reasoning_fallback_response(payload, context):
         intent = "respond"
         animation = "friendly_chat"
         trust_delta = 0
-    return normalize_response(
+    fallback = normalize_response(
         {
             "dialogue": dialogue,
             "emotion": emotion,
@@ -1752,6 +1764,40 @@ def reasoning_fallback_response(payload, context):
         },
         payload.get("available_actions"),
     )
+    if not response_grounding_issue(payload, fallback, context) and not response_has_role_confusion(
+        fallback, context
+    ):
+        return fallback
+
+    candidates = []
+    if critical:
+        candidates.append(
+            "Before we continue, I need to take care of my {} needs.".format(
+                " and ".join(critical)
+            )
+        )
+    elif "?" in message and _memory_supports_question(message, context):
+        candidates.append("Here is the detail I remember: {}".format(dialogue))
+    elif "?" in message and (
+        message.startswith(("where ", "when ", "who ", "what did "))
+        or "remember" in message
+        or "did i say" in message
+    ):
+        candidates.append("I'm not sure; I don't remember enough to answer that.")
+    candidates.extend(
+        (
+            "Let me think about that in my own words.",
+            "I understand. Give me a moment to respond.",
+            "There is more I want to consider before I answer.",
+        )
+    )
+    for candidate_dialogue in candidates:
+        candidate = dict(fallback, dialogue=candidate_dialogue)
+        if not response_grounding_issue(
+            payload, candidate, context
+        ) and not response_has_role_confusion(candidate, context):
+            return candidate
+    raise RuntimeError("could not build a grounded dialogue fallback")
 
 
 class HermesRuntime:
@@ -1790,19 +1836,7 @@ class HermesRuntime:
             ).format(context["speaker"]["name"], context["listener"]["name"])
             if issue:
                 prompt += "\nCorrection: {}.".format(issue)
-        fallback = reasoning_fallback_response(payload, context)
-        issue = response_grounding_issue(payload, fallback, context)
-        if not issue or not ("copy" in issue or "previous reply" in issue):
-            return fallback
-        for dialogue in (
-            "Let me think about that in my own words.",
-            "I understand. Give me a moment to respond.",
-            "There is more I want to consider before I answer.",
-        ):
-            candidate = dict(fallback, dialogue=dialogue)
-            if not response_grounding_issue(payload, candidate, context):
-                return candidate
-        return dict(fallback, dialogue="...")
+        return reasoning_fallback_response(payload, context)
 
     def story_beat(self, prompt):
         content = llm_chat(
