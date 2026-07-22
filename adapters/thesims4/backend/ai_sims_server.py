@@ -1551,7 +1551,14 @@ def _direct_partner_prefix(prefix):
         proposal = stem[2:]
         if proposal[0:1] == ["please"]:
             proposal = proposal[1:]
-        return proposal in (["be"], ["become"], ["like", "to", "be"], ["want", "to", "be"])
+        return proposal in (
+            ["be"],
+            ["become"],
+            ["like", "to", "be"],
+            ["like", "to", "become"],
+            ["want", "to", "be"],
+            ["want", "to", "become"],
+        )
     return stem in (
         ["i", "want", "you", "to", "be"],
         ["i", "want", "you", "to", "become"],

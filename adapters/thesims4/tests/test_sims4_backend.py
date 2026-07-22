@@ -1273,6 +1273,10 @@ def test_role_confusion_grounds_direct_partner_terms_to_listener_gender() -> Non
         "You’re my girlfriend.",
         "Will you please be my girlfriend?",
         "You are definitely my girlfriend.",
+        "Would you like to become my girlfriend?",
+        "Would you want to become my girlfriend?",
+        "Would you please like to become my girlfriend?",
+        "Would you please want to become my girlfriend?",
     ],
 )
 @pytest.mark.parametrize("gender", ["male", "unknown"])
