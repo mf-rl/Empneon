@@ -323,7 +323,15 @@ class Sims4Adapter:
                     "set",
                     list(response.get("tone_tags") or []),
                 ),
-                StateDelta("animation", "set", "social." + category),
+                StateDelta(
+                    "animation",
+                    "set",
+                    (
+                        "none"
+                        if response.get("suggested_action") == "none"
+                        else "social." + category
+                    ),
+                ),
             )
         )
         event = self.observe()[0]

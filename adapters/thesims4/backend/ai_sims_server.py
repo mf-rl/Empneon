@@ -218,27 +218,21 @@ a fact introduced only by the Sim's generated reply.
 Use this exact shape with concrete values:
 {
   "dialogue": "expressive in-character reply",
-  "expressed_emotion": "tense",
-  "intent": "deflect",
-  "player_interaction_kind": "friendly",
-  "relationship": {
-    "friendship_delta": 1,
-    "romance_delta": 0,
-    "trust_delta": -1
-  },
+  "expressed_emotion": "playful",
+  "intent": "accept_playfully",
+  "response_category": "romance",
+  "tone_tags": ["playful", "hesitant"],
+  "trust_delta": 1,
   "memory": {
     "importance": 0.4,
     "summary": "One concrete event memory."
-  },
-  "suggested_action": "friendly_chat"
+  }
 }
 
-Classify the player's current message as exactly one of: friendly, romantic_compliment,
-romantic_invitation, hostile, informational, or neutral. A romantic compliment is not an
-invitation: respond freely without forcing an acceptance or rejection. A romantic invitation
-must be accepted or declined directly.
-The intent field describes the dialogue; it does not select a game action.
-Choose suggested_action only from the current request's available actions, or use none.
+Choose one response category from the request's available common social categories. The response
+category describes the Speaker's own dialogue, independently from the incoming category. Tone tags
+may blend style and mood, but never select additional actions. Do not return friendship, romance,
+attraction, or action fields; the adapter and game own them.
 """
 
 SOCIAL_ACTIONS = {category: "social." + category for category in SOCIAL_CATEGORIES}
@@ -1380,16 +1374,11 @@ def build_chat_prompt(payload, context):
             )
         )
     recent_conversation = "\n".join(conversation_lines) or "None yet"
-    actions = available_actions(payload.get("available_actions"))
-    action_descriptions = {
-        "friendly_chat": "continue a friendly conversation.",
-        "apologize": "perform an apology.",
-        "flirt": "perform a romantic social action.",
-    }
-    action_explanations = "\n".join(
-        ["- {}: {}".format(action, action_descriptions[action]) for action in actions]
-        + ["- none: dialogue only; perform no Sims action."]
+    categories = available_response_categories(
+        payload.get("available_response_categories")
     )
+    if payload.get("available_response_categories") is None:
+        categories = SOCIAL_CATEGORIES
 
     return """Role assignment:
 You are {speaker_name}, the Speaker.
@@ -1443,10 +1432,13 @@ Location:
 Nearby Sims:
 {nearby}
 
-Available actions:
-{available_actions}
-{action_explanations}
-Intent describes the reply and never selects an action.
+Incoming social category: {incoming_category}
+Available response categories: {available_response_categories}
+Choose the Speaker's response category independently from the incoming category.
+Use exactly one primary response category. Tone tags may blend style, mood, and personality but do
+not select additional actions.
+The Speaker may accept, reject, joke, retaliate, or deflect according to both actor states.
+Do not return friendship, romance, attraction, or action fields; the adapter and game own them.
 
 Recent conversation:
 {recent_conversation}
@@ -1511,8 +1503,8 @@ Player says:
         memories=memory_lines,
         location=context["location"],
         nearby=nearby,
-        available_actions=", ".join(actions) or "none",
-        action_explanations=action_explanations,
+        incoming_category=payload.get("incoming_category") or "friendly",
+        available_response_categories=", ".join(categories) or "none",
         message=payload.get("message") or "",
     )
 
@@ -1708,6 +1700,21 @@ def classify_social_category(message):
     return explicit_social_category(message) or "friendly"
 
 
+def response_category_issue(response):
+    dialogue = str(response.get("dialogue") or "")
+    category = str(response.get("response_category") or "")
+    romantic_refusal = re.search(
+        r"\b(no|not interested|rather stay friends|do not want|don't want)\b",
+        dialogue.casefold(),
+    )
+    if romantic_refusal:
+        return "romantic refusal" if category == "romance" else ""
+    explicit = explicit_social_category(dialogue)
+    if explicit is not None and explicit != category:
+        return "explicit {}".format(explicit)
+    return ""
+
+
 def classify_player_interaction(message):
     if _is_romantic_request(message):
         return "romantic_invitation"
@@ -1829,6 +1836,16 @@ def recent_conversation(speaker_id, listener_id, limit=None):
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
     interaction_kind = classify_player_interaction(message)
+    incoming_category = str(
+        payload.get("incoming_category") or classify_social_category(message)
+    )
+    fallback_category, tone_tag = {
+        "romance": ("friendly", "reserved"),
+        "mean": ("mean", "firm"),
+        "mischief": ("friendly", "wary"),
+        "funny": ("funny", "light"),
+        "friendly": ("friendly", "neutral"),
+    }.get(incoming_category, ("friendly", "neutral"))
     if interaction_kind == "romantic_invitation":
         dialogue = "No, I would rather stay friends."
         emotion = "awkward"
@@ -1911,16 +1928,16 @@ def reasoning_fallback_response(payload, context):
             "dialogue": dialogue,
             "emotion": emotion,
             "intent": intent,
-            "player_interaction_kind": interaction_kind,
-            "relationship": {"friendship_delta": 0, "romance_delta": 0, "trust_delta": trust_delta},
+            "response_category": fallback_category,
+            "tone_tags": [tone_tag],
+            "trust_delta": trust_delta,
             "memory": {
                 "importance": 0.2,
                 "summary": "{} {}".format(payload.get("message") or "", dialogue).strip(),
             },
-            "suggested_action": animation,
         },
-        payload.get("available_actions"),
     )
+    fallback["suggested_action"] = fallback["animation"] = "none"
     if not response_grounding_issue(payload, fallback, context) and not response_has_role_confusion(
         fallback, context
     ):
@@ -1953,6 +1970,12 @@ def reasoning_fallback_response(payload, context):
 
 class HermesRuntime:
     def dialogue(self, payload, context):
+        configured_categories = payload.get("available_response_categories")
+        categories = available_response_categories(configured_categories)
+        if configured_categories is not None and not categories:
+            return reasoning_fallback_response(payload, context)
+        if configured_categories is None:
+            categories = SOCIAL_CATEGORIES
         prompt = build_chat_prompt(payload, context)
         for attempt in range(2):
             content = llm_chat(
@@ -1960,23 +1983,24 @@ class HermesRuntime:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                schema=dialogue_schema(payload.get("available_actions")),
+                schema=dialogue_schema(categories),
                 schema_name="sims_dialogue",
                 task="large",
             )
             try:
                 response = normalize_response(
-                    extract_json(content), payload.get("available_actions")
+                    extract_json(content), categories
                 )
             except (ValueError, json.JSONDecodeError):
-                response = fallback_response(content, payload.get("available_actions"))
-            sanitize_action_proposal(response, payload.get("available_actions"))
+                response = fallback_response(content, categories)
             issue = response_grounding_issue(payload, response, context)
+            category_issue = response_category_issue(response)
             if not response_has_role_confusion(response, context) and not issue:
-                return response
+                if not category_issue:
+                    return response
             PROVIDER_LOG.warning(
                 "model response failed grounding (%s); retrying=%s",
-                issue or "speaker/listener confusion",
+                issue or category_issue or "speaker/listener confusion",
                 attempt == 0,
             )
             prompt += (
@@ -1985,13 +2009,21 @@ class HermesRuntime:
             ).format(context["speaker"]["name"], context["listener"]["name"])
             if issue:
                 prompt += "\nCorrection: {}.".format(issue)
+            if category_issue:
+                prompt += (
+                    "\nCorrection: The response_category must describe the Speaker's own "
+                    "dialogue. Do not copy the incoming category when the Speaker rejects or "
+                    "changes direction."
+                )
             if issue and ("copy" in issue or "previous reply" in issue):
                 prompt += (
                     "\nCorrection: Keep the facts and conversational continuity, but advance the "
                     "conversation with a new reaction, detail, question, or decision. Do not reuse "
                     "an earlier opening or sentence frame."
                 )
-        return reasoning_fallback_response(payload, context)
+        fallback = reasoning_fallback_response(payload, context)
+        fallback["suggested_action"] = fallback["animation"] = "none"
+        return fallback
 
     def story_beat(self, prompt):
         content = llm_chat(
@@ -2020,6 +2052,8 @@ HERMES = HermesRuntime()
 
 
 def chat(payload):
+    payload = dict(payload)
+    payload["incoming_category"] = classify_social_category(payload.get("message"))
     speaker = payload.get("speaker") or {}
     listener = payload.get("listener") or {}
     speaker_id = sim_id(speaker)

@@ -610,12 +610,13 @@ def test_payload_identity_traits_override_stale_profile_traits_in_role_lines() -
     assert "Mean" not in listener_role
 
 
-def test_prompt_action_explanations_only_include_request_actions_and_none() -> None:
+def test_prompt_only_includes_advertised_response_categories() -> None:
     payload = {
         "speaker": {"id": "bella"},
         "listener": {"id": "mortimer"},
         "message": "Hello.",
-        "available_actions": ["friendly_chat"],
+        "incoming_category": "friendly",
+        "available_response_categories": ["friendly", "funny"],
     }
     context = ai_sims_server.build_context(
         payload,
@@ -629,14 +630,9 @@ def test_prompt_action_explanations_only_include_request_actions_and_none() -> N
     context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
 
     prompt = ai_sims_server.build_chat_prompt(payload, context)
-    action_section = prompt.split("Available actions:\n", 1)[1].split(
-        "Intent describes", 1
-    )[0]
-
-    assert "- friendly_chat: continue a friendly conversation." in action_section
-    assert "- none: dialogue only; perform no Sims action." in action_section
-    assert "apologize" not in action_section
-    assert "flirt" not in action_section
+    assert "Available response categories: friendly, funny" in prompt
+    assert "friendly_chat" not in prompt
+    assert "suggested_action" not in prompt
 
 
 def test_memories_for_pair_uses_current_query_and_preserves_relevance(
@@ -767,7 +763,9 @@ def test_provider_failure_fallback_stays_on_current_topic_despite_need() -> None
 
     response = ai_sims_server.reasoning_fallback_response(payload, context)
 
-    assert response["player_interaction_kind"] == "romantic_invitation"
+    assert response["response_category"] == "friendly"
+    assert response["tone_tags"] == ["reserved"]
+    assert response["suggested_action"] == "none"
     assert "need" not in response["dialogue"].casefold()
     assert "critical" not in response["dialogue"].casefold()
 
@@ -886,7 +884,9 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
         {"message": "Would you go out with me sometime?"}, context
     )
     assert fallback["intent"] == "set_boundary"
-    assert fallback["relationship"]["romance_delta"] == 0
+    assert fallback["response_category"] == "friendly"
+    assert fallback["trust_delta"] == 0
+    assert "relationship" not in fallback
 
 
 def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
@@ -1045,7 +1045,7 @@ def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
     )
     payload = {
         "message": "I would love to take you on a date sometime.",
-        "available_actions": ["friendly_chat", "apologize", "flirt"],
+        "available_response_categories": ["friendly", "romance"],
     }
     response = ai_sims_server.normalize_response(
         {
@@ -1064,36 +1064,38 @@ def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
                 "summary": "Bernard invited Karmine on a date.",
             },
         },
-        payload["available_actions"],
+        payload["available_response_categories"],
     )
 
     assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
     assert response["dialogue"].startswith("That's sweet!")
-    assert response["suggested_action"] == "friendly_chat"
-    assert response["relationship"]["trust_delta"] == 10
+    assert response["suggested_action"] == "social.romance"
+    assert response["trust_delta"] == 10
+    assert "relationship" not in response
 
 
-def test_action_metadata_is_request_scoped_and_does_not_replace_dialogue() -> None:
-    actions = ["friendly_chat", "flirt"]
+def test_legacy_action_metadata_cannot_replace_response_category() -> None:
+    categories = ["friendly", "romance"]
 
     unavailable = ai_sims_server.normalize_response(
         {"dialogue": "I can talk, but I cannot do that.", "suggested_action": "argue"},
-        actions,
+        categories,
     )
     declined = ai_sims_server.normalize_response(
         {
             "dialogue": "No, I would rather stay friends.",
+            "response_category": "friendly",
             "suggested_action": "flirt",
         },
-        actions,
+        categories,
     )
 
     assert unavailable["dialogue"] == "I can talk, but I cannot do that."
-    assert unavailable["suggested_action"] == "none"
-    assert declined["suggested_action"] == "none"
-    assert ai_sims_server.dialogue_schema(actions)["properties"]["suggested_action"] == {
+    assert unavailable["suggested_action"] == "social.friendly"
+    assert declined["suggested_action"] == "social.friendly"
+    assert ai_sims_server.dialogue_schema(categories)["properties"]["response_category"] == {
         "type": "string",
-        "enum": ["friendly_chat", "flirt", "none"],
+        "enum": categories,
     }
 
 
@@ -1460,6 +1462,142 @@ def test_explicit_social_category(dialogue: str, expected: str | None) -> None:
     assert ai_sims_server.explicit_social_category(dialogue) == expected
 
 
+def test_prompt_separates_incoming_category_from_state_grounded_response() -> None:
+    payload = {
+        "speaker": {"id": "karmine"},
+        "listener": {"id": "bernard"},
+        "message": "Would you go on a date with me?",
+        "incoming_category": "romance",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {"friendship": 16, "romance": 0, "trust": 60, "attraction": 0},
+        {},
+        [],
+        {},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert "Incoming social category: romance" in prompt
+    assert "Choose the Speaker's response category independently" in prompt
+    assert "one primary response category" in prompt
+    assert "friendship_delta" not in prompt
+    assert "romance_delta" not in prompt
+    assert "suggested_action" not in prompt
+
+
+@pytest.mark.parametrize(
+    "dialogue,category,issue",
+    [
+        ("Yes, I would love to date you.", "friendly", "explicit romance"),
+        ("No, I would rather stay friends.", "romance", "romantic refusal"),
+        ("No, I don't want to date you.", "friendly", ""),
+        ("Go away, idiot.", "friendly", "explicit mean"),
+        ("That was hilarious!", "funny", ""),
+        ("I need time to think.", "friendly", ""),
+    ],
+)
+def test_response_category_issue(dialogue: str, category: str, issue: str) -> None:
+    assert ai_sims_server.response_category_issue(
+        {"dialogue": dialogue, "response_category": category}
+    ) == issue
+
+
+def _social_provider_response(dialogue: str, category: str) -> dict:
+    return {
+        "dialogue": dialogue,
+        "expressed_emotion": "warm",
+        "intent": "respond",
+        "response_category": category,
+        "tone_tags": [],
+        "trust_delta": 0,
+        "memory": {"importance": 0.0, "summary": ""},
+    }
+
+
+def test_category_contradiction_retries_once(monkeypatch) -> None:
+    responses = iter(
+        (
+            _social_provider_response("Yes, I would love to date you.", "friendly"),
+            _social_provider_response("Yes, I would love to date you.", "romance"),
+        )
+    )
+    calls = []
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(next(responses)),
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Would you go on a date with me?",
+        "incoming_category": "romance",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, [], {}
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["suggested_action"] == "social.romance"
+
+
+def test_persistent_category_contradiction_is_dialogue_only(monkeypatch) -> None:
+    response = _social_provider_response("Yes, I would love to date you.", "friendly")
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(response),
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Would you go on a date with me?",
+        "incoming_category": "romance",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, [], {}
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    result = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert result["suggested_action"] == "none"
+
+
+def test_no_loaded_social_category_skips_provider(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: pytest.fail("provider should not be called"),
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Hello",
+        "incoming_category": "friendly",
+        "available_response_categories": [],
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, [], {}
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["suggested_action"] == "none"
+
+
 def test_response_category_derives_action_and_ignores_legacy_authority() -> None:
     response = ai_sims_server.normalize_response(
         {
@@ -1544,7 +1682,9 @@ def test_reasoning_fallback_responds_relevantly_to_romantic_compliment() -> None
         {"message": "I'm very attracted to you. You are really hot."}, context
     )
 
-    assert response["player_interaction_kind"] == "romantic_compliment"
+    assert response["response_category"] == "friendly"
+    assert response["tone_tags"] == ["reserved"]
+    assert response["suggested_action"] == "none"
     assert "give me a moment" not in response["dialogue"].casefold()
     assert "attracted to you" not in response["dialogue"].casefold()
 
@@ -1569,7 +1709,8 @@ def test_romantic_invitation_fallback_does_not_recall_an_earlier_player_message(
         context,
     )
 
-    assert response["player_interaction_kind"] == "romantic_invitation"
+    assert response["response_category"] == "friendly"
+    assert response["tone_tags"] == ["reserved"]
     assert response["intent"] == "set_boundary"
     assert response["dialogue"] != previous_message
 
@@ -1822,7 +1963,7 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
             "listener": {"id": "bernard", "name": "Bernard"},
             "message": "I'm very attracted to you. You are really hot.",
             "event": {"type": "player_conversation", "source": "test"},
-            "available_actions": ["friendly_chat", "flirt"],
+            "available_response_categories": ["friendly", "romance"],
         }
     )
 
@@ -1832,7 +1973,9 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
     assert "language model is unavailable" not in result["dialogue"].casefold()
     assert "give me a moment" not in result["dialogue"].casefold()
     assert "attracted to you" not in result["dialogue"].casefold()
-    assert result["relationship"]["romance_delta"] == 0
+    assert result["response_category"] == "friendly"
+    assert result["suggested_action"] == "none"
+    assert "relationship" not in result
     assert telemetry["by_provider"] == {"core-rules": 1}
 
 
@@ -1977,7 +2120,7 @@ def test_dialogue_delivery_is_terminal_for_actionless_proposal(
             "listener": {"id": "mortimer", "name": "Mortimer"},
             "message": "Hello.",
             "event": {"type": "player_conversation", "source": "test"},
-            "available_actions": [],
+            "available_response_categories": [],
         }
     )
     assert proposal["animation"] == "none"
@@ -2092,7 +2235,7 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
             "listener": {"id": "mortimer", "name": "Mortimer"},
             "message": "Hello",
             "event": {"type": "player_conversation", "source": "test"},
-            "available_actions": ["friendly_chat", "apologize", "flirt"],
+            "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
         }
     )
 
@@ -2103,7 +2246,7 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
         diagnostics = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
         observed = EpisodicMemoryStore(conn).get(proposal.event_id)
     assert result["action_status"] == "proposed"
-    assert result["animation"] == "friendly_chat"
+    assert result["animation"] == "social.friendly"
     assert proposal is not None
     assert record is None
     assert diagnostics["agent_state"]["agent_id"] == "bella"
