@@ -49,6 +49,10 @@ py -3.12 .\backend\ai_sims_server.py
 `PYTHONPATH` makes the backend import Core and the adapter from this worktree. This workflow does
 not build or install a release archive.
 
+For agent-assisted development, the source backend is not left running after automated work. Start
+it yourself for an in-game test. If an automated check must start it, that check stops it before
+handoff so the next manual run cannot connect to a stale process.
+
 ## Install and Run
 
 1. Configure and start an OpenAI-compatible provider. The default is LM Studio at

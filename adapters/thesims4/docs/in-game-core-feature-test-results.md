@@ -248,12 +248,9 @@ dialogue behavior and a positive native romance consequence in game.
   actionless and completes without deadlock while autonomous decisions retain native actions; Sims
   friendship/romance comes only from game-observed behavior; and Empneon trust changes on delivered
   dialogue.
-- **Status remains PARTIAL.** No 2026-07-21 in-game source-build result is recorded. Run the focused
-  Test 5 procedure, including the manual-cancel repetition, and append the exact player message,
-  displayed response, relationship output before/after, held-session decision ID, confirmation
-  that no held native action ran, and session continued/closed state. Separately append an
-  autonomous decision ID, selected native action, and finishing result before marking this test
-  passed.
+- **Status remains PARTIAL.** This handoff was subsequently exercised by the live Karmine runs
+  recorded below. The latest remediation still requires a fresh source build and retest before
+  Test 5 can pass.
 
 **Automated/source-install handoff (2026-07-21):**
 
@@ -272,6 +269,73 @@ dialogue behavior and a positive native romance consequence in game.
   directory have the same hashes as `dist`. The loopback health endpoint returns `status: ok`.
   Port `8765` already has Python listeners, so no additional backend was started or process
   terminated. The user must now fully restart the game and perform the focused live retest.
+
+**July 21 live Test 5 progress and final remediation state:**
+
+- The Empneon Social queue now remains held through the asynchronous backend wait and multi-turn
+  input loop. A Sims scheduler desync (`Yielding non-Element handle`) and a later continuation
+  deadlock were reproduced and fixed. The working live flow allows consecutive messages in one
+  session while preventing autonomy from taking over the active Sim during the wait.
+- Stale or duplicate local backend instances were isolated. The local server now binds
+  exclusively, request bodies accept bounded rich actor state up to 1 MiB, input/retry dialogs are
+  titled `Empneon Social with <target>`, and only an actual delivered response is titled
+  `<target> says:`. This prevents an input echo or retry from masquerading as model dialogue.
+- The accepted-sounding model reply is no longer rejected because it uses friendly intent or
+  action metadata. Dialogue, descriptive intent, suggested native action, and relationship deltas
+  remain separate. A friendly answer to a romantic invitation can therefore advance friendship
+  without forcing romance.
+- Live Karmine evidence confirmed this storytelling path. Karmine initially accepted a date in
+  natural language while remaining friendly. Across further Empneon interactions, Karmine →
+  Bernard moved from Sims friendship `0` to `14`; Sims romance stayed `0`, and Empneon trust stayed
+  `50`. This is valid partial evidence, not a positive romance consequence.
+- The same run exposed two remaining defects. Replies became repetitive, and Empneon eventually
+  replaced model dialogue with an explicit statement that Karmine was uncomfortable because her
+  social need was low even though the visible need remained green. Both defects break immersion.
+- Root cause of the need override was a scale mismatch: the script clamped Sims motives to
+  `0..100`, while the backend treated every value at or below `25` as critical and required the
+  reply to name it. Root cause of the retry repetition was removal of recent conversation history
+  after the first copying rejection.
+- Core now accepts a game-neutral need record with normalized `level` and `urgency` in `0.0..1.0`,
+  semantic `status` (`satisfied`, `low`, or `critical`), and optional native scale metadata. Each
+  adapter owns its conversion and thresholds. The Sims adapter preserves native `-100..100`
+  values and maps green `-25..100`, orange `-50..-26`, and red `-100..-51` bands.
+- The game request already carried full state for both actors, but the prompt foregrounded only the
+  roleplayed Speaker's state. The backend now supplies separately labelled normalized snapshots for
+  both Speaker and Listener, including identity, traits, affect, needs, and effects.
+- Needs are now model context rather than mandatory dialogue. Green needs are normally silent,
+  orange needs may motivate a gentle in-world suggestion, and red needs may strongly influence or
+  redirect the response. Empneon no longer rejects a structurally valid, role-correct,
+  non-copying response merely because it omits a need, and deterministic fallback no longer
+  replaces the topic with a forced need report.
+- Repetition retries retain recent player inputs and model replies and explicitly require a new
+  reaction, detail, question, or decision without reusing earlier openings or sentence frames.
+  Existing deterministic guards still reject substantial copying of the current input, earlier
+  inputs, or earlier replies.
+- Identity context is normalized and reusable across adapters. Sims gender, life stage, and traits
+  are supplied for both actors; unknown values remain unknown. Prompt and validation rules prevent
+  unsupported gender/age guesses, speaker/listener reversal, and substantial dialogue mirroring.
+- The final implementation commits for the need/continuity correction are `8319e11`, `1746421`,
+  `f5a4957`, `51cc55a`, and `1f1e1d4`. Post-commit verification passed Core `181` tests and Sims 4
+  `110` tests; `git diff --check` passed. No model provider or game backend is required for these
+  automated suites.
+
+**Current handoff state:**
+
+- Test 5 remains **PARTIAL**. The latest need normalization, both-actor context, model-first
+  response acceptance, and continuity retry have automated evidence but no post-fix in-game run.
+- The source-built `.ts4script` and `.package` hashes recorded above predate commits `8319e11`
+  through `51cc55a`. Rebuild and reinstall both artifacts before the next live test; do not reuse
+  those earlier hashes as evidence for the latest code.
+- The backend is intentionally stopped at handoff. Automated work starts it only when a test
+  requires a live server and stops it before completion. The user starts the source backend for
+  manual Sims testing.
+- The next live run starts again at Test 5. Capture both actors' visible state, exact prompt and
+  response, several continued turns, relationship output before/after, queue behavior, and a
+  manual-cancel case. Verify green needs do not force a report, orange/red needs influence wording
+  naturally, replies advance rather than recycle dialogue, and only game-observed friendship or
+  romance changes persist.
+- Work remains on `feature/sims4-core-integration`; pull request #5 is the existing review surface.
+  The SQLite `-wal` and `-shm` sidecars remain local runtime files and are not committed.
 
 ## Test 6: Private observations and beliefs
 
