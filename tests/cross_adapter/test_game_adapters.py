@@ -116,3 +116,39 @@ def test_adapter_preserves_generic_contracts(
     assert completed.agent_state.schema_version == 1
     assert completed.agent_state.adapter in {"sims4", "godot"}
     assert completed.agent_state.agent_id == completed.actor_id
+
+
+def test_godot_round_trip_preserves_common_attraction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, WorldEvent] = {}
+    resolve = bridge_module.resolve_clod1
+
+    def capture(request: CognitiveRequest) -> Decision:
+        captured["event"] = request.event
+        return resolve(request)
+
+    monkeypatch.setattr(bridge_module, "resolve_clod1", capture)
+    bridge = GodotBridge()
+    bridge.decide(
+        {
+            "agent_id": "agent-a",
+            "event": asdict(
+                WorldEvent(
+                    "encounter",
+                    ("agent-a", "agent-b"),
+                    agent_state=AgentStateSnapshot(
+                        1,
+                        "godot",
+                        "agent-a",
+                        relationships={"agent-b": {"attraction": 0.4}},
+                    ),
+                )
+            ),
+        }
+    )
+
+    assert captured["event"].agent_state is not None
+    assert captured["event"].agent_state.relationships == {
+        "agent-b": {"attraction": 0.4}
+    }

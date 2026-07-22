@@ -45,6 +45,37 @@ def test_agent_state_snapshot_is_json_compatible_and_embedded_in_event() -> None
     }
 
 
+def test_agent_state_snapshot_preserves_directed_attraction_and_native_source() -> None:
+    snapshot = AgentStateSnapshot.from_mapping(
+        {
+            "schema_version": 1,
+            "adapter": "example-game",
+            "agent_id": "alice",
+            "relationships": {"bob": {"attraction": -0.75}},
+            "native": {
+                "relationships": {
+                    "bob": {
+                        "attraction": {
+                            "source": "example_game",
+                            "value": "repelled",
+                            "label": "Repelled",
+                        }
+                    }
+                }
+            },
+        }
+    )
+
+    encoded = json.loads(json.dumps(dataclasses.asdict(snapshot)))
+
+    assert encoded["relationships"]["bob"]["attraction"] == -0.75
+    assert encoded["native"]["relationships"]["bob"]["attraction"] == {
+        "source": "example_game",
+        "value": "repelled",
+        "label": "Repelled",
+    }
+
+
 def test_agent_state_snapshot_rejects_non_json_identity() -> None:
     with pytest.raises(ValueError, match="JSON-compatible"):
         AgentStateSnapshot(
@@ -103,6 +134,8 @@ def test_agent_state_snapshot_rejects_unknown_need_status() -> None:
         ("affect", "intensity", -0.1),
         ("relationships", "affinity", -1.1),
         ("relationships", "romance", 1.1),
+        ("relationships", "attraction", -1.1),
+        ("relationships", "attraction", 1.1),
     ],
 )
 def test_agent_state_snapshot_rejects_out_of_range_values(
@@ -119,6 +152,17 @@ def test_agent_state_snapshot_rejects_out_of_range_values(
 
     with pytest.raises(ValueError, match=key):
         AgentStateSnapshot.from_mapping(data)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_agent_state_snapshot_rejects_non_finite_attraction(value: float) -> None:
+    with pytest.raises(ValueError, match="attraction|JSON-compatible"):
+        AgentStateSnapshot(
+            1,
+            "test",
+            "alice",
+            relationships={"bob": {"attraction": value}},
+        )
 
 
 def test_agent_state_snapshot_rejects_out_of_range_effect_intensity() -> None:

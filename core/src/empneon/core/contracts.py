@@ -76,6 +76,7 @@ class AgentStateSnapshot:
                 _bounded(relationship, "affinity", -1.0, 1.0)
                 _bounded(relationship, "romance", 0.0, 1.0)
                 _bounded(relationship, "trust", 0.0, 1.0)
+                _bounded(relationship, "attraction", -1.0, 1.0)
         try:
             json.dumps(dataclasses.asdict(self), allow_nan=False)
         except (TypeError, ValueError) as exc:
