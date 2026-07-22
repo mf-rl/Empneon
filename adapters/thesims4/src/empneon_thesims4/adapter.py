@@ -220,6 +220,22 @@ class Sims4Adapter:
                     "available_actions": _items(
                         self._payload.get("available_actions")
                     ),
+                    **(
+                        {
+                            "social": {
+                                "incoming_category": self._payload.get(
+                                    "incoming_category"
+                                ),
+                                "available_response_categories": _items(
+                                    self._payload.get(
+                                        "available_response_categories"
+                                    )
+                                ),
+                            }
+                        }
+                        if self._payload.get("incoming_category")
+                        else {}
+                    ),
                 },
                 agent_state=self.agent_state(),
             ),

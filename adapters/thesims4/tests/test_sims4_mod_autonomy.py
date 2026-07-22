@@ -1052,15 +1052,75 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "sim_info_payload",
         lambda sim: {"id": sim.sim_id, "name": sim.sim_id.title()},
     )
-    monkeypatch.setattr(agent, "relationship_payload", lambda *_args: {})
+    monkeypatch.setattr(
+        agent,
+        "relationship_payload",
+        lambda source, target: {
+            "direction": "{}-to-{}".format(
+                source.sim_id, getattr(target, "sim_id", "unknown")
+            )
+        },
+    )
     monkeypatch.setattr(agent, "current_location", lambda: "Goth Manor")
+    social_mixer_base = type("SocialMixerInteraction", (), {})
+    mixer = type(
+        "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+        (social_mixer_base,),
+        {},
+    )
+    funny = type("mixer_social_TellJoke_targeted_Funny_alwaysOn", (), {})
+    romance = type(
+        "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn", (), {}
+    )
+    mean = type("mixer_social_Insult_targeted_mean_alwaysOn", (), {})
+    mischief = type(
+        "mixer_social_LieAboutCareer_targeted_mischief_alwaysOn", (), {}
+    )
+    apologize = type("mixer_social_Apologize_targeted_friendly_lowScore", (), {})
+    monkeypatch.setattr(
+        agent,
+        "loaded_interaction_tunings",
+        lambda: (mixer, funny, romance, mean, mischief, apologize),
+    )
     held_payload = agent.chat_payload_for_target(
         SimpleNamespace(sim_info=SimpleNamespace(sim_id="mortimer")),
         SimpleNamespace(sim_id="bella"),
         "Would you like to go on a date?",
         "pie_menu",
     )
-    assert held_payload["available_actions"] == []
+    assert held_payload["available_response_categories"] == [
+        "friendly",
+        "funny",
+        "romance",
+        "mean",
+        "mischief",
+    ]
+    assert held_payload["relationship"] == {"direction": "bella-to-mortimer"}
+    assert held_payload["listener_relationship"] == {
+        "direction": "mortimer-to-bella"
+    }
+    assert agent.NATIVE_SOCIAL_TUNINGS == {
+        "social.friendly": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+        "social.funny": "mixer_social_TellJoke_targeted_Funny_alwaysOn",
+        "social.romance": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
+        "social.mean": "mixer_social_Insult_targeted_mean_alwaysOn",
+        "social.mischief": "mixer_social_LieAboutCareer_targeted_mischief_alwaysOn",
+        "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+        "apologize": "mixer_social_Apologize_targeted_friendly_lowScore",
+        "flirt": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
+    }
+    with monkeypatch.context() as missing_mean:
+        missing_mean.setattr(
+            agent,
+            "loaded_interaction_tunings",
+            lambda: (mixer, funny, romance, mischief, apologize),
+        )
+        assert agent.available_social_categories() == [
+            "friendly",
+            "funny",
+            "romance",
+            "mischief",
+        ]
     monkeypatch.setattr(
         agent,
         "post_json",
@@ -1098,18 +1158,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "source": "sim_alarm",
     }
 
-    social_mixer_base = type("SocialMixerInteraction", (), {})
-    mixer = type(
-        "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
-        (social_mixer_base,),
-        {},
-    )
-    apologize = type("mixer_social_Apologize_targeted_friendly_lowScore", (), {})
-    flirt = type(
-        "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn", (), {}
-    )
     interaction._aop.super_affordance.all_affordances_gen = classmethod(
-        lambda _cls, **_kwargs: iter((mixer, apologize, flirt))
+        lambda _cls, **_kwargs: iter((mixer, apologize, romance))
     )
     infos = {
         "bella": bella,
@@ -1126,8 +1176,11 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             4: mixer,
             5: sim_chat,
             6: apologize,
-            7: flirt,
+            7: romance,
             8: has_met,
+            9: funny,
+            10: mean,
+            11: mischief,
         },
     )
     monkeypatch.setattr(
@@ -1136,7 +1189,12 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     assert agent.find_action_affordance("friendly_chat") is mixer
     assert agent.find_action_affordance("apologize") is apologize
-    assert agent.find_action_affordance("flirt") is flirt
+    assert agent.find_action_affordance("flirt") is romance
+    assert agent.find_action_affordance("social.friendly") is mixer
+    assert agent.find_action_affordance("social.funny") is funny
+    assert agent.find_action_affordance("social.romance") is romance
+    assert agent.find_action_affordance("social.mean") is mean
+    assert agent.find_action_affordance("social.mischief") is mischief
     assert agent.find_action_affordance("argue") is None
     assert agent.AVAILABLE_ACTIONS == ["friendly_chat", "apologize", "flirt"]
     assert agent.social_tuning_names("askaboutday") == [
@@ -1630,13 +1688,17 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         agent.ai_chat_async("Bob", "|", "Hello", _connection="async")
         assert agent._CONSOLE_CHAT_RESPONSES
         pump_dialogue_outbox()
-    assert sync_calls[0][1]["available_actions"] == []
+    assert sync_calls[0][1]["available_response_categories"] == list(
+        agent.SOCIAL_CATEGORIES
+    )
     assert [call[0] for call in sync_calls] == [
         "/chat",
         "/dialogue-result",
         "/dialogue-result",
     ]
-    assert console_calls[3][1]["available_actions"] == []
+    assert console_calls[3][1]["available_response_categories"] == list(
+        agent.SOCIAL_CATEGORIES
+    )
     assert [call[0] for call in console_calls[3:]] == [
         "/chat",
         "/dialogue-result",

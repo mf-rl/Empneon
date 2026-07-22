@@ -46,6 +46,22 @@ def test_old_payload_has_neutral_optional_cognition_facts() -> None:
     assert event.facts["nearby_sims"] == []
 
 
+def test_player_conversation_exposes_common_social_context() -> None:
+    event = Sims4Adapter(
+        {
+            "speaker": {"id": "bella"},
+            "listener": {"id": "mortimer"},
+            "incoming_category": "romance",
+            "available_response_categories": ["friendly", "funny", "romance"],
+        }
+    ).observe()[0]
+
+    assert event.facts["social"] == {
+        "incoming_category": "romance",
+        "available_response_categories": ["friendly", "funny", "romance"],
+    }
+
+
 def test_malformed_optional_cognition_facts_are_neutral() -> None:
     event = Sims4Adapter(
         {

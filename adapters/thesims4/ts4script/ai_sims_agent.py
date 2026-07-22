@@ -30,11 +30,17 @@ BACKEND_URL = "http://127.0.0.1:8765"
 EMPNEON_SOCIAL_INTERACTION_ID = 16906812068311597057
 AUTONOMY_INTERVAL_SIM_MINUTES = 30
 NATIVE_SOCIAL_TUNINGS = {
+    "social.friendly": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
+    "social.funny": "mixer_social_TellJoke_targeted_Funny_alwaysOn",
+    "social.romance": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
+    "social.mean": "mixer_social_Insult_targeted_mean_alwaysOn",
+    "social.mischief": "mixer_social_LieAboutCareer_targeted_mischief_alwaysOn",
     "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
     "apologize": "mixer_social_Apologize_targeted_friendly_lowScore",
     "flirt": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
 }
-AVAILABLE_ACTIONS = list(NATIVE_SOCIAL_TUNINGS)
+SOCIAL_CATEGORIES = ("friendly", "funny", "romance", "mean", "mischief")
+AVAILABLE_ACTIONS = ["friendly_chat", "apologize", "flirt"]
 _AUTONOMY_ALARM = None
 _AUTONOMY_RESPONSE_ALARM = None
 _AUTONOMY_CURSOR = 0
@@ -1497,6 +1503,14 @@ def find_action_affordance(action):
     )
 
 
+def available_social_categories():
+    return [
+        category
+        for category in SOCIAL_CATEGORIES
+        if find_action_affordance("social." + category) is not None
+    ]
+
+
 def loaded_interaction_tunings(manager=None):
     if manager is None:
         import sims4.resources
@@ -2007,10 +2021,11 @@ def chat_payload_for_target(active, target_info, message, source):
         "speaker": npc,
         "listener": player,
         "relationship": relationship_payload(target_info, active.sim_info),
+        "listener_relationship": relationship_payload(active.sim_info, target_info),
         "location": current_location(),
         "nearby_sims": nearby_sim_payloads(npc["id"], player["id"]),
         "event": {"type": "player_conversation", "source": source},
-        "available_actions": [],
+        "available_response_categories": available_social_categories(),
         "message": message,
     }
 
@@ -2024,10 +2039,11 @@ def chat_payload(active, target_name, message):
         "speaker": npc_payload(target_name),
         "listener": player,
         "relationship": relationship_payload(active.sim_info, None),
+        "listener_relationship": {},
         "location": current_location(),
         "nearby_sims": nearby_sim_payloads(player["id"]),
         "event": {"type": "player_conversation", "source": "cheat_console"},
-        "available_actions": [],
+        "available_response_categories": available_social_categories(),
         "message": message,
     }
 

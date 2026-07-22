@@ -493,6 +493,36 @@ def test_both_actor_states_are_grounded_in_dialogue_prompt() -> None:
     assert "Household: Luna Household" in prompt
 
 
+def test_both_actor_snapshots_keep_their_directed_relationships() -> None:
+    payload = {
+        "speaker": {"id": "karmine", "current_mood": "playful"},
+        "listener": {"id": "bernard", "current_mood": "confident"},
+        "relationship": {
+            "friendship": 16,
+            "romance": 0,
+            "trust": 50,
+            "attraction": 2 / 3,
+        },
+        "listener_relationship": {
+            "friendship": 8,
+            "romance": 4,
+            "trust": 50,
+            "attraction": -0.5,
+        },
+    }
+
+    speaker = ai_sims_server._actor_snapshot(payload, "speaker")
+    listener = ai_sims_server._actor_snapshot(payload, "listener")
+
+    assert speaker["relationships"]["bernard"]["attraction"] == pytest.approx(2 / 3)
+    assert listener["relationships"]["karmine"] == {
+        "affinity": 0.08,
+        "romance": 0.04,
+        "trust": 0.5,
+        "attraction": -0.5,
+    }
+
+
 def test_identity_is_grounded_in_dialogue_prompt() -> None:
     payload = {
         "speaker": {

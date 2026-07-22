@@ -1275,8 +1275,11 @@ def _actor_snapshot(payload, role):
     actor_payload.pop("sim", None)
     actor_payload["speaker"] = payload.get(role) or {}
     actor_payload["listener"] = payload.get(other) or {}
-    if role == "listener":
-        actor_payload["relationship"] = {}
+    actor_payload["relationship"] = (
+        payload.get("relationship")
+        if role == "speaker"
+        else payload.get("listener_relationship")
+    ) or {}
     return dataclasses.asdict(Sims4Adapter(actor_payload).agent_state())
 
 
