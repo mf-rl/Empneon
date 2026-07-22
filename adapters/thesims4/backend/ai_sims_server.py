@@ -148,6 +148,7 @@ if not isinstance(CONFIG.get("preserve_memory_only_on_game_save"), bool):
     raise ValueError("preserve_memory_only_on_game_save must be true or false")
 HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
 MEMORY_DB_PATH = str(CONFIG.get("memory_database") or "empneon_core_memory.sqlite3")
 LEGACY_ADAPTER_DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
 LEGACY_CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
@@ -2432,7 +2433,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def read_json(self):
         length = int(self.headers.get("Content-Length") or "0")
-        if length > 65536:
+        if length > MAX_REQUEST_BODY_BYTES:
             raise ValueError("request body too large")
         if not length:
             return {}

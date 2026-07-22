@@ -1,4 +1,5 @@
 import contextlib
+import io
 import json
 import os
 import sqlite3
@@ -38,6 +39,18 @@ from backend import ai_sims_server
 
 def test_backend_port_is_exclusive() -> None:
     assert ai_sims_server.EmpneonHTTPServer.allow_reuse_address is False
+
+
+def test_backend_accepts_rich_state_but_rejects_unbounded_requests() -> None:
+    handler = object.__new__(ai_sims_server.Handler)
+    body = json.dumps({"message": "x" * 70_000}).encode("utf-8")
+    handler.headers = {"Content-Length": str(len(body))}
+    handler.rfile = io.BytesIO(body)
+    assert len(handler.read_json()["message"]) == 70_000
+
+    handler.headers = {"Content-Length": str(1_048_577)}
+    with pytest.raises(ValueError, match="request body too large"):
+        handler.read_json()
 
 
 def test_backend_script_imports_from_outside_release_root(tmp_path) -> None:
