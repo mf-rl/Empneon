@@ -620,6 +620,7 @@ def recalled_memories(
         selected = dict(data)
         selected["event_id"] = event.id
         selected["created_at"] = event.happened_at
+        selected["explicit"] = explicit
         selected["facts"] = [
             fact
             for fact in facts
@@ -671,6 +672,9 @@ def record_delivered_experience(
     ]
     payload = {
         "kind": "confirmed_interaction",
+        "source_event_id": proposal.event_id,
+        "source": str(source.get("source") or ""),
+        "source_type": str(source.get("type") or ""),
         "conversation_id": str(source.get("conversation_id") or ""),
         "speaker_id": proposal.decision.actor_id,
         "listener_id": proposal.decision.target_id or "",
@@ -690,6 +694,7 @@ def record_delivered_experience(
     event = Event(
         json.dumps(payload, ensure_ascii=True, sort_keys=True),
         participants,
+        location=source_event.location if source_event is not None else None,
         id=proposal.decision.id + ":confirmed",
     )
     return record_observed_event(

@@ -1304,17 +1304,29 @@ def _exchange_text(turns, context, *, limit, max_chars):
     used = 0
     for block in reversed(blocks):
         cost = len(block) + 1
-        if selected and used + cost > max_chars:
+        if used + cost > max_chars:
             break
-        selected.append(block[:max_chars] if not selected else block)
+        selected.append(block)
         used += cost
     return "\n".join(reversed(selected)) or "None yet"
 
 
 def _recalled_memory_text(context):
-    return _exchange_text(
-        context.get("recalled_memories"), context, limit=3, max_chars=3000
-    )
+    names = {
+        context.get("speaker_id"): context["speaker"].get("name") or "Unknown Sim",
+        context.get("listener_id"): context["listener"].get("name") or "Unknown Sim",
+    }
+    lines = []
+    for memory in list(context.get("recalled_memories") or [])[-3:]:
+        if memory.get("explicit"):
+            lines.append(_exchange_text([memory], context, limit=1, max_chars=3000))
+            continue
+        for fact in memory.get("facts") or []:
+            actor_id = str(fact.get("actor_id") or "")
+            statement = str(fact.get("statement") or "").strip()
+            if statement:
+                lines.append("{} said: {}".format(names.get(actor_id, actor_id), statement))
+    return "\n".join(lines) or "None yet"
 
 
 def build_chat_prompt(payload, context):
@@ -1336,25 +1348,14 @@ def build_chat_prompt(payload, context):
         str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
         for item in context["listener_traits"]
     ) or "unknown"
-    context_budget = max(
-        512,
-        (int(context.get("max_context_tokens") or 4096)
-         - int(context.get("max_completion_tokens") or 350))
-        * 2,
-    )
-    recent_conversation = _exchange_text(
-        context.get("conversation"),
-        context,
-        limit=6,
-        max_chars=min(6000, context_budget),
-    )
+    conversation_marker = "__EMPNEON_CURRENT_SOCIAL__"
     categories = available_response_categories(
         payload.get("available_response_categories")
     )
     if payload.get("available_response_categories") is None:
         categories = SOCIAL_CATEGORIES
 
-    return """Role assignment:
+    prompt = """Role assignment:
 You are {speaker_name}, the Speaker.
 {listener_name} is the Listener and wrote the message below.
 Reply as {speaker_name} to {listener_name}.
@@ -1468,7 +1469,7 @@ Player says:
         listener_state=dumps(context["listener_state"]),
         relationship=dumps(relationship),
         emotions=dumps(emotions),
-        recent_conversation=recent_conversation,
+        recent_conversation=conversation_marker,
         recalled_history=recalled_history,
         location=context["location"],
         nearby=nearby,
@@ -1476,6 +1477,23 @@ Player says:
         available_response_categories=", ".join(categories) or "none",
         message=payload.get("message") or "",
     )
+    prompt_chars = max(
+        0,
+        (
+            int(context.get("max_context_tokens") or 4096)
+            - int(context.get("max_completion_tokens") or 350)
+        )
+        * 3
+        - len(prompt)
+        + len(conversation_marker),
+    )
+    recent_conversation = _exchange_text(
+        context.get("conversation"),
+        context,
+        limit=6,
+        max_chars=min(6000, prompt_chars),
+    )
+    return prompt.replace(conversation_marker, recent_conversation)
 
 
 def _identity_gender(identity):
@@ -2013,9 +2031,15 @@ def chat(payload):
     payload["incoming_category"] = classify_social_category(payload.get("message"))
     speaker = payload.get("speaker") or {}
     listener = payload.get("listener") or {}
-    speaker_id = sim_id(speaker)
-    listener_id = sim_id(listener)
-    conversation_id = str(payload.get("conversation_id") or uuid.uuid4())
+    speaker_id = str(speaker.get("id") or "").strip()
+    listener_id = str(listener.get("id") or "").strip()
+    conversation_id = str(payload.get("conversation_id") or "").strip()
+    if not speaker_id:
+        raise ValueError("speaker id is required")
+    if not listener_id:
+        raise ValueError("listener id is required")
+    if not conversation_id:
+        raise ValueError("conversation id is required")
     payload["conversation_id"] = conversation_id
     with AGENTS.session(speaker, reason="player_interaction", priority=1) as speaker_profile:
         listener_profile = upsert_profile(listener)

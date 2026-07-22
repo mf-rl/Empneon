@@ -237,9 +237,14 @@ def test_displayed_dialogue_archives_attributed_durable_facts(
             for item in EpisodicMemoryStore(conn).get_for_agent("karmine")
             if json.loads(item.description).get("kind") == "confirmed_interaction"
         )
-    assert json.loads(event.description)["facts"] == [
+    archived = json.loads(event.description)
+    assert archived["facts"] == [
         {"actor_id": "bernard", "statement": "I prefer red roses."}
     ]
+    assert archived["source"] == "test"
+    with open_db(database) as conn:
+        source_event = EpisodicMemoryStore(conn).get(archived["source_event_id"])
+    assert source_event is not None
 
 
 def test_backend_port_is_exclusive() -> None:
@@ -256,6 +261,32 @@ def test_backend_accepts_rich_state_but_rejects_unbounded_requests() -> None:
     handler.headers = {"Content-Length": str(1_048_577)}
     with pytest.raises(ValueError, match="request body too large"):
         handler.read_json()
+
+
+@pytest.mark.parametrize(
+    ("missing", "message"),
+    [
+        ("speaker_id", "speaker id is required"),
+        ("listener_id", "listener id is required"),
+        ("conversation_id", "conversation id is required"),
+    ],
+)
+def test_chat_rejects_missing_stable_identifiers(missing, message) -> None:
+    payload = {
+        "speaker": {"id": "karmine", "name": "Same Name"},
+        "listener": {"id": "bernard", "name": "Same Name"},
+        "conversation_id": "social-stable",
+        "message": "Hello.",
+        "event": {"type": "player_conversation", "source": "test"},
+        "available_response_categories": [],
+    }
+    if missing == "conversation_id":
+        payload.pop("conversation_id")
+    else:
+        payload[missing.removesuffix("_id")].pop("id")
+
+    with pytest.raises(ValueError, match=message):
+        ai_sims_server.chat(payload)
 
 
 def test_backend_script_imports_from_outside_release_root(tmp_path) -> None:
@@ -602,6 +633,7 @@ def test_actor_prompt_separates_recalled_history_from_current_session() -> None:
                 "message": "Let's meet for pizza tomorrow at 7 PM.",
                 "dialogue": "Pizza sounds good, let's plan it.",
                 "facts": [],
+                "explicit": True,
             }
         ],
     )
@@ -639,6 +671,36 @@ def test_actor_prompt_separates_recalled_history_from_current_session() -> None:
     assert "Never invent a past event" in ai_sims_server.SYSTEM_PROMPT
     assert "attributed statements" in ai_sims_server.SYSTEM_PROMPT
     assert prompt.index("Current Empneon Social") < prompt.index("Player says")
+
+
+def test_ordinary_recall_prompt_exposes_only_attributed_matching_facts() -> None:
+    payload = {"speaker": {}, "listener": {}, "message": "I brought red roses."}
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine Luna"},
+        {"name": "Bernard Jaeger"},
+        {},
+        {},
+        [
+            {
+                "speaker_id": "karmine",
+                "listener_id": "bernard",
+                "message": "RAW-PLAYER-TURN",
+                "dialogue": "RAW-MODEL-REPLY",
+                "facts": [
+                    {"actor_id": "bernard", "statement": "I prefer red roses."}
+                ],
+                "explicit": False,
+            }
+        ],
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert "Bernard Jaeger said: I prefer red roses." in prompt
+    assert "RAW-PLAYER-TURN" not in prompt
+    assert "RAW-MODEL-REPLY" not in prompt
 
 
 def test_current_session_keeps_duplicate_inputs_and_only_six_latest_turns() -> None:
@@ -1013,6 +1075,7 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
                 "listener_id": "bernard",
                 "message": "PRIVATE-GARDEN-731 is under the blue bench",
                 "dialogue": "",
+                "explicit": True,
             }
         ],
     )
@@ -1963,6 +2026,7 @@ def test_romantic_invitation_fallback_does_not_recall_an_earlier_player_message(
                 "listener_id": "bernard",
                 "message": previous_message,
                 "dialogue": "",
+                "explicit": True,
             }
         ],
     )
@@ -2022,6 +2086,7 @@ def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -
                 "listener_id": "bernard",
                 "message": "PRIVATE-GARDEN-731 is under the blue bench",
                 "dialogue": "",
+                "explicit": True,
             }
         ],
     )
@@ -2130,6 +2195,7 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
         {
             "speaker": {"id": "bella", "name": "Bella"},
             "listener": {"id": "mortimer", "name": "Mortimer"},
+            "conversation_id": "telemetry-fact",
             "message": "PRIVATE-GARDEN-731 is under the blue bench.",
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
@@ -2177,6 +2243,7 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
         {
             "speaker": {"id": "bella", "name": "Bella"},
             "listener": {"id": "mortimer", "name": "Mortimer"},
+            "conversation_id": "telemetry-question",
             "message": "Where is PRIVATE-GARDEN-731?",
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
@@ -2232,6 +2299,7 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
         {
             "speaker": {"id": "karmine", "name": "Karmine"},
             "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "provider-fallback",
             "message": "I'm very attracted to you. You are really hot.",
             "event": {"type": "player_conversation", "source": "test"},
             "available_response_categories": ["friendly", "romance"],
@@ -2389,6 +2457,7 @@ def test_dialogue_delivery_is_terminal_for_actionless_proposal(
         {
             "speaker": {"id": "bella", "name": "Bella"},
             "listener": {"id": "mortimer", "name": "Mortimer"},
+            "conversation_id": "empty-category",
             "message": "Hello.",
             "event": {"type": "player_conversation", "source": "test"},
             "available_response_categories": [],
@@ -2504,6 +2573,7 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
         {
             "speaker": {"id": "bella", "name": "Bella"},
             "listener": {"id": "mortimer", "name": "Mortimer"},
+            "conversation_id": "pending-event",
             "message": "Hello",
             "event": {"type": "player_conversation", "source": "test"},
             "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
@@ -2551,6 +2621,7 @@ def test_confirmed_exchange_ignores_generated_memory_summary(
         {
             "speaker": {"id": "bella", "name": "Bella"},
             "listener": {"id": "mortimer", "name": "Mortimer"},
+            "conversation_id": "confirmed-memory",
             "message": "Hello",
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
@@ -2603,6 +2674,7 @@ def test_dialogue_delivery_records_experience_and_empneon_trust_once(
         {
             "speaker": {"id": "karmine", "name": "Karmine"},
             "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "delivery-once",
             "message": "Can I trust you?",
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
@@ -2684,6 +2756,7 @@ def test_dialogue_delivery_concurrent_acknowledgements_apply_effects_once(
         {
             "speaker": {"id": "karmine", "name": "Karmine"},
             "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "delivery-concurrent",
             "message": "Can I trust you?",
             "event": {"type": "player_conversation", "source": "test"},
             "available_actions": ["friendly_chat"],
