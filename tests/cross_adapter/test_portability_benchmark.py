@@ -39,7 +39,14 @@ def test_same_scenario_runs_through_both_adapters(
         "adapter": "godot",
         "agent_id": str(scenario["agent_id"]),
         "affect": {"tags": ["alert"]},
-        "needs": {"energy": {"level": 0.63, "urgency": 0.37}},
+        "needs": {
+            "energy": {
+                "level": 0.815,
+                "urgency": 0.185,
+                "status": "satisfied",
+                "native": {"value": 81.5, "minimum": 0, "maximum": 100},
+            }
+        },
         "capabilities": {"actions": ["idle"]},
         "native": {"unknown_engine_value": "preserved"},
     }
@@ -105,7 +112,14 @@ def test_same_scenario_runs_through_both_adapters(
     reconstructed_state = captured["event"].agent_state
     assert reconstructed_state is not None
     assert sims_state.affect == reconstructed_state.affect
-    assert sims_state.needs == reconstructed_state.needs
+    sims_energy = sims_state.needs["energy"]
+    godot_energy = reconstructed_state.needs["energy"]
+    assert isinstance(sims_energy, dict) and isinstance(godot_energy, dict)
+    assert sims_energy["level"] == pytest.approx(godot_energy["level"])
+    assert sims_energy["urgency"] == pytest.approx(godot_energy["urgency"])
+    assert sims_energy["status"] == godot_energy["status"] == "satisfied"
+    assert sims_energy["native"] == {"value": 63, "minimum": -100, "maximum": 100}
+    assert godot_energy["native"] == {"value": 81.5, "minimum": 0, "maximum": 100}
     assert sims_state.capabilities == reconstructed_state.capabilities
     assert sims_state.adapter == "sims4"
     assert reconstructed_state.adapter == "godot"

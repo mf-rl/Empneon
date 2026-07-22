@@ -336,6 +336,16 @@ dialogue behavior and a positive native romance consequence in game.
   romance changes persist.
 - Work remains on `feature/sims4-core-integration`; pull request #5 is the existing review surface.
   The SQLite `-wal` and `-shm` sidecars remain local runtime files and are not committed.
+- The first post-push Monorepo CI run (`29891676140`) stopped at Ruff with five test-only style
+  findings: three long assertions, one `.format` call, and one long callback line. The assertions
+  and test behavior are unchanged; the exact CI Ruff command now passes locally.
+- Once lint was unblocked locally, the cross-adapter gate exposed an outdated equality assertion:
+  it compared the complete Sims and Godot need dictionaries even though native scales are
+  adapter-owned. The test now compares common normalized `level`, `urgency`, and `status` while
+  separately verifying Sims `-100..100` and Godot `0..100` native metadata. Local CI-equivalent
+  verification passes Core `181`, Sims 4 `110`, Godot `4`, cross-adapter `3`, and release `18`
+  tests; mypy passes `51` source files, the scenario regression passes, and all three packages
+  build successfully. A new GitHub Actions run is still required for remote confirmation.
 
 ## Test 6: Private observations and beliefs
 

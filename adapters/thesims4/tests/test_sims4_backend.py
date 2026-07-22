@@ -526,9 +526,23 @@ def test_identity_is_grounded_in_dialogue_prompt() -> None:
 
     prompt = ai_sims_server.build_chat_prompt(payload, context)
 
-    assert 'Speaker identity: {"age": {"kind": "life_stage", "label": "Young Adult", "value": "young_adult"}, "gender": {"key": "female", "label": "Female"}, "traits": [{"id": "outgoing", "label": "Outgoing"}]}' in prompt
-    assert 'Listener identity: {"age": {"kind": "life_stage", "label": "Adult", "value": "adult"}, "gender": {"key": "male", "label": "Male"}, "traits": []}' in prompt
-    assert "Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices" in prompt
+    assert (
+        'Speaker identity: {"age": {"kind": "life_stage", "label": "Young Adult", '
+        '"value": "young_adult"}, "gender": {"key": "female", "label": "Female"}, '
+        '"traits": [{"id": "outgoing", "label": "Outgoing"}]}'
+        in prompt
+    )
+    assert (
+        'Listener identity: {"age": {"kind": "life_stage", "label": "Adult", '
+        '"value": "adult"}, "gender": {"key": "male", "label": "Male"}, '
+        '"traits": []}'
+        in prompt
+    )
+    assert (
+        "Use the Speaker's traits to shape tone, preferences, confidence, "
+        "boundaries, and choices"
+        in prompt
+    )
     assert "Do not guess gender or age when identity is unknown" in prompt
     assert "Do not merely name or caricature traits" in prompt
 

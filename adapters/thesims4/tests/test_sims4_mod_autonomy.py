@@ -331,7 +331,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             "target_id": "fallback-target",
         }
     ]
-    all_moodlet_labels = ["Moodlet{}".format(index) for index in range(25)]
+    all_moodlet_labels = [f"Moodlet{index}" for index in range(25)]
     uncapped_payload = agent.sim_info_payload(
         SimpleNamespace(
             buff_component=SimpleNamespace(
@@ -551,7 +551,11 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
                 }
             },
         )
-        command_patch.setattr(agent, "out", lambda _connection, text: relationship_output.append(text))
+        command_patch.setattr(
+            agent,
+            "out",
+            lambda _connection, text: relationship_output.append(text),
+        )
         agent.ai_relationship("Cam", "Sadya")
     assert relationship_queries == [
         ("/relationship", {"sim_id": "cam-id", "target_id": "bella"})
