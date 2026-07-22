@@ -115,7 +115,7 @@ def sync_sim(conn: sqlite3.Connection, sim: Mapping[str, object]) -> dict[str, o
 
 def profile_for(conn: sqlite3.Connection, agent_id: str) -> dict[str, object] | None:
     agent = AgentStore(conn).get(str(agent_id))
-    return None if agent is None else _profile(conn, agent, [])
+    return None if agent is None else _profile(conn, agent)
 
 
 def profile_by_name(conn: sqlite3.Connection, name: str) -> dict[str, object] | None:
@@ -124,12 +124,12 @@ def profile_by_name(conn: sqlite3.Connection, name: str) -> dict[str, object] | 
         (item for item in AgentStore(conn).list_by_adapter("sims4") if item.name.casefold() == expected),
         None,
     )
-    return None if agent is None else _profile(conn, agent, [])
+    return None if agent is None else _profile(conn, agent)
 
 
 def profiles(conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, object]]:
     return [
-        _profile(conn, agent, [])
+        _profile(conn, agent)
         for agent in AgentStore(conn).list_by_adapter("sims4")[: max(0, int(limit))]
     ]
 
@@ -780,9 +780,22 @@ def _sync_sim(
         agent.adapter = "sims4"
         stores.agents.update(agent, commit=False)
 
-    traits = [str(value) for value in sim.get("traits", []) if str(value).strip()]
-    personality = _personality(agent_id, traits)
-    stores.personality.set(personality, commit=False)
+    documents = DocumentMemoryStore(conn)
+    stored_profile = documents.get("thesims4.actor-profile", agent_id) or {}
+    if "traits" in sim:
+        traits = [
+            str(value) for value in sim.get("traits", []) if str(value).strip()
+        ]
+        documents.set(
+            "thesims4.actor-profile",
+            agent_id,
+            {"traits": traits},
+            commit=False,
+        )
+    else:
+        traits = [str(value) for value in stored_profile.get("traits", [])]
+    if "traits" in sim or stores.personality.get(agent_id) is None:
+        stores.personality.set(_personality(agent_id, traits), commit=False)
     _sync_goals(stores.goals, agent_id, sim)
     _sync_emotion(stores.emotions, agent_id, sim)
     voice = sim.get("voice")
@@ -908,8 +921,13 @@ def _voice_profile(agent_id: str, voice: Mapping[str, object]) -> VoiceProfile:
     )
 
 
-def _profile(conn: sqlite3.Connection, agent: Agent, traits: list[str]) -> dict[str, object]:
+def _profile(
+    conn: sqlite3.Connection, agent: Agent, traits: list[str] | None = None
+) -> dict[str, object]:
     stores = identity_stores(conn)
+    if traits is None:
+        stored = DocumentMemoryStore(conn).get("thesims4.actor-profile", agent.id) or {}
+        traits = [str(value) for value in stored.get("traits", [])]
     personality = stores.personality.get(agent.id)
     voice = stores.voice.get(agent.id)
     return {

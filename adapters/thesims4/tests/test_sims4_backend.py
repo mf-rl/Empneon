@@ -2961,6 +2961,119 @@ def test_memory_session_requires_game_save(tmp_path, monkeypatch) -> None:
     assert (tmp_path / "core.sqlite3.empneon-saved.slot-2").exists()
 
 
+def test_confirmed_actor_memory_survives_save_slot_reload(
+    tmp_path, monkeypatch
+) -> None:
+    database = str(tmp_path / "memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(
+        ai_sims_server, "PRESERVE_MEMORY_ONLY_ON_GAME_SAVE", True
+    )
+
+    ai_sims_server.start_memory_session("game-a", "slot-7")
+    proposal = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine Luna"},
+            "listener": {"id": "bernard", "name": "Bernard Jaeger"},
+            "conversation_id": "social-a",
+            "message": "I prefer red roses.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": [],
+        }
+    )
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": proposal["decision_id"], "status": "displayed"}
+    )
+    ai_sims_server.save_memory_session("game-a", "slot-7")
+
+    ai_sims_server.start_memory_session("game-b", "slot-8")
+    with open_db(database) as conn:
+        assert ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Do you remember red roses?"
+        ) == []
+
+    ai_sims_server.start_memory_session("game-c", "slot-7")
+    with open_db(database) as conn:
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Do you remember red roses?"
+        )
+    assert [item["message"] for item in recalled] == ["I prefer red roses."]
+
+
+def test_unconfirmed_dialogue_is_absent_from_session_and_recall(
+    tmp_path, monkeypatch
+) -> None:
+    database = str(tmp_path / "memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", database)
+    ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine Luna"},
+            "listener": {"id": "bernard", "name": "Bernard Jaeger"},
+            "conversation_id": "social-unconfirmed",
+            "message": "I prefer red roses.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": [],
+        }
+    )
+
+    with open_db(database) as conn:
+        assert ai_sims_server.empneon_state.recent_conversations(
+            conn, "karmine", "bernard", "social-unconfirmed"
+        ) == []
+        assert ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Do you remember red roses?"
+        ) == []
+
+
+def test_sparse_actor_wakeup_preserves_profile_without_cross_actor_leakage(
+    tmp_path,
+) -> None:
+    database = str(tmp_path / "memory.sqlite3")
+    with open_db(database) as conn:
+        ai_sims_server.empneon_state.sync_sim(
+            conn,
+            {"id": "karmine", "name": "Karmine Luna", "traits": ["Romantic"]},
+        )
+        ai_sims_server.empneon_state.sync_sim(
+            conn,
+            {"id": "agnes", "name": "Agnes Crumplebottom", "traits": ["Hot-headed"]},
+        )
+        karmine = ai_sims_server.empneon_state.sync_sim(
+            conn, {"id": "karmine", "name": "Karmine Luna"}
+        )
+    payload = {
+        "speaker": {"id": "karmine"},
+        "listener": {"id": "bernard"},
+        "message": "Hello again.",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        karmine,
+        {"name": "Bernard Jaeger"},
+        {},
+        {},
+        [],
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert "Romantic" in prompt
+    assert '"extraversion"' in prompt
+    assert "Agnes Crumplebottom" not in prompt
+    assert "Hot-headed" not in prompt
+
+    with open_db(database) as conn:
+        updated = ai_sims_server.empneon_state.sync_sim(
+            conn,
+            {"id": "karmine", "name": "Karmine Luna", "traits": ["Self-assured"]},
+        )
+    assert updated["identity"]["traits"] == ["Self-assured"]
+
+
 def test_legacy_memory_checkpoint_is_migrated(tmp_path, monkeypatch) -> None:
     memory_db = str(tmp_path / "memory.sqlite3")
     core_db = str(tmp_path / "core.sqlite3")
