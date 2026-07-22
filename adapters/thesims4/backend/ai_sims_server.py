@@ -1262,6 +1262,8 @@ def cognition_routes(resolvers):
 def build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary):
     speaker = payload.get("speaker") or {}
     listener = payload.get("listener") or {}
+    speaker_identity = speaker.get("identity") or {}
+    listener_identity = listener.get("identity") or {}
     return {
         "speaker": speaker_profile,
         "listener": listener_profile,
@@ -1272,10 +1274,18 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
         "location": payload.get("location") or "unknown",
         "nearby_sims": payload.get("nearby_sims") or [],
         "message": payload.get("message") or "",
-        "speaker_identity": speaker.get("identity") or {},
-        "listener_identity": listener.get("identity") or {},
-        "speaker_traits": speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or [],
-        "listener_traits": listener.get("traits") or listener_profile.get("identity", {}).get("traits") or [],
+        "speaker_identity": speaker_identity,
+        "listener_identity": listener_identity,
+        "speaker_traits": (
+            speaker_identity.get("traits") or []
+            if isinstance(speaker_identity, dict) and "traits" in speaker_identity
+            else speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or []
+        ),
+        "listener_traits": (
+            listener_identity.get("traits") or []
+            if isinstance(listener_identity, dict) and "traits" in listener_identity
+            else listener.get("traits") or listener_profile.get("identity", {}).get("traits") or []
+        ),
         "game_state": {
             "needs": speaker.get("needs") or {},
             "moodlets": speaker.get("moodlets") or [],
@@ -1298,6 +1308,14 @@ def build_chat_prompt(payload, context):
     household = game_state["household"]
     household_name = household.get("name") if isinstance(household, dict) else household
     goals = speaker_profile.get("goals") or []
+    speaker_traits = ", ".join(
+        str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
+        for item in context["speaker_traits"]
+    ) or "unknown"
+    listener_traits = ", ".join(
+        str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
+        for item in context["listener_traits"]
+    ) or "unknown"
     conversation_lines = []
     current_message = " ".join(str(payload.get("message") or "").casefold().split())
     for turn in context.get("conversation") or []:
@@ -1414,7 +1432,7 @@ Player says:
 """.format(
         speaker_name=speaker_profile.get("name") or "Unknown Sim",
         speaker_identity=dumps(context["speaker_identity"]),
-        speaker_traits=", ".join(context["speaker_traits"]) or "unknown",
+        speaker_traits=speaker_traits,
         personality=dumps(speaker_profile.get("personality") or {}),
         values=", ".join(speaker_profile.get("values") or []) or "unknown",
         rules=", ".join(speaker_profile.get("behavioral_rules") or []) or "none",
@@ -1428,7 +1446,7 @@ Player says:
         household=household_name or "unknown",
         listener_name=listener_profile.get("name") or "Unknown Sim",
         listener_identity=dumps(context["listener_identity"]),
-        listener_traits=", ".join(context["listener_traits"]) or "unknown",
+        listener_traits=listener_traits,
         relationship=dumps(relationship),
         emotions=dumps(emotions),
         recent_conversation=recent_conversation,

@@ -504,6 +504,39 @@ def test_identity_is_grounded_in_dialogue_prompt() -> None:
     assert "Do not merely name or caricature traits" in prompt
 
 
+def test_payload_identity_traits_override_stale_profile_traits_in_role_lines() -> None:
+    payload = {
+        "speaker": {
+            "id": "karmine",
+            "identity": {"traits": [{"id": "outgoing", "label": "Outgoing"}]},
+        },
+        "listener": {
+            "id": "bernard",
+            "identity": {"traits": [{"id": "good", "label": "Good"}]},
+        },
+        "message": "Hello.",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine", "identity": {"traits": ["Gloomy"]}},
+        {"name": "Bernard", "identity": {"traits": ["Mean"]}},
+        {},
+        {},
+        [],
+        {},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+    speaker_role = prompt.split("Speaker:\n", 1)[1].split("\n\nListener:", 1)[0]
+    listener_role = prompt.split("Listener:\n", 1)[1].split("\n\nRelationship:", 1)[0]
+
+    assert "Traits: Outgoing" in speaker_role
+    assert "Gloomy" not in speaker_role
+    assert "Traits: Good" in listener_role
+    assert "Mean" not in listener_role
+
+
 def test_prompt_action_explanations_only_include_request_actions_and_none() -> None:
     payload = {
         "speaker": {"id": "bella"},
