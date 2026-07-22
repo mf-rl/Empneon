@@ -124,9 +124,10 @@ evidence is still required; Test 5 is not passed.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
   start the source backend as documented in `setup.md`.
-- Action: record `ai.relationship Karmine`, start **Empneon Social** with Karmine, and submit a
-  romantic invitation. Continue for at least one more turn. Repeat once, manually cancelling the
-  queued Empneon Social while the backend is still working.
+- Action: record `ai.relationship Karmine`, Karmine's reported life stage, gender, and traits, and
+  Bernard's gender. Start **Empneon Social** with Karmine and submit a romantic invitation that
+  includes an exact date such as `Saturday`. Continue for at least one more turn. Repeat once,
+  manually cancelling the queued Empneon Social while the backend is still working.
 - Expected game result: the original grounded dialogue is displayed; Empneon Social stays in the
   queue while waiting; autonomy does not interrupt the session; each displayed turn updates
   memory and Empneon trust; each selected native action finishes before another input is
@@ -140,6 +141,14 @@ evidence is still required; Test 5 is not passed.
   `ai.relationship` output, decision ID, selected native action and finishing result, and whether
   the session continued or closed. For the cancellation run, record that no late dialogue, memory,
   trust, or native action appeared.
+- Focused dialogue assertions: Karmine's reply is distinct from Bernard's current message,
+  Bernard's earlier messages, and Karmine's earlier replies; Karmine uses `boyfriend` or neutral
+  wording for male Bernard, never `girlfriend`; the reply respects Karmine's reported life stage
+  and traits without reciting trait labels; and exact facts such as `Saturday` remain usable when
+  the surrounding response is distinct.
+- Focused queue/state assertions: held Empneon Social remains actionless and does not deadlock;
+  autonomous decisions still retain native actions; Sims friendship/romance changes come only
+  from game-observed behavior; and Empneon trust changes only after dialogue is displayed.
 - Persistence: save/reload and compare both directions again.
 - Cleanup: none; use a disposable save if relationship changes matter.
 

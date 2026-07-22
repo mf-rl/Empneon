@@ -224,6 +224,10 @@ dialogue behavior and a positive native romance consequence in game.
 
 **Source-build handoff (2026-07-21):**
 
+- The newly captured pre-fix identity transcript has Bernard ask Karmine, “You make me happier than
+  I ever expected ... Will you be my girlfriend?” Karmine then mirrors most of his wording and
+  asks male Bernard, “Would you be my girlfriend?” This is both dialogue mirroring and a role/gender
+  failure; automated coverage preserves the exact exchange as a rejected response.
 - The observed accepted-sounding Karmine response was “That's sweet! A date sounds like fun. You
   have a certain charm.” It was previously rejected because non-romantic request-scoped action
   metadata was incorrectly allowed to invalidate otherwise grounded dialogue.
@@ -235,10 +239,37 @@ dialogue behavior and a positive native romance consequence in game.
   manual cancellation suppresses a late backend response.
 - The owner accepted the full-scope critical Ruff gate (`E9,F63,F7,F82`); 119 unrelated legacy
   all-rule findings are deferred. This resolves verification scope only and is not in-game evidence.
+- The focused source-build retest must record Karmine's reported life stage, gender, and traits and
+  Bernard's gender, then verify all of the following without marking this test passed early:
+  Karmine's response is distinct from Bernard's current and earlier messages and Karmine's earlier
+  replies; male Bernard is called `boyfriend` or described neutrally, never `girlfriend`; dialogue
+  reflects Karmine's life stage and traits without reciting trait labels; an exact date such as
+  `Saturday` remains usable inside an otherwise distinct reply; a held Empneon Social remains
+  actionless and completes without deadlock while autonomous decisions retain native actions; Sims
+  friendship/romance comes only from game-observed behavior; and Empneon trust changes on delivered
+  dialogue.
 - **Status remains PARTIAL.** No 2026-07-21 in-game source-build result is recorded. Run the focused
   Test 5 procedure, including the manual-cancel repetition, and append the exact player message,
   displayed response, relationship output before/after, decision ID, native finishing result, and
   session continued/closed state before marking this test passed.
+
+**Automated/source-install handoff (2026-07-21):**
+
+- Fresh suites passed: Core `179`, Sims 4 `82`, and Godot `2` tests. The first sandboxed run was
+  invalidated by Windows ACL denial on pytest's temporary directory; the suites were rerun outside
+  the sandbox. Core was run from `core` because `test_public_api.py` reads `pyproject.toml` from its
+  working directory.
+- The standard CI integration mypy scope passed all `51` typed source files. The brief's root-level
+  command additionally includes the legacy untyped Sims backend and exits `1` with `11` existing
+  errors; it also cannot resolve the top-level `backend` import from repository root. Scoped Ruff
+  (`E9,F63,F7,F82`), Python compilation, and `git diff --check` all exit `0`.
+- `build_mod.py` rebuilt both artifacts. `Empneon_TheSims4.ts4script` has SHA-256
+  `4E5F4DD417895029B9100B00B69C1B3C156FE435DAFA9E7F4A257504DCAD1524`; the package has
+  `B9F7F0758F07EFA1582E69E676E9755D44D4E049013918469D8AAEC43EF74622`.
+- The Sims 4 was not running, so installation proceeded. Both files under the game's `Mods`
+  directory have the same hashes as `dist`. The loopback health endpoint returns `status: ok`.
+  Port `8765` already has Python listeners, so no additional backend was started or process
+  terminated. The user must now fully restart the game and perform the focused live retest.
 
 ## Test 6: Private observations and beliefs
 
