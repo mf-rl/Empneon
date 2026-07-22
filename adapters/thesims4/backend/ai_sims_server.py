@@ -1491,11 +1491,14 @@ def _dialogue_words(value, context):
 def _dialogue_similarity(left, right):
     if not left or not right:
         return 0.0
-    sequence_ratio = SequenceMatcher(None, left, right, autojunk=False).ratio()
+    matcher = SequenceMatcher(None, left, right, autojunk=False)
+    sequence_ratio = matcher.ratio()
     overlap_ratio = sum((Counter(left) & Counter(right)).values()) / min(
         len(left), len(right)
     )
-    return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
+    if max(block.size for block in matcher.get_matching_blocks()) >= 8:
+        return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
+    return max(sequence_ratio, overlap_ratio)
 
 
 def classify_player_interaction(message):
@@ -1787,7 +1790,19 @@ class HermesRuntime:
             ).format(context["speaker"]["name"], context["listener"]["name"])
             if issue:
                 prompt += "\nCorrection: {}.".format(issue)
-        return reasoning_fallback_response(payload, context)
+        fallback = reasoning_fallback_response(payload, context)
+        issue = response_grounding_issue(payload, fallback, context)
+        if not issue or not ("copy" in issue or "previous reply" in issue):
+            return fallback
+        for dialogue in (
+            "Let me think about that in my own words.",
+            "I understand. Give me a moment to respond.",
+            "There is more I want to consider before I answer.",
+        ):
+            candidate = dict(fallback, dialogue=dialogue)
+            if not response_grounding_issue(payload, candidate, context):
+                return candidate
+        return dict(fallback, dialogue="...")
 
     def story_beat(self, prompt):
         content = llm_chat(

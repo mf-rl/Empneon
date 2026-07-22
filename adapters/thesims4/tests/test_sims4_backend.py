@@ -834,6 +834,26 @@ def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
         context,
     ) == ""
 
+    detailed_message = (
+        "Saturday evening at Blue Velvet would be ideal because the jazz band plays "
+        "and we can celebrate your promotion there."
+    )
+    detailed_reply = ai_sims_server.normalize_response(
+        {
+            "dialogue": (
+                "Saturday evening at Blue Velvet would work for me; your promotion "
+                "deserves a proper celebration."
+            )
+        }
+    )
+    assert ai_sims_server._dialogue_similarity(
+        ai_sims_server._dialogue_words(detailed_message, context),
+        ai_sims_server._dialogue_words(detailed_reply["dialogue"], context),
+    ) < 0.72
+    assert ai_sims_server.response_grounding_issue(
+        {"message": detailed_message}, detailed_reply, context
+    ) == ""
+
 
 def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
     context = ai_sims_server.build_context(
@@ -1041,6 +1061,34 @@ def test_persistent_current_message_mirror_uses_distinct_fallback(monkeypatch) -
 
     assert len(calls) == 2
     assert response["dialogue"] != mirrored["dialogue"]
+    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
+
+
+def test_mirroring_reasoning_fallback_uses_grounded_neutral_dialogue(monkeypatch) -> None:
+    message = "I may not have every answer, but I'll tell you what I know."
+    calls = []
+
+    def fake_llm(*_args, **_kwargs):
+        calls.append(1)
+        return json.dumps({"dialogue": message})
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    payload = {"speaker": {}, "listener": {}, "message": message}
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] != message
     assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
 
 
