@@ -626,45 +626,72 @@ def test_memories_for_pair_uses_current_query_and_preserves_relevance(
     assert [item["id"] for item in memories] == ["most-relevant", "newer"]
 
 
-def test_dialogue_fallback_mentions_critical_need_and_refuses_unsupported_fact(
+def test_valid_model_reply_is_not_replaced_for_omitting_a_critical_need(
     monkeypatch,
 ) -> None:
+    calls = []
+
+    def fake_llm(*_args, **_kwargs):
+        calls.append(1)
+        return json.dumps(
+            {
+                "dialogue": "I'm glad you asked. I want to keep talking this through with you.",
+                "emotion": "thoughtful",
+                "intent": "respond",
+                "relationship": {},
+                "memory": {},
+            }
+        )
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    payload = {
+        "speaker": {"id": "karmine", "needs": {"hunger": -80}},
+        "listener": {"id": "bernard"},
+        "message": "How are you feeling?",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {"current_mood": "uncomfortable"},
+        [],
+        {},
+    )
+    context.update(
+        conversation=[], speaker_id="karmine", listener_id="bernard"
+    )
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 1
+    assert response["dialogue"].startswith("I'm glad you asked")
+
+
+def test_dialogue_fallback_refuses_unsupported_fact(monkeypatch) -> None:
     responses = iter(
         [
-            json.dumps({"dialogue": "I feel fine."}),
-            json.dumps({"dialogue": "Everything is okay."}),
             json.dumps({"dialogue": "It is behind the main house."}),
             json.dumps({"dialogue": "Try the back garden."}),
         ]
     )
     monkeypatch.setattr(ai_sims_server, "llm_chat", lambda *_args, **_kwargs: next(responses))
     payload = {
-        "speaker": {"needs": {"bladder": 10}, "moodlets": ["ReallyHasToPee"]},
+        "speaker": {},
         "listener": {},
-        "message": "How are you feeling and what needs attention?",
+        "message": "Where is PRIVATE-GARDEN-731?",
     }
     context = ai_sims_server.build_context(
         payload,
         {"name": "Bella"},
         {"name": "Mortimer"},
         {},
-        {"current_mood": "uncomfortable"},
-        [],
         {},
+        [{"summary": "We talked about pizza yesterday."}],
+        {"summary": "We talked about pizza yesterday."},
     )
     context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
 
-    need_response = ai_sims_server.HERMES.dialogue(payload, context)
-    assert "bladder" in need_response["dialogue"].casefold()
-    assert "critical" in need_response["dialogue"].casefold()
-
-    payload["speaker"] = {}
-    payload["message"] = "Where is PRIVATE-GARDEN-731?"
-    context["game_state"]["needs"] = {}
-    context["game_state"]["moodlets"] = []
-    context["message"] = payload["message"]
-    context["memories"] = [{"summary": "We talked about pizza yesterday."}]
-    context["summary"] = "We talked about pizza yesterday."
     unknown_response = ai_sims_server.HERMES.dialogue(payload, context)
     assert any(
         phrase in unknown_response["dialogue"].casefold()
@@ -672,9 +699,35 @@ def test_dialogue_fallback_mentions_critical_need_and_refuses_unsupported_fact(
     )
 
 
-def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> None:
+def test_provider_failure_fallback_stays_on_current_topic_despite_need() -> None:
+    payload = {
+        "speaker": {"id": "karmine", "needs": {"hunger": -80}},
+        "listener": {"id": "bernard"},
+        "message": "Would you like to go on a date with me?",
+    }
     context = ai_sims_server.build_context(
-        {"speaker": {"needs": {"hunger": 80}}, "listener": {}},
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {},
+    )
+    context.update(
+        conversation=[], speaker_id="karmine", listener_id="bernard"
+    )
+
+    response = ai_sims_server.reasoning_fallback_response(payload, context)
+
+    assert response["player_interaction_kind"] == "romantic_invitation"
+    assert "need" not in response["dialogue"].casefold()
+    assert "critical" not in response["dialogue"].casefold()
+
+
+def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
         {"name": "Karmine"},
         {"name": "Bernard"},
         {},
@@ -683,13 +736,6 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
         {"summary": "PRIVATE-GARDEN-731 is under the blue bench"},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
-
-    stale_need = ai_sims_server.normalize_response(
-        {"dialogue": "My hunger is critical.", "intent": "respond"}
-    )
-    assert ai_sims_server.response_grounding_issue(
-        {"message": "Would you like to go on a date?"}, stale_need, context
-    )
 
     denial = ai_sims_server.normalize_response(
         {"dialogue": "What are you talking about?", "intent": "clarify"}
@@ -1004,7 +1050,7 @@ def test_action_metadata_is_request_scoped_and_does_not_replace_dialogue() -> No
     }
 
 
-def test_repetition_retry_removes_recent_conversation_history(monkeypatch) -> None:
+def test_repetition_retry_keeps_history_and_requests_new_direction(monkeypatch) -> None:
     prompts = []
     responses = iter(
         [
@@ -1064,7 +1110,11 @@ def test_repetition_retry_removes_recent_conversation_history(monkeypatch) -> No
 
     assert response["dialogue"] == "Thank you. I enjoy spending time with you too."
     assert "You have a very kind presence." in prompts[0]
-    assert "Recent conversation:\nNone yet" in prompts[1]
+    assert "You have a very kind presence." in prompts[1]
+    assert (
+        "advance the conversation with a new reaction, detail, question, or decision"
+        in prompts[1]
+    )
 
 
 def test_current_message_mirror_retries_and_returns_distinct_response(monkeypatch) -> None:
@@ -1175,65 +1225,6 @@ def test_mirroring_reasoning_fallback_uses_grounded_neutral_dialogue(monkeypatch
     assert len(calls) == 2
     assert response["dialogue"] != message
     assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
-
-
-def test_mirroring_critical_need_fallback_stays_grounded(monkeypatch) -> None:
-    message = "I'm uncomfortable because my hunger need is critical."
-    calls = []
-
-    def fake_llm(*_args, **_kwargs):
-        calls.append(1)
-        return json.dumps({"dialogue": message})
-
-    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
-    payload = {
-        "speaker": {"needs": {"hunger": 10}},
-        "listener": {},
-        "message": message,
-    }
-    context = ai_sims_server.build_context(
-        payload,
-        {"name": "Karmine"},
-        {"name": "Bernard"},
-        {},
-        {},
-        [],
-        {"summary": ""},
-    )
-    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
-
-    response = ai_sims_server.HERMES.dialogue(payload, context)
-
-    assert len(calls) == 2
-    assert response["dialogue"] != message
-    assert "hunger" in response["dialogue"].casefold()
-    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
-
-
-def test_grounding_reasoning_fallback_direct_call_handles_critical_need() -> None:
-    message = "I'm uncomfortable because my hunger need is critical."
-    payload = {
-        "speaker": {"needs": {"hunger": 10}},
-        "listener": {},
-        "message": message,
-    }
-    context = ai_sims_server.build_context(
-        payload,
-        {"name": "Karmine"},
-        {"name": "Bernard"},
-        {},
-        {},
-        [],
-        {"summary": ""},
-    )
-    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
-
-    response = ai_sims_server.reasoning_fallback_response(payload, context)
-
-    assert response["dialogue"] != message
-    assert "hunger" in response["dialogue"].casefold()
-    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
-    assert not ai_sims_server.response_has_role_confusion(response, context)
 
 
 def test_role_confusion_grounds_direct_partner_terms_to_listener_gender() -> None:

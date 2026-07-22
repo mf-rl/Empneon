@@ -1425,6 +1425,8 @@ Recent conversation:
 Grounding rules:
 - Answer the current message without restating or closely paraphrasing it.
 - Keep the reply distinct from every recent player input and Speaker reply.
+- Advance the conversation with a new reaction, detail, question, or decision instead of reusing
+  an earlier opening or sentence frame.
 - Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
 - Combine traits with current mood, needs, relationship, memories, and the current message.
 - Do not merely name or caricature traits.
@@ -1671,25 +1673,6 @@ def _is_romantic_request(message):
 def response_grounding_issue(payload, response, context):
     message = str(payload.get("message") or "").casefold()
     dialogue = str(response.get("dialogue") or "").casefold()
-    needs = context.get("game_state", {}).get("needs") or {}
-    critical = [
-        str(name).casefold()
-        for name, value in needs.items()
-        if isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and float(value) <= 25
-    ]
-    stale = [
-        name
-        for name in ("bladder", "energy", "fun", "hunger", "hygiene", "social")
-        if name in dialogue and "critical" in dialogue and name not in critical
-    ]
-    if stale:
-        return "do not report non-critical needs: {}".format(", ".join(stale))
-    if critical and any(word in message for word in ("feel", "feeling", "need", "attention")):
-        missing = [name for name in critical if name not in dialogue]
-        if missing:
-            return "mention critical needs: {}".format(", ".join(missing))
     message_words = _dialogue_words(message, context)
     dialogue_words = _dialogue_words(dialogue, context)
     if (
@@ -1780,23 +1763,7 @@ def recent_conversation(speaker_id, listener_id, limit=None):
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
     interaction_kind = classify_player_interaction(message)
-    needs = context.get("game_state", {}).get("needs") or {}
-    critical = [
-        str(name).casefold()
-        for name, value in needs.items()
-        if isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and float(value) <= 25
-    ]
-    if critical and any(word in message for word in ("feel", "feeling", "need", "attention")):
-        dialogue = "I'm uncomfortable because my {} need is critical.".format(
-            " and ".join(critical)
-        )
-        emotion = "uncomfortable"
-        intent = "report_needs"
-        animation = "awkward_chat"
-        trust_delta = 0
-    elif interaction_kind == "romantic_invitation":
+    if interaction_kind == "romantic_invitation":
         dialogue = "No, I would rather stay friends."
         emotion = "awkward"
         intent = "set_boundary"
@@ -1894,13 +1861,7 @@ def reasoning_fallback_response(payload, context):
         return fallback
 
     candidates = []
-    if critical:
-        candidates.append(
-            "Before we continue, I need to take care of my {} needs.".format(
-                " and ".join(critical)
-            )
-        )
-    elif "?" in message and _memory_supports_question(message, context):
+    if "?" in message and _memory_supports_question(message, context):
         candidates.append("Here is the detail I remember: {}".format(dialogue))
     elif "?" in message and (
         message.startswith(("where ", "when ", "who ", "what did "))
@@ -1952,14 +1913,18 @@ class HermesRuntime:
                 issue or "speaker/listener confusion",
                 attempt == 0,
             )
-            if issue and ("copy" in issue or "previous reply" in issue):
-                prompt = build_chat_prompt(payload, dict(context, conversation=[]))
             prompt += (
                 "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
                 "If using a name, use the Listener's name, '{}'."
             ).format(context["speaker"]["name"], context["listener"]["name"])
             if issue:
                 prompt += "\nCorrection: {}.".format(issue)
+            if issue and ("copy" in issue or "previous reply" in issue):
+                prompt += (
+                    "\nCorrection: Keep the facts and conversational continuity, but advance the "
+                    "conversation with a new reaction, detail, question, or decision. Do not reuse "
+                    "an earlier opening or sentence frame."
+                )
         return reasoning_fallback_response(payload, context)
 
     def story_beat(self, prompt):
