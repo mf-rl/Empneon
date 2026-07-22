@@ -332,8 +332,13 @@ dialogue behavior and a positive native romance consequence in game.
 - The next live run starts again at Test 5. Capture both actors' visible state, exact prompt and
   response, several continued turns, relationship output before/after, queue behavior, and a
   manual-cancel case. Verify green needs do not force a report, orange/red needs influence wording
-  naturally, replies advance rather than recycle dialogue, and only game-observed friendship or
-  romance changes persist.
+  naturally, replies advance rather than recycle dialogue, and only game-observed friendship,
+  romance, or attraction changes persist.
+- Cross-adapter directed attraction now has automated coverage for the common `-1..1` contract,
+  WickedWhims priority, official Lovestruck fallback, omission when unavailable, directionality,
+  prompt grounding, diagnostics, and read-only behavior. Test 5 remains **PARTIAL** until the new
+  source-built artifacts are installed and both attraction-source paths are observed in game; no
+  live attraction value is claimed by automated tests.
 - Work remains on `feature/sims4-core-integration`; pull request #5 is the existing review surface.
   The SQLite `-wal` and `-shm` sidecars remain local runtime files and are not committed.
 - The first post-push Monorepo CI run (`29891676140`) stopped at Ruff with five test-only style

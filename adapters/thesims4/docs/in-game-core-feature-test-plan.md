@@ -127,6 +127,12 @@ repetition retries. Test 5 is not passed.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
   start the source backend as documented in `setup.md`.
+- Attraction evidence: capture `ai.relationship Karmine` in both directions before dialogue. The
+  command must show either `Sims attraction <normalized> (<source>: <label>)` or explicit
+  `unavailable`. With supported WickedWhims attraction enabled, source must be `wickedwhims`; with
+  it disabled and Lovestruck available, source must be `sims4_lovestruck`. Values may differ by
+  direction. Confirm the prompt uses Karmine-to-Bernard attraction only, and that attraction shapes
+  tone without forcing flirtation, consent, or a romance delta.
 - Action: record `ai.relationship Karmine`, Karmine's reported life stage, gender, and traits, and
   Bernard's gender. Start **Empneon Social** with Karmine and submit a romantic invitation that
   includes an exact date such as `Saturday`. Continue for at least one more turn. Repeat once,
@@ -157,8 +163,9 @@ repetition retries. Test 5 is not passed.
   to confirm replies introduce a new reaction, detail, question, or decision instead of recycling
   earlier inputs or replies.
 - Focused queue/state assertions: held Empneon Social remains actionless and does not deadlock;
-  autonomous decisions still retain native actions; Sims friendship/romance changes come only
-  from game-observed behavior; and Empneon trust changes only after dialogue is displayed.
+  autonomous decisions still retain native actions; Sims friendship, romance, and attraction
+  changes come only from game-observed behavior; and Empneon trust changes only after dialogue is
+  displayed.
 - Persistence: save/reload and compare both directions again.
 - Cleanup: none; use a disposable save if relationship changes matter.
 
