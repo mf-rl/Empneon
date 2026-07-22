@@ -345,7 +345,8 @@ dialogue behavior and a positive native romance consequence in game.
   separately verifying Sims `-100..100` and Godot `0..100` native metadata. Local CI-equivalent
   verification passes Core `181`, Sims 4 `110`, Godot `4`, cross-adapter `3`, and release `18`
   tests; mypy passes `51` source files, the scenario regression passes, and all three packages
-  build successfully. A new GitHub Actions run is still required for remote confirmation.
+  build successfully. Replacement Monorepo CI run `29892097554` passed every step on commit
+  `0625e19`.
 
 ## Test 6: Private observations and beliefs
 
