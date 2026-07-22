@@ -1769,6 +1769,13 @@ def response_grounding_issue(payload, response, context):
             and _dialogue_similarity(dialogue_words, previous_reply) >= 0.72
         ):
             return "do not reuse a previous reply for a different message"
+    listener_name = str(context.get("listener", {}).get("name") or "").strip()
+    asks_listener_name = re.search(
+        r"\b(?:what(?:'s| is) your (?:full )?name|tell me your (?:full )?name)\b",
+        dialogue.replace("’", "'"),
+    )
+    if listener_name and asks_listener_name:
+        return "do not ask for the known Listener's name"
     asks_recalled_fact = "?" in message and (
         message.startswith(("where ", "when ", "who ", "what did "))
         or "remember" in message

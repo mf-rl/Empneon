@@ -889,6 +889,36 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
     assert "relationship" not in fallback
 
 
+def test_grounding_rejects_asking_for_known_listener_name() -> None:
+    context = {
+        "speaker": {"name": "Karmine Luna"},
+        "listener": {"name": "Bernard Jaeger"},
+        "conversation": [],
+    }
+
+    issue = ai_sims_server.response_grounding_issue(
+        {"message": "What a lovely name you have."},
+        {"dialogue": "It's nice to meet you, Bernard! What is your name then?"},
+        context,
+    )
+
+    assert "known Listener" in issue
+
+
+def test_grounding_allows_preferred_name_question() -> None:
+    context = {
+        "speaker": {"name": "Karmine Luna"},
+        "listener": {"name": "Bernard Jaeger"},
+        "conversation": [],
+    }
+
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "Hello."},
+        {"dialogue": "Do you prefer Bernard or another nickname?"},
+        context,
+    ) == ""
+
+
 def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
     context = ai_sims_server.build_context(
         {"speaker": {}, "listener": {}},
