@@ -1,6 +1,7 @@
 import contextlib
 import dataclasses
 import json
+import re
 import shutil
 import sqlite3
 import time
@@ -571,27 +572,133 @@ def relevant_memories(
     return memories
 
 
+_DURABLE_FACT_CUE = re.compile(
+    r"\b(?:i am|i'm|i like|i love|i hate|i prefer|i want|i need|i promise|"
+    r"my\s+[a-z][a-z -]{0,30}\s+is|we met|we are|we're)\b",
+    re.IGNORECASE,
+)
+_RECALL_CUE = re.compile(
+    r"\b(?:remember|recall|what did|when did|where did|who did|first time|last time)\b",
+    re.IGNORECASE,
+)
+_RECALL_STOPWORDS = frozenset(
+    "about again been conversation did does first from have interaction just know "
+    "last like remember said tell that the them then they this time was were what "
+    "when where which who will with would your".split()
+)
+
+
+def _durable_fact(actor_id: str, text: str) -> dict[str, str] | None:
+    statement = " ".join(str(text or "").split())
+    if (
+        not statement
+        or statement.endswith("?")
+        or not _DURABLE_FACT_CUE.search(statement)
+    ):
+        return None
+    return {"actor_id": str(actor_id), "statement": statement}
+
+
+def _recall_terms(text: str) -> set[str]:
+    terms = set()
+    for token in re.findall(
+        r"[a-z0-9]+(?:-[a-z0-9]+)*", str(text).casefold()
+    ):
+        if (len(token) < 4 and token != "met") or token in _RECALL_STOPWORDS:
+            continue
+        terms.add(token)
+        if token == "meet":
+            terms.add("met")
+        if token.endswith("ed") and len(token) > 5:
+            terms.update((token[:-1], token[:-2]))
+    return terms
+
+
+def recalled_memories(
+    conn: sqlite3.Connection,
+    actor_id: str,
+    other_id: str,
+    query: str,
+    limit: int = 3,
+) -> list[dict[str, object]]:
+    pair = {str(actor_id), str(other_id)}
+    terms = _recall_terms(query)
+    explicit = bool(_RECALL_CUE.search(str(query)))
+    matches = []
+    for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
+        data = _event_data(event.description)
+        if data.get("kind") != "confirmed_interaction":
+            continue
+        participants = {
+            str(data.get("speaker_id") or ""),
+            str(data.get("listener_id") or ""),
+        }
+        if participants != pair:
+            continue
+        raw_facts = data.get("facts") or []
+        facts = [fact for fact in raw_facts if isinstance(fact, dict)]
+        searchable = " ".join(
+            [str(data.get("message") or ""), str(data.get("dialogue") or "")]
+            if explicit
+            else [str(fact.get("statement") or "") for fact in facts]
+        )
+        overlap = terms & _recall_terms(searchable)
+        if explicit and not terms:
+            overlap = {"history"}
+        if not overlap:
+            continue
+        selected = dict(data)
+        selected["event_id"] = event.id
+        selected["created_at"] = event.happened_at
+        selected["facts"] = [
+            fact
+            for fact in facts
+            if terms & _recall_terms(str(fact.get("statement") or ""))
+        ]
+        matches.append((len(overlap), event.happened_at, selected))
+    if re.search(r"\bfirst time\b", str(query), re.IGNORECASE):
+        matches.sort(key=lambda item: item[1])
+    elif re.search(r"\blast time\b", str(query), re.IGNORECASE):
+        matches.sort(key=lambda item: item[1], reverse=True)
+    else:
+        matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    recalled = []
+    seen_facts = set()
+    for _score, _created_at, memory in matches:
+        unique_facts = []
+        for fact in memory["facts"]:
+            key = (
+                str(fact.get("actor_id") or ""),
+                str(fact.get("statement") or "").casefold(),
+            )
+            if key in seen_facts:
+                continue
+            seen_facts.add(key)
+            unique_facts.append(fact)
+        memory["facts"] = unique_facts
+        if explicit or unique_facts:
+            recalled.append(memory)
+        if len(recalled) >= max(0, min(3, int(limit))):
+            break
+    return recalled
+
+
 def record_delivered_experience(
     conn: sqlite3.Connection, proposal: ActionProposal, *, commit: bool = True
 ) -> Event | None:
     values = {change.path: change.value for change in proposal.decision.state_changes}
-    memory = values.get("memory")
-    summary = (
-        str(memory.get("summary") or "")
-        if isinstance(memory, Mapping)
-        else str(values.get("dialogue") or proposal.decision.intent)
-    )
     source_event = EpisodicMemoryStore(conn).get(proposal.event_id)
     source = _event_data(source_event.description) if source_event is not None else {}
     message = str(source.get("message") or "").strip()
     dialogue = str(values.get("dialogue") or "").strip()
-    if summary.strip().casefold() in {
-        "",
-        "none yet",
-        "one concrete event memory.",
-        "the conversation was acknowledged.",
-    }:
-        summary = " ".join(value for value in (message, dialogue) if value)
+    facts = [
+        fact
+        for fact in (
+            _durable_fact(proposal.decision.target_id or "", message),
+            _durable_fact(proposal.decision.actor_id, dialogue),
+        )
+        if fact is not None
+    ]
     payload = {
         "kind": "confirmed_interaction",
         "conversation_id": str(source.get("conversation_id") or ""),
@@ -600,6 +707,12 @@ def record_delivered_experience(
         "message": message,
         "dialogue": dialogue,
         "summary": " ".join(value for value in (message, dialogue) if value),
+        "facts": list(
+            {
+                (fact["actor_id"], fact["statement"].casefold()): fact
+                for fact in facts
+            }.values()
+        ),
     }
     participants = [proposal.decision.actor_id]
     if proposal.decision.target_id:
@@ -612,35 +725,9 @@ def record_delivered_experience(
     return record_observed_event(
         conn,
         event,
-        {agent_id: summary for agent_id in participants},
-        factual_statement=_declarative_fact(message),
+        {agent_id: payload["summary"] for agent_id in participants},
         commit=commit,
     )
-
-
-def _declarative_fact(message: str) -> str | None:
-    value = str(message).strip()
-    lowered = value.casefold()
-    questions = (
-        "who ",
-        "what ",
-        "when ",
-        "where ",
-        "why ",
-        "how ",
-        "do ",
-        "does ",
-        "did ",
-        "is ",
-        "are ",
-        "can ",
-        "could ",
-        "would ",
-        "will ",
-    )
-    if not value or value.endswith("?") or lowered.startswith(questions):
-        return None
-    return value
 
 
 def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:

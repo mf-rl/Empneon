@@ -89,6 +89,159 @@ def test_recent_conversations_are_confirmed_and_session_scoped(tmp_path) -> None
     assert all(turn["conversation_id"] == "social-17" for turn in turns)
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("I prefer red roses.", "I prefer red roses."),
+        ("I promise I will call tomorrow.", "I promise I will call tomorrow."),
+        ("My sister is named Nina.", "My sister is named Nina."),
+        ("What a lovely name you have.", None),
+        ("Can you tell me your name?", None),
+    ],
+)
+def test_durable_fact_requires_a_personal_fact_cue(text, expected) -> None:
+    fact = ai_sims_server.empneon_state._durable_fact("bernard", text)
+
+    assert (fact or {}).get("statement") == expected
+    if fact:
+        assert fact["actor_id"] == "bernard"
+
+
+def test_recalled_memories_are_topic_and_pair_scoped(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    memories = (
+        (
+            "roses",
+            "I prefer red roses.",
+            "That is thoughtful.",
+            [{"actor_id": "bernard", "statement": "I prefer red roses."}],
+        ),
+        (
+            "promise",
+            "I promise I will call tomorrow.",
+            "I will remember that.",
+            [
+                {
+                    "actor_id": "bernard",
+                    "statement": "I promise I will call tomorrow.",
+                }
+            ],
+        ),
+        ("compliment", "What a lovely name you have.", "Thank you.", []),
+        ("pizza", "I ordered pizza.", "Sounds good.", []),
+    )
+    with open_db(database) as conn:
+        for happened_at, (event_id, message, dialogue, facts) in enumerate(
+            memories, start=1
+        ):
+            ai_sims_server.empneon_state.record_observed_event(
+                conn,
+                Event(
+                    json.dumps(
+                        {
+                            "kind": "confirmed_interaction",
+                            "conversation_id": event_id,
+                            "speaker_id": "karmine",
+                            "listener_id": "bernard",
+                            "message": message,
+                            "dialogue": dialogue,
+                            "facts": facts,
+                        }
+                    ),
+                    ["karmine", "bernard"],
+                    happened_at=happened_at,
+                    id=event_id,
+                ),
+                {"karmine": message, "bernard": message},
+            )
+
+        roses = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "I brought you red roses."
+        )
+        promise = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Do you remember what I promised?"
+        )
+        compliment = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "What a lovely name you have."
+        )
+        wrong_pair = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "agnes", "Do you remember my promise?"
+        )
+
+    assert roses[0]["facts"] == [
+        {"actor_id": "bernard", "statement": "I prefer red roses."}
+    ]
+    assert promise[0]["message"] == "I promise I will call tomorrow."
+    assert compliment == []
+    assert wrong_pair == []
+
+
+def test_recalled_memories_deduplicate_facts_and_cap_results(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    fact = {"actor_id": "bernard", "statement": "I prefer red roses."}
+    with open_db(database) as conn:
+        for index in range(4):
+            ai_sims_server.empneon_state.record_observed_event(
+                conn,
+                Event(
+                    json.dumps(
+                        {
+                            "kind": "confirmed_interaction",
+                            "conversation_id": f"social-{index}",
+                            "speaker_id": "karmine",
+                            "listener_id": "bernard",
+                            "message": f"Roses {index}",
+                            "dialogue": "Thank you.",
+                            "facts": [fact],
+                        }
+                    ),
+                    ["karmine", "bernard"],
+                    happened_at=index + 1,
+                    id=f"repeat-{index}",
+                ),
+                {"karmine": fact["statement"], "bernard": fact["statement"]},
+            )
+
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Do you remember roses?", limit=3
+        )
+
+    assert len(recalled) == 3
+    assert sum(len(item["facts"]) for item in recalled) == 1
+
+
+def test_displayed_dialogue_archives_attributed_durable_facts(
+    tmp_path, monkeypatch
+) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", database)
+    proposal = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine Luna"},
+            "listener": {"id": "bernard", "name": "Bernard Jaeger"},
+            "conversation_id": "social-facts",
+            "message": "I prefer red roses.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": [],
+        }
+    )
+
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": proposal["decision_id"], "status": "displayed"}
+    )
+
+    with open_db(database) as conn:
+        event = next(
+            item
+            for item in EpisodicMemoryStore(conn).get_for_agent("karmine")
+            if json.loads(item.description).get("kind") == "confirmed_interaction"
+        )
+    assert json.loads(event.description)["facts"] == [
+        {"actor_id": "bernard", "statement": "I prefer red roses."}
+    ]
+
+
 def test_backend_port_is_exclusive() -> None:
     assert ai_sims_server.EmpneonHTTPServer.allow_reuse_address is False
 
