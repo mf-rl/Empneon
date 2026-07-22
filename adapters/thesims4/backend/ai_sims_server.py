@@ -1261,11 +1261,24 @@ def cognition_routes(resolvers):
     return tuple(routes)
 
 
+def _actor_snapshot(payload, role):
+    other = "listener" if role == "speaker" else "speaker"
+    actor_payload = dict(payload)
+    actor_payload.pop("sim", None)
+    actor_payload["speaker"] = payload.get(role) or {}
+    actor_payload["listener"] = payload.get(other) or {}
+    if role == "listener":
+        actor_payload["relationship"] = {}
+    return dataclasses.asdict(Sims4Adapter(actor_payload).agent_state())
+
+
 def build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary):
     speaker = payload.get("speaker") or {}
     listener = payload.get("listener") or {}
     speaker_identity = speaker.get("identity") or {}
     listener_identity = listener.get("identity") or {}
+    speaker_state = _actor_snapshot(payload, "speaker")
+    listener_state = _actor_snapshot(payload, "listener")
     return {
         "speaker": speaker_profile,
         "listener": listener_profile,
@@ -1278,6 +1291,8 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
         "message": payload.get("message") or "",
         "speaker_identity": speaker_identity,
         "listener_identity": listener_identity,
+        "speaker_state": speaker_state,
+        "listener_state": listener_state,
         "speaker_traits": (
             speaker_identity.get("traits") or []
             if isinstance(speaker_identity, dict) and "traits" in speaker_identity
@@ -1336,7 +1351,6 @@ def build_chat_prompt(payload, context):
             )
         )
     recent_conversation = "\n".join(conversation_lines) or "None yet"
-    snapshot = dataclasses.asdict(Sims4Adapter(payload).agent_state())
     actions = available_actions(payload.get("available_actions"))
     action_descriptions = {
         "friendly_chat": "continue a friendly conversation.",
@@ -1376,6 +1390,12 @@ Listener:
 Listener identity: {listener_identity}
 Traits: {listener_traits}
 
+Speaker current state:
+{speaker_state}
+
+Listener current state:
+{listener_state}
+
 Relationship:
 {relationship}
 
@@ -1393,12 +1413,6 @@ Location:
 
 Nearby Sims:
 {nearby}
-
-Current normalized snapshot:
-{snapshot}
-
-Native state:
-{native_state}
 
 Available actions:
 {available_actions}
@@ -1426,8 +1440,10 @@ Grounding rules:
   memory.summary.
 - When asked about a supported plan or agreement, answer with the exact activity, date, and time
   available in the evidence.
-- When asked how the Speaker feels or what needs attention, explicitly mention every critical need
-  (25 or below) and never claim to feel fine while one is critical.
+- Needs are context, not required topics. A satisfied need is normally silent; a low need may
+  motivate a gentle suggestion; a critical need should strongly influence urgency and may redirect
+  the conversation, but the Speaker may still continue the current topic.
+- Express needs naturally in-world. Do not recite need names, status labels, or numeric values.
 - memory.summary must describe the concrete exchange; never use placeholders such as "None yet"
   or "One concrete event memory."
 
@@ -1451,6 +1467,8 @@ Player says:
         listener_name=listener_profile.get("name") or "Unknown Sim",
         listener_identity=dumps(context["listener_identity"]),
         listener_traits=listener_traits,
+        speaker_state=dumps(context["speaker_state"]),
+        listener_state=dumps(context["listener_state"]),
         relationship=dumps(relationship),
         emotions=dumps(emotions),
         recent_conversation=recent_conversation,
@@ -1458,8 +1476,6 @@ Player says:
         memories=memory_lines,
         location=context["location"],
         nearby=nearby,
-        snapshot=dumps(snapshot),
-        native_state=dumps(snapshot["native"]),
         available_actions=", ".join(actions) or "none",
         action_explanations=action_explanations,
         message=payload.get("message") or "",

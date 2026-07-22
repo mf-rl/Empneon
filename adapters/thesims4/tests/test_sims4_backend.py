@@ -443,42 +443,54 @@ def test_recent_conversation_is_added_to_prompt(monkeypatch, tmp_path) -> None:
     assert prompt.index("Recent conversation") < prompt.index("Player says")
 
 
-def test_rich_game_state_is_grounded_in_dialogue_prompt() -> None:
+def test_both_actor_states_are_grounded_in_dialogue_prompt() -> None:
     payload = {
         "speaker": {
-            "id": "bella",
-            "needs": {"Hunger": 18},
-            "moodlets": ["Uncomfortable"],
+            "id": "karmine",
+            "current_mood": "uncomfortable",
+            "needs": {"hunger": -40},
+            "effects": [{"kind": "moodlet", "label": "Peckish"}],
             "aspiration": "MasterChef",
             "career": "Painter",
             "skills": {"Cooking": 7},
-            "household": {"name": "Goth Household"},
+            "household": {"name": "Luna Household"},
         },
-        "listener": {},
+        "listener": {
+            "id": "bernard",
+            "current_mood": "happy",
+            "needs": {"social": -60},
+            "effects": [{"kind": "moodlet", "label": "GreatConversation"}],
+        },
         "message": "How are you?",
     }
     context = ai_sims_server.build_context(
         payload,
-        {"name": "Bella"},
-        {"name": "Mortimer"},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
         {},
         {},
         [],
         {},
     )
-    context.update({"conversation": [], "speaker_id": "bella", "listener_id": "mortimer"})
+    context.update(
+        conversation=[], speaker_id="karmine", listener_id="bernard"
+    )
 
     prompt = ai_sims_server.build_chat_prompt(payload, context)
 
-    for expected in (
-        'Needs: {"Hunger": 18}',
-        "Moodlets: Uncomfortable",
-        "Aspiration: MasterChef",
-        "Career: Painter",
-        'Skills: {"Cooking": 7}',
-        "Household: Goth Household",
-    ):
-        assert expected in prompt
+    assert '"hunger": {"level": 0.3' in prompt
+    assert '"status": "low"' in prompt
+    assert '"social": {"level": 0.2' in prompt
+    assert '"status": "critical"' in prompt
+    assert "Peckish" in prompt
+    assert "GreatConversation" in prompt
+    assert "Speaker current state:" in prompt
+    assert "Listener current state:" in prompt
+    assert "Do not recite need names, status labels, or numeric values" in prompt
+    assert "Aspiration: MasterChef" in prompt
+    assert "Career: Painter" in prompt
+    assert 'Skills: {"Cooking": 7}' in prompt
+    assert "Household: Luna Household" in prompt
 
 
 def test_identity_is_grounded_in_dialogue_prompt() -> None:
