@@ -511,9 +511,12 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     friendship_track = type("LTR_Friendship_Main", (), {})
     romance_track = type("LTR_Romance_Main", (), {})
-    track_manager = SimpleNamespace(types={1: friendship_track, 2: romance_track})
+    attraction_track = type("ATTRACTION_MAIN", (), {})
+    track_manager = SimpleNamespace(
+        types={1: friendship_track, 2: romance_track, 358555: attraction_track}
+    )
     agent.services.get_instance_manager = lambda _resource_type: track_manager
-    scores = {friendship_track: -20, romance_track: 15}
+    scores = {friendship_track: -20, romance_track: 15, attraction_track: 75}
     source_info = SimpleNamespace(
         relationship_tracker=SimpleNamespace(
             get_relationship_score=lambda _target, track=None: scores[track]
@@ -523,6 +526,75 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     relationship = agent.relationship_payload(source_info, target_info)
     assert relationship["friendship"] == -20
     assert relationship["romance"] == 15
+    assert relationship["attraction"] == 0.75
+    assert relationship["native"]["attraction"] == {
+        "source": "sims4_lovestruck",
+        "value": 75.0,
+        "label": "ATTRACTION_MAIN",
+    }
+
+    official_reader = agent._official_attraction
+
+    def sim(sim_id):
+        directed_scores = {("alice", "bob"): 75.0, ("bob", "alice"): -25.0}
+        return SimpleNamespace(
+            sim_id=sim_id,
+            relationship_tracker=SimpleNamespace(
+                get_relationship_score=lambda target, _track: directed_scores[
+                    (sim_id, str(getattr(target, "sim_id", target)))
+                ]
+            ),
+        )
+
+    assert official_reader(sim("alice"), sim("bob"))["value"] == 0.75
+    assert official_reader(sim("bob"), sim("alice"))["value"] == -0.25
+
+    monkeypatch.setattr(
+        agent,
+        "_wickedwhims_attraction",
+        lambda _source, _target: {
+            "value": 2 / 3,
+            "native": {"source": "wickedwhims", "value": 2, "label": "HIGH"},
+        },
+    )
+    monkeypatch.setattr(
+        agent,
+        "_official_attraction",
+        lambda _source, _target: {
+            "value": -0.5,
+            "native": {
+                "source": "sims4_lovestruck",
+                "value": -50,
+                "label": "ATTRACTION_MAIN",
+            },
+        },
+    )
+    assert agent.attraction_payload(source_info, target_info) == {
+        "value": 2 / 3,
+        "native": {"source": "wickedwhims", "value": 2, "label": "HIGH"},
+    }
+
+    monkeypatch.setattr(agent, "_wickedwhims_attraction", lambda *_args: None)
+    assert agent.attraction_payload(source_info, target_info) == {
+        "value": -0.5,
+        "native": {
+            "source": "sims4_lovestruck",
+            "value": -50,
+            "label": "ATTRACTION_MAIN",
+        },
+    }
+
+    monkeypatch.setattr(
+        agent,
+        "_wickedwhims_attraction",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("incompatible mod")),
+    )
+    assert agent.attraction_payload(source_info, target_info)["value"] == -0.5
+    assert agent._attraction_record("bad", float("nan"), 1, "bad") is None
+    assert agent._attraction_record("bad", 1.1, 1, "bad") is None
+
+    monkeypatch.setattr(agent, "_official_attraction", lambda *_args: None)
+    assert agent.attraction_payload(source_info, target_info) is None
 
     relationship_queries = []
     relationship_output = []

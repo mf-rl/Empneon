@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import threading
 import traceback
@@ -722,10 +723,134 @@ def current_location():
     return "unknown"
 
 
+OFFICIAL_ATTRACTION_TRACK_ID = 358555
+WICKEDWHIMS_ATTRACTION = {
+    -2: -1.0,
+    -1: -0.5,
+    0: 0.0,
+    1: 1.0 / 3.0,
+    2: 2.0 / 3.0,
+    3: 1.0,
+}
+
+
+def _attraction_record(source, value, native_value, label):
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(normalized) or normalized < -1.0 or normalized > 1.0:
+        return None
+    return {
+        "value": normalized,
+        "native": {
+            "source": source,
+            "value": native_value,
+            "label": str(label or "unknown"),
+        },
+    }
+
+
+def _wickedwhims_attraction(source_info, target_info):
+    try:
+        from turbolib2.wrappers.sim.sim import TurboSim
+        from wickedwhims.relationships.features.attractiveness.traits.preference import (
+            get_sim_attractiveness_level_towards,
+        )
+
+        level = get_sim_attractiveness_level_towards(
+            TurboSim(getattr(source_info, "sim_id", None)),
+            TurboSim(getattr(target_info, "sim_id", None)),
+        )
+        native_value = int(level)
+        normalized = WICKEDWHIMS_ATTRACTION.get(native_value)
+        if normalized is None:
+            return None
+        return _attraction_record(
+            "wickedwhims",
+            normalized,
+            native_value,
+            getattr(level, "name", None) or str(level),
+        )
+    except Exception:
+        return None
+
+
+def _official_attraction(source_info, target_info):
+    track = None
+    for resource_name in ("RELATIONSHIP_TRACK", "STATISTIC"):
+        try:
+            resource_type = getattr(sims4.resources.Types, resource_name, None)
+            if resource_type is None:
+                continue
+            manager = services.get_instance_manager(resource_type)
+            getter = getattr(manager, "get", None)
+            if callable(getter):
+                track = getter(OFFICIAL_ATTRACTION_TRACK_ID)
+            if track is None:
+                track = getattr(manager, "types", {}).get(
+                    OFFICIAL_ATTRACTION_TRACK_ID
+                )
+            if track is not None:
+                break
+        except Exception:
+            pass
+    if track is None:
+        return None
+    tracker = getattr(source_info, "relationship_tracker", None)
+    target_id = getattr(target_info, "sim_id", None)
+    for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
+        method = getattr(tracker, method_name, None)
+        if not callable(method):
+            continue
+        for target in (target_info, target_id):
+            try:
+                native_value = float(method(target, track))
+            except Exception:
+                continue
+            if not math.isfinite(native_value) or not -100.0 <= native_value <= 100.0:
+                return None
+            return _attraction_record(
+                "sims4_lovestruck",
+                native_value / 100.0,
+                native_value,
+                getattr(track, "__name__", "ATTRACTION_MAIN"),
+            )
+    return None
+
+
+def attraction_payload(source_info, target_info):
+    for reader in (_wickedwhims_attraction, _official_attraction):
+        try:
+            attraction = reader(source_info, target_info)
+        except Exception:
+            attraction = None
+        if attraction is not None:
+            write_marker(
+                "Attraction {} -> {}: {}".format(
+                    getattr(source_info, "sim_id", "unknown"),
+                    getattr(target_info, "sim_id", "unknown"),
+                    attraction["native"]["source"],
+                )
+            )
+            return attraction
+    write_marker(
+        "Attraction {} -> {}: unavailable".format(
+            getattr(source_info, "sim_id", "unknown"),
+            getattr(target_info, "sim_id", "unknown"),
+        )
+    )
+    return None
+
+
 def relationship_payload(source_info, target_info):
     result = {"friendship": 0, "romance": 0, "trust": 50, "resentment": 0}
     if target_info is None:
         return result
+    attraction = attraction_payload(source_info, target_info)
+    if attraction is not None:
+        result["attraction"] = attraction["value"]
+        result["native"] = {"attraction": attraction["native"]}
     tracker = getattr(source_info, "relationship_tracker", None)
     target_id = getattr(target_info, "sim_id", None)
     found_track = False
