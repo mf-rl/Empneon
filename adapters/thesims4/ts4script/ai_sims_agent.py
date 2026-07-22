@@ -386,7 +386,10 @@ def short_trait_name(trait):
 
 
 def raw_enum_text(value):
-    return str(getattr(value, "name", None) or value or "unknown")
+    if value is None:
+        return "unknown"
+    name = getattr(value, "name", None)
+    return str(value if name is None else name)
 
 
 def enum_key(value):

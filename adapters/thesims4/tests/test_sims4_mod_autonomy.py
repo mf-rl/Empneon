@@ -288,6 +288,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert [
         (item["label"], item["id"]) for item in primitive_items
     ] == [(value, value) for value in primitive_values]
+    assert agent.raw_enum_text(0) == "0"
 
     class BrokenBuff:
         @property
