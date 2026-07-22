@@ -1746,6 +1746,7 @@ def submit_empneon_chat(session, message):
         message,
         "pie_menu",
     )
+    payload["conversation_id"] = session.id
     speaker_name = sim_full_name(getattr(actor, "sim_info", actor))
     transcript = "{}\n\n{}: {}".format(session.transcript, speaker_name, message).strip()
     session.transcript = transcript

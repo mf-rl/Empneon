@@ -37,6 +37,58 @@ from empneon.providers.llm import GenerationResult, ModelCapabilities
 from backend import ai_sims_server
 
 
+def test_conversation_id_is_preserved_in_world_event() -> None:
+    event = ai_sims_server.Sims4Adapter(
+        {
+            "speaker": {"id": "karmine"},
+            "listener": {"id": "bernard"},
+            "message": "Hello.",
+            "conversation_id": "social-17",
+        }
+    ).observe()[0]
+
+    assert event.facts["conversation_id"] == "social-17"
+
+
+def test_recent_conversations_are_confirmed_and_session_scoped(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    events = (
+        ("observed", "observed_interaction", "social-17", "Ignored."),
+        ("first", "confirmed_interaction", "social-17", "Hello."),
+        ("second", "confirmed_interaction", "social-17", "Hello."),
+        ("other", "confirmed_interaction", "social-18", "Elsewhere."),
+    )
+    with open_db(database) as conn:
+        for happened_at, (event_id, kind, conversation_id, message) in enumerate(
+            events, start=1
+        ):
+            ai_sims_server.empneon_state.record_observed_event(
+                conn,
+                Event(
+                    json.dumps(
+                        {
+                            "kind": kind,
+                            "conversation_id": conversation_id,
+                            "speaker_id": "karmine",
+                            "listener_id": "bernard",
+                            "message": message,
+                            "dialogue": event_id,
+                        }
+                    ),
+                    ["karmine", "bernard"],
+                    happened_at=happened_at,
+                    id=event_id,
+                ),
+                {"karmine": message, "bernard": message},
+            )
+        turns = ai_sims_server.empneon_state.recent_conversations(
+            conn, "karmine", "bernard", "social-17", limit=6
+        )
+
+    assert [turn["message"] for turn in turns] == ["Hello.", "Hello."]
+    assert all(turn["conversation_id"] == "social-17" for turn in turns)
+
+
 def test_backend_port_is_exclusive() -> None:
     assert ai_sims_server.EmpneonHTTPServer.allow_reuse_address is False
 

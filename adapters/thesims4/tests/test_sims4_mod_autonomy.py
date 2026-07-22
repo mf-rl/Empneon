@@ -21,6 +21,14 @@ def test_empneon_diagnostic_commands_are_registered() -> None:
         assert f'@command("{command}")' in source
 
 
+def test_empneon_social_posts_its_conversation_id() -> None:
+    source = (Path(__file__).parents[1] / "ts4script" / "ai_sims_agent.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'payload["conversation_id"] = session.id' in source
+
+
 def test_build_and_installer_use_empneon_artifact_names() -> None:
     root = Path(__file__).parents[1]
     installer = (root / "install_mod.ps1").read_text(encoding="utf-8")

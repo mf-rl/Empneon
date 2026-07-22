@@ -206,6 +206,9 @@ class Sims4Adapter:
                 facts={
                     "source": str(social_event_data.get("source") or "sims4"),
                     "message": message,
+                    "conversation_id": str(
+                        self._payload.get("conversation_id") or ""
+                    ),
                     "participants": tuple(dict(item) for item in (sim_data, listener_data) if item),
                     "moods": {
                         str(item.get("id") or item.get("name")): item.get("current_mood")

@@ -1832,11 +1832,11 @@ def save_conversation(conversation_id, speaker_id, listener_id, message, respons
         )
 
 
-def recent_conversation(speaker_id, listener_id, limit=None):
+def recent_conversation(speaker_id, listener_id, conversation_id, limit=None):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
     with open_db(CORE_DB_PATH) as conn:
         return empneon_state.recent_conversations(
-            conn, speaker_id, listener_id, limit
+            conn, speaker_id, listener_id, conversation_id, limit
         )
 
 
@@ -2065,7 +2065,8 @@ def chat(payload):
     listener = payload.get("listener") or {}
     speaker_id = sim_id(speaker)
     listener_id = sim_id(listener)
-    conversation_id = str(payload.get("conversation_id") or "{}-{}".format(speaker_id, listener_id))
+    conversation_id = str(payload.get("conversation_id") or uuid.uuid4())
+    payload["conversation_id"] = conversation_id
     with AGENTS.session(speaker, reason="player_interaction", priority=1) as speaker_profile:
         listener_profile = upsert_profile(listener)
         emotions = get_emotion(speaker_id)
@@ -2082,7 +2083,9 @@ def chat(payload):
         )
         summary = {"summary": "; ".join(item["summary"] for item in memories[:4])}
         context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
-        context["conversation"] = recent_conversation(speaker_id, listener_id)
+        context["conversation"] = recent_conversation(
+            speaker_id, listener_id, conversation_id
+        )
         context["speaker_id"] = speaker_id
         context["listener_id"] = listener_id
         adapter = Sims4Adapter(payload)
@@ -2283,6 +2286,7 @@ def persist_core_event(conn, event):
             "kind": "observed_interaction",
             "type": event.type,
             "source": event.facts.get("source") or "sims4",
+            "conversation_id": str(event.facts.get("conversation_id") or ""),
             "message": message,
             "summary": message or event.type,
             "agent_state": (

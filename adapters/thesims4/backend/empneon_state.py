@@ -500,18 +500,28 @@ def record_conversation(
 
 
 def recent_conversations(
-    conn: sqlite3.Connection, speaker_id: str, listener_id: str, limit: int = 6
+    conn: sqlite3.Connection,
+    speaker_id: str,
+    listener_id: str,
+    conversation_id: str,
+    limit: int = 6,
 ) -> list[dict[str, object]]:
     pair = {str(speaker_id), str(listener_id)}
+    limit = max(0, int(limit))
+    if limit == 0:
+        return []
     rows = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(speaker_id)):
         data = _event_data(event.description)
-        if data.get("kind") not in ("conversation", "confirmed_interaction"):
+        if data.get("kind") != "confirmed_interaction":
+            continue
+        if str(data.get("conversation_id") or "") != str(conversation_id):
             continue
         if {str(data.get("speaker_id") or ""), str(data.get("listener_id") or "")} != pair:
             continue
         rows.append(
             {
+                "conversation_id": str(conversation_id),
                 "speaker_id": str(data.get("speaker_id") or ""),
                 "listener_id": str(data.get("listener_id") or ""),
                 "message": str(data.get("message") or ""),
@@ -584,11 +594,12 @@ def record_delivered_experience(
         summary = " ".join(value for value in (message, dialogue) if value)
     payload = {
         "kind": "confirmed_interaction",
+        "conversation_id": str(source.get("conversation_id") or ""),
         "speaker_id": proposal.decision.actor_id,
         "listener_id": proposal.decision.target_id or "",
         "message": message,
         "dialogue": dialogue,
-        "summary": summary,
+        "summary": " ".join(value for value in (message, dialogue) if value),
     }
     participants = [proposal.decision.actor_id]
     if proposal.decision.target_id:
