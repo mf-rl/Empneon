@@ -470,36 +470,6 @@ def add_experience(
     )
 
 
-def record_conversation(
-    conn: sqlite3.Connection,
-    conversation_id: str,
-    speaker_id: str,
-    listener_id: str,
-    message: str,
-    response: Mapping[str, object],
-) -> Event:
-    dialogue = str(response.get("dialogue") or "")
-    payload = {
-        "kind": "conversation",
-        "conversation_id": str(conversation_id),
-        "speaker_id": str(speaker_id),
-        "listener_id": str(listener_id),
-        "message": str(message),
-        "dialogue": dialogue,
-        "summary": "{} {}".format(str(message), dialogue).strip(),
-    }
-    participants = [str(speaker_id), str(listener_id)]
-    event = Event(
-        json.dumps(payload, ensure_ascii=True, sort_keys=True),
-        participants,
-    )
-    return record_observed_event(
-        conn,
-        event,
-        {participant: str(payload["summary"]) for participant in participants},
-    )
-
-
 def recent_conversations(
     conn: sqlite3.Connection,
     speaker_id: str,
@@ -578,7 +548,7 @@ _DURABLE_FACT_CUE = re.compile(
     re.IGNORECASE,
 )
 _RECALL_CUE = re.compile(
-    r"\b(?:remember|recall|what did|when did|where did|who did|first time|last time)\b",
+    r"\b(?:remember|recall|(?:what|when|where|who) (?:did|is|was)|first time|last time)\b",
     re.IGNORECASE,
 )
 _RECALL_STOPWORDS = frozenset(

@@ -588,43 +588,33 @@ def test_openrouter_and_baseline_defaults_are_configured() -> None:
     }
 
 
-def test_recent_conversation_is_added_to_prompt(monkeypatch, tmp_path) -> None:
-    connection = sqlite3.connect(":memory:")
-    connection.row_factory = sqlite3.Row
-    ai_sims_server.init_db(connection)
-    monkeypatch.setattr(ai_sims_server, "connect_db", lambda: connection)
-    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", str(tmp_path / "core.db"))
-    monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "legacy.db"))
-    monkeypatch.setattr(ai_sims_server.time, "time_ns", lambda: 1)
-    ai_sims_server.save_conversation(
-        "travis-robin",
-        "travis",
-        "robin",
-        "Let's meet for pizza tomorrow at 7 PM.",
-        {"dialogue": "Pizza sounds good, let's plan it."},
-    )
-    ai_sims_server.save_conversation(
-        "travis-robin",
-        "travis",
-        "robin",
-        "When and why did we agree to meet?",
-        {"dialogue": "Pizza sounds good. Let's plan it."},
-    )
-    with open_db(tmp_path / "core.db") as conn:
-        assert DocumentMemoryStore(conn).list("thesims4.conversation") == []
-
+def test_actor_prompt_separates_recalled_history_from_current_session() -> None:
     context = ai_sims_server.build_context(
         {"speaker": {}, "listener": {}, "message": "When are we meeting?"},
         {"name": "Travis"},
         {"name": "Robin"},
         {},
         {},
-        [],
-        {},
+        [
+            {
+                "speaker_id": "travis",
+                "listener_id": "robin",
+                "message": "Let's meet for pizza tomorrow at 7 PM.",
+                "dialogue": "Pizza sounds good, let's plan it.",
+                "facts": [],
+            }
+        ],
     )
     context.update(
         {
-            "conversation": ai_sims_server.recent_conversation("travis", "robin"),
+            "conversation": [
+                {
+                    "speaker_id": "travis",
+                    "listener_id": "robin",
+                    "message": "How has your day been?",
+                    "dialogue": "Busy, but good.",
+                }
+            ],
             "speaker_id": "travis",
             "listener_id": "robin",
         }
@@ -636,16 +626,51 @@ def test_recent_conversation_is_added_to_prompt(monkeypatch, tmp_path) -> None:
 
     assert "Robin: Let's meet for pizza tomorrow at 7 PM." in prompt
     assert "Travis: Pizza sounds good, let's plan it." in prompt
-    assert "Pizza sounds good. Let's plan it." not in prompt
+    assert "Robin: How has your day been?" in prompt
+    assert "Travis: Busy, but good." in prompt
+    assert "Recalled long-term history:" in prompt
+    assert "Current Empneon Social:" in prompt
+    assert "Memory summary:" not in prompt
+    assert "Relevant memories:" not in prompt
+    assert "obsolete summary" not in prompt
     assert "The Speaker's earlier generated replies" in prompt
     assert "When asked for an unsupported fact, do not guess" in prompt
     assert "25 to 60 words" in ai_sims_server.SYSTEM_PROMPT
     assert "Never invent a past event" in ai_sims_server.SYSTEM_PROMPT
-    assert (
-        "preserve concrete facts supplied by the player exactly"
-        in ai_sims_server.SYSTEM_PROMPT
+    assert "attributed statements" in ai_sims_server.SYSTEM_PROMPT
+    assert prompt.index("Current Empneon Social") < prompt.index("Player says")
+
+
+def test_current_session_keeps_duplicate_inputs_and_only_six_latest_turns() -> None:
+    payload = {"speaker": {}, "listener": {}, "message": "Again?"}
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
     )
-    assert prompt.index("Recent conversation") < prompt.index("Player says")
+    context.update(
+        speaker_id="karmine",
+        listener_id="bernard",
+        conversation=[
+            {
+                "speaker_id": "karmine",
+                "listener_id": "bernard",
+                "message": "Again?" if index in (5, 6) else f"Message {index}",
+                "dialogue": f"Reply {index}",
+            }
+            for index in range(7)
+        ],
+    )
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert "Message 0" not in prompt
+    assert "Reply 1" in prompt
+    assert prompt.count("Bernard: Again?") == 2
+    assert "Reply 6" in prompt
 
 
 def test_both_actor_states_are_grounded_in_dialogue_prompt() -> None:
@@ -675,7 +700,6 @@ def test_both_actor_states_are_grounded_in_dialogue_prompt() -> None:
         {},
         {},
         [],
-        {},
     )
     context.update(
         conversation=[], speaker_id="karmine", listener_id="bernard"
@@ -755,7 +779,6 @@ def test_identity_is_grounded_in_dialogue_prompt() -> None:
         {},
         {},
         [],
-        {},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -801,7 +824,6 @@ def test_payload_identity_traits_override_stale_profile_traits_in_role_lines() -
         {},
         {},
         [],
-        {},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -830,7 +852,6 @@ def test_prompt_only_includes_advertised_response_categories() -> None:
         {},
         {},
         [],
-        {},
     )
     context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
 
@@ -904,7 +925,6 @@ def test_valid_model_reply_is_not_replaced_for_omitting_a_critical_need(
         {},
         {"current_mood": "uncomfortable"},
         [],
-        {},
     )
     context.update(
         conversation=[], speaker_id="karmine", listener_id="bernard"
@@ -935,8 +955,14 @@ def test_dialogue_fallback_refuses_unsupported_fact(monkeypatch) -> None:
         {"name": "Mortimer"},
         {},
         {},
-        [{"summary": "We talked about pizza yesterday."}],
-        {"summary": "We talked about pizza yesterday."},
+        [
+            {
+                "speaker_id": "bella",
+                "listener_id": "mortimer",
+                "message": "We talked about pizza yesterday.",
+                "dialogue": "",
+            }
+        ],
     )
     context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
 
@@ -960,7 +986,6 @@ def test_provider_failure_fallback_stays_on_current_topic_despite_need() -> None
         {},
         {},
         [],
-        {},
     )
     context.update(
         conversation=[], speaker_id="karmine", listener_id="bernard"
@@ -982,8 +1007,14 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
         {"name": "Bernard"},
         {},
         {},
-        [{"summary": "PRIVATE-GARDEN-731 is under the blue bench"}],
-        {"summary": "PRIVATE-GARDEN-731 is under the blue bench"},
+        [
+            {
+                "speaker_id": "karmine",
+                "listener_id": "bernard",
+                "message": "PRIVATE-GARDEN-731 is under the blue bench",
+                "dialogue": "",
+            }
+        ],
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1132,7 +1163,6 @@ def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
         {},
         {},
         [],
-        {"summary": ""},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
     message = (
@@ -1276,7 +1306,6 @@ def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
         {},
         {},
         [],
-        {"summary": ""},
     )
     payload = {
         "message": "I would love to take you on a date sometime.",
@@ -1376,7 +1405,6 @@ def test_repetition_retry_keeps_history_and_requests_new_direction(monkeypatch) 
         {},
         {},
         [],
-        {"summary": ""},
     )
     context.update(
         speaker_id="karmine",
@@ -1433,7 +1461,6 @@ def test_current_message_mirror_retries_and_returns_distinct_response(monkeypatc
         {},
         {},
         [],
-        {"summary": ""},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1472,7 +1499,6 @@ def test_persistent_current_message_mirror_uses_distinct_fallback(monkeypatch) -
         {},
         {},
         [],
-        {"summary": ""},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1500,7 +1526,6 @@ def test_mirroring_reasoning_fallback_uses_grounded_neutral_dialogue(monkeypatch
         {},
         {},
         [],
-        {"summary": ""},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1712,7 +1737,6 @@ def test_prompt_separates_incoming_category_from_state_grounded_response() -> No
         {"friendship": 16, "romance": 0, "trust": 60, "attraction": 0},
         {},
         [],
-        {},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1776,7 +1800,7 @@ def test_category_contradiction_retries_once(monkeypatch) -> None:
         "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
     }
     context = ai_sims_server.build_context(
-        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, [], {}
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1801,7 +1825,7 @@ def test_persistent_category_contradiction_is_dialogue_only(monkeypatch) -> None
         "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
     }
     context = ai_sims_server.build_context(
-        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, [], {}
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1824,7 +1848,7 @@ def test_no_loaded_social_category_skips_provider(monkeypatch) -> None:
         "available_response_categories": [],
     }
     context = ai_sims_server.build_context(
-        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, [], {}
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
@@ -1884,7 +1908,6 @@ def test_romantic_compliment_does_not_require_invitation_consent_shape() -> None
         {},
         {},
         [],
-        {"summary": ""},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
     response = ai_sims_server.normalize_response(
@@ -1910,7 +1933,6 @@ def test_reasoning_fallback_responds_relevantly_to_romantic_compliment() -> None
         {},
         {},
         [],
-        {"summary": ""},
     )
 
     response = ai_sims_server.reasoning_fallback_response(
@@ -1935,8 +1957,14 @@ def test_romantic_invitation_fallback_does_not_recall_an_earlier_player_message(
         {"name": "Bernard"},
         {},
         {},
-        [{"summary": previous_message}],
-        {"summary": previous_message},
+        [
+            {
+                "speaker_id": "karmine",
+                "listener_id": "bernard",
+                "message": previous_message,
+                "dialogue": "",
+            }
+        ],
     )
 
     response = ai_sims_server.reasoning_fallback_response(
@@ -1958,7 +1986,6 @@ def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
         {},
         {},
         [],
-        {"summary": ""},
     )
     messages = (
         ("You are very nice. Let's be friends!", "friendly"),
@@ -1989,8 +2016,14 @@ def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -
         {"name": "Bernard"},
         {},
         {},
-        [{"summary": "PRIVATE-GARDEN-731 is under the blue bench"}],
-        {"summary": "PRIVATE-GARDEN-731 is under the blue bench"},
+        [
+            {
+                "speaker_id": "karmine",
+                "listener_id": "bernard",
+                "message": "PRIVATE-GARDEN-731 is under the blue bench",
+                "dialogue": "",
+            }
+        ],
     )
     recall = ai_sims_server.reasoning_fallback_response(
         {"message": "Where is the garden code item?"}, context
@@ -2128,7 +2161,11 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     )
     with open_db(core_db) as conn:
         confirmed = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
-    assert [item["statement"] for item in confirmed["beliefs"]] == [
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "bella", "mortimer", "Where is PRIVATE-GARDEN-731?"
+        )
+    assert confirmed["beliefs"] == []
+    assert [item["message"] for item in recalled] == [
         "PRIVATE-GARDEN-731 is under the blue bench."
     ]
     assert len(confirmed["accessible_memories"]) == 1
@@ -2157,9 +2194,8 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     )
     with open_db(core_db) as conn:
         after_question = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
-    assert [item["statement"] for item in after_question["beliefs"]] == [
-        "PRIVATE-GARDEN-731 is under the blue bench."
-    ]
+    assert after_question["beliefs"] == []
+    assert len(after_question["accessible_memories"]) == 2
 
 
 def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
@@ -2488,7 +2524,7 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
     assert json.loads(observed.description)["agent_state"]["agent_id"] == "bella"
 
 
-def test_generated_memory_is_episodic_only_after_game_confirmation(
+def test_confirmed_exchange_ignores_generated_memory_summary(
     tmp_path, monkeypatch
 ) -> None:
     core_db = str(tmp_path / "core.sqlite3")
@@ -2535,7 +2571,9 @@ def test_generated_memory_is_episodic_only_after_game_confirmation(
         after = ai_sims_server.empneon_state.relevant_memories(
             conn, "bella", "greeted Mortimer"
         )
-    assert "Bella greeted Mortimer." in {item["summary"] for item in after}
+    summaries = {item["summary"] for item in after}
+    assert "Bella greeted Mortimer." not in summaries
+    assert "Hello Hello." in summaries
 
 
 def test_dialogue_delivery_records_experience_and_empneon_trust_once(
@@ -2836,7 +2874,6 @@ def test_prompt_explains_directed_attraction_without_implying_consent() -> None:
         {"friendship": 14, "romance": 0, "trust": 50, "attraction": 2 / 3},
         {},
         [],
-        {},
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 

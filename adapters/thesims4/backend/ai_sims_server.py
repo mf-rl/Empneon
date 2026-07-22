@@ -33,7 +33,7 @@ from empneon.core.contracts import (
     StateDelta,
 )
 from empneon.core.memory.documents import DocumentMemoryStore
-from empneon.core.memory.episodic import EpisodicMemoryStore, Event
+from empneon.core.memory.episodic import Event
 from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
@@ -203,7 +203,7 @@ MEMORY_LOG = logging.getLogger("ai_sims.memory")
 
 
 SYSTEM_PROMPT = """You roleplay one The Sims 4 character.
-Stay grounded in the Sim profile, relationship, current mood, and memories.
+Stay grounded in the Sim profile, relationship, current mood, and recalled history.
 Return one valid JSON object only. No markdown. No schema explanation. No placeholders.
 Do not write a thinking process, analysis, reasoning, or chain-of-thought.
 The first character of your response must be {.
@@ -211,10 +211,8 @@ Normally write 2 to 4 natural sentences totaling about 25 to 60 words. Use a sho
 when the situation genuinely calls for one. Make the dialogue reflect the Sim's personality,
 emotion, and relationship instead of using generic filler.
 Never invent a past event, shared fact, codeword, promise, plan, date, or name. For factual recall,
-use only player-provided facts and saved memories. If the requested fact is absent, say naturally
-and in character that the Sim does not know or remember it.
-In memory.summary, preserve concrete facts supplied by the player exactly. Never store a guess or
-a fact introduced only by the Sim's generated reply.
+use only the attributed statements and confirmed exchanges supplied in the request. If the
+requested fact is absent, say naturally and in character that the Sim does not know or remember it.
 Use this exact shape with concrete values:
 {
   "dialogue": "expressive in-character reply",
@@ -222,11 +220,7 @@ Use this exact shape with concrete values:
   "intent": "accept_playfully",
   "response_category": "romance",
   "tone_tags": ["playful", "hesitant"],
-  "trust_delta": 1,
-  "memory": {
-    "importance": 0.4,
-    "summary": "One concrete event memory."
-  }
+  "trust_delta": 1
 }
 
 Choose one response category from the request's available common social categories. The response
@@ -255,15 +249,6 @@ DIALOGUE_SCHEMA = {
             "uniqueItems": True,
         },
         "trust_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-        "memory": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "importance": {"type": "number", "minimum": 0, "maximum": 1},
-                "summary": {"type": "string"},
-            },
-            "required": ["importance", "summary"],
-        },
     },
     "required": [
         "dialogue",
@@ -272,7 +257,6 @@ DIALOGUE_SCHEMA = {
         "response_category",
         "tone_tags",
         "trust_delta",
-        "memory",
     ],
 }
 
@@ -844,21 +828,6 @@ def update_emotion_from_response(sim_id_value, label):
     return save_emotion(sim_id_value, emotion)
 
 
-def recent_memories(
-    speaker_id, listener_id, limit=None, topic="", emotion="", location="", query=""
-):
-    limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
-    return [
-        item
-        for item in memories_for_pair(
-            speaker_id, listener_id, limit=10_000, query=query or topic
-        )
-        if (not topic or topic.casefold() in str(item.get("summary") or "").casefold())
-        and (not emotion or emotion.casefold() in str(item.get("summary") or "").casefold())
-        and (not location or location.casefold() in str(item.get("location") or "").casefold())
-    ][:limit]
-
-
 def memories_for_sim(speaker_id, limit=10):
     with open_db(CORE_DB_PATH) as conn:
         return empneon_state.relevant_memories(conn, speaker_id, "", int(limit))
@@ -881,35 +850,6 @@ def memory_summary(sim_id_value, target_id_value):
         "summary": "; ".join(item["summary"] for item in memories),
         "updated_at": max((item.get("created_at", 0) for item in memories), default=0),
     }
-
-
-def save_memory_summary(sim_id_value, target_id_value, summary):
-    add_memory(sim_id_value, target_id_value, summary, 1.0, category="summary")
-
-
-def maybe_summarize_memories(sim_id_value, target_id_value):
-    every = int(CONFIG.get("memory", {}).get("summary_every", 10) or 10)
-    limit = int(CONFIG.get("memory", {}).get("summary_limit", 30) or 30)
-    count = len(memories_for_pair(sim_id_value, target_id_value, limit=10_000))
-    if count < every or count % every != 0:
-        return memory_summary(sim_id_value, target_id_value)
-    memories = memories_for_pair(sim_id_value, target_id_value, limit=limit)
-    lines = "\n".join("- " + item["summary"] for item in memories)
-    prompt = "Summarize these Sims memories in two concise sentences.\n\n{}".format(lines)
-    try:
-        summary = llm_chat(
-            [
-                {"role": "system", "content": "You compress Sims relationship memories. Return plain text only."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
-            task="small",
-        ).strip()
-    except Exception as exc:
-        MEMORY_LOG.warning("summary LLM failed: %s", exc)
-        summary = "; ".join(item["summary"] for item in memories[:4])
-    save_memory_summary(sim_id_value, target_id_value, summary[:1000])
-    return memory_summary(sim_id_value, target_id_value)
 
 
 def memories_for_pair(sim_id_value, target_id_value, limit=20, query=""):
@@ -1295,7 +1235,14 @@ def _actor_snapshot(payload, role):
     return dataclasses.asdict(Sims4Adapter(actor_payload).agent_state())
 
 
-def build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary):
+def build_context(
+    payload,
+    speaker_profile,
+    listener_profile,
+    relationship,
+    emotions,
+    recalled_memories,
+):
     speaker = payload.get("speaker") or {}
     listener = payload.get("listener") or {}
     speaker_identity = speaker.get("identity") or {}
@@ -1307,8 +1254,7 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
         "listener": listener_profile,
         "relationship": relationship,
         "emotions": emotions,
-        "memories": memories,
-        "summary": summary.get("summary", "") if isinstance(summary, dict) else "",
+        "recalled_memories": recalled_memories,
         "location": payload.get("location") or "unknown",
         "nearby_sims": payload.get("nearby_sims") or [],
         "message": payload.get("message") or "",
@@ -1337,12 +1283,46 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
     }
 
 
+def _exchange_text(turns, context, *, limit, max_chars):
+    speaker_name = context["speaker"].get("name") or "Unknown Sim"
+    listener_name = context["listener"].get("name") or "Unknown Sim"
+    blocks = []
+    for turn in list(turns or [])[-limit:]:
+        if turn.get("speaker_id") == context.get("speaker_id"):
+            asker, respondent = listener_name, speaker_name
+        else:
+            asker, respondent = speaker_name, listener_name
+        blocks.append(
+            "{}: {}\n{}: {}".format(
+                asker,
+                turn.get("message") or "",
+                respondent,
+                turn.get("dialogue") or "",
+            )
+        )
+    selected = []
+    used = 0
+    for block in reversed(blocks):
+        cost = len(block) + 1
+        if selected and used + cost > max_chars:
+            break
+        selected.append(block[:max_chars] if not selected else block)
+        used += cost
+    return "\n".join(reversed(selected)) or "None yet"
+
+
+def _recalled_memory_text(context):
+    return _exchange_text(
+        context.get("recalled_memories"), context, limit=3, max_chars=3000
+    )
+
+
 def build_chat_prompt(payload, context):
     speaker_profile = context["speaker"]
     listener_profile = context["listener"]
     relationship = context["relationship"]
     emotions = context["emotions"]
-    memory_lines = "\n".join("- " + item["summary"] for item in context["memories"]) or "- None yet"
+    recalled_history = _recalled_memory_text(context)
     nearby = ", ".join(sim_name(item) if isinstance(item, dict) else str(item) for item in context["nearby_sims"]) or "none"
     game_state = context["game_state"]
     household = game_state["household"]
@@ -1356,24 +1336,18 @@ def build_chat_prompt(payload, context):
         str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
         for item in context["listener_traits"]
     ) or "unknown"
-    conversation_lines = []
-    current_message = " ".join(str(payload.get("message") or "").casefold().split())
-    for turn in context.get("conversation") or []:
-        if current_message == " ".join(str(turn["message"] or "").casefold().split()):
-            continue
-        if turn["speaker_id"] == context["speaker_id"]:
-            asker = listener_profile.get("name")
-            respondent = speaker_profile.get("name")
-        else:
-            asker = speaker_profile.get("name")
-            respondent = listener_profile.get("name")
-        conversation_lines.extend(
-            (
-                "{}: {}".format(asker, turn["message"]),
-                "{}: {}".format(respondent, turn["dialogue"]),
-            )
-        )
-    recent_conversation = "\n".join(conversation_lines) or "None yet"
+    context_budget = max(
+        512,
+        (int(context.get("max_context_tokens") or 4096)
+         - int(context.get("max_completion_tokens") or 350))
+        * 2,
+    )
+    recent_conversation = _exchange_text(
+        context.get("conversation"),
+        context,
+        limit=6,
+        max_chars=min(6000, context_budget),
+    )
     categories = available_response_categories(
         payload.get("available_response_categories")
     )
@@ -1420,11 +1394,8 @@ Relationship:
 Current emotion:
 {emotions}
 
-Memory summary:
-{summary}
-
-Relevant memories:
-{memories}
+Recalled long-term history:
+{recalled_history}
 
 Location:
 {location}
@@ -1440,7 +1411,7 @@ not select additional actions.
 The Speaker may accept, reject, joke, retaliate, or deflect according to both actor states.
 Do not return friendship, romance, attraction, or action fields; the adapter and game own them.
 
-Recent conversation:
+Current Empneon Social:
 {recent_conversation}
 
 Grounding rules:
@@ -1449,7 +1420,7 @@ Grounding rules:
 - Advance the conversation with a new reaction, detail, question, or decision instead of reusing
   an earlier opening or sentence frame.
 - Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
-- Combine traits with current mood, needs, relationship, memories, and the current message.
+- Combine traits with current mood, needs, relationship, recalled history, and the current message.
 - Do not merely name or caricature traits.
 - Relationship attraction, when present, is the Speaker's attraction toward the Listener:
   -1 is strong aversion, 0 is neutral, and 1 is strong attraction.
@@ -1457,22 +1428,21 @@ Grounding rules:
   it does not imply consent or require flirtation and never overrides identity, mood, memory, history, or the message.
 - Use gendered relationship terms only when supported by supplied identity.
 - Do not guess gender or age when identity is unknown.
-- A fact about shared history is supported only when it appears in Relevant memories, Memory
-  summary, or something the Listener previously said.
-- The Speaker's earlier generated replies provide conversational tone, but are not evidence that
-  a fact is true.
+- A fact about shared history is supported only when it appears in Recalled long-term history or
+  something the Listener said in the current Empneon Social.
+- Treat every recalled statement as attributed to the Sim whose name prefixes it; do not transfer
+  one actor's traits, preferences, promises, or identity to the other actor.
+- The Speaker's earlier generated replies in the current Empneon Social provide conversational
+  tone, but are not evidence that a fact is true.
 - When asked for an unsupported fact, do not guess. Say naturally that you do not know or do not
   remember.
-- When the Listener supplies or corrects a concrete fact, use its exact value and preserve it in
-  memory.summary.
+- When the Listener supplies or corrects a concrete fact, use its exact value.
 - When asked about a supported plan or agreement, answer with the exact activity, date, and time
   available in the evidence.
 - Needs are context, not required topics. A satisfied need is normally silent; a low need may
   motivate a gentle suggestion; a critical need should strongly influence urgency and may redirect
   the conversation, but the Speaker may still continue the current topic.
 - Express needs naturally in-world. Do not recite need names, status labels, or numeric values.
-- memory.summary must describe the concrete exchange; never use placeholders such as "None yet"
-  or "One concrete event memory."
 
 Player says:
 {message}
@@ -1499,8 +1469,7 @@ Player says:
         relationship=dumps(relationship),
         emotions=dumps(emotions),
         recent_conversation=recent_conversation,
-        summary=context["summary"] or "None yet",
-        memories=memory_lines,
+        recalled_history=recalled_history,
         location=context["location"],
         nearby=nearby,
         incoming_category=payload.get("incoming_category") or "friendly",
@@ -1819,26 +1788,8 @@ def _memory_supports_question(message, context):
         for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(message).casefold())
         if len(term) >= 4 and term not in ignored
     }
-    evidence = " ".join(
-        [str(context.get("summary") or "")]
-        + [str(item.get("summary") or "") for item in context.get("memories") or []]
-    ).casefold()
+    evidence = _recalled_memory_text(context).casefold()
     return bool(terms and any(term in evidence for term in terms))
-
-def save_conversation(conversation_id, speaker_id, listener_id, message, response):
-    with open_db(CORE_DB_PATH) as conn:
-        empneon_state.record_conversation(
-            conn, conversation_id, speaker_id, listener_id, str(message or ""), response
-        )
-
-
-def recent_conversation(speaker_id, listener_id, conversation_id, limit=None):
-    limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
-    with open_db(CORE_DB_PATH) as conn:
-        return empneon_state.recent_conversations(
-            conn, speaker_id, listener_id, conversation_id, limit
-        )
-
 
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
@@ -1861,12 +1812,11 @@ def reasoning_fallback_response(payload, context):
         trust_delta = 0
     elif "?" in message and _memory_supports_question(message, context):
         candidates = [
-            str(item.get("summary") or "").strip()
-            for item in context.get("memories") or []
-            if str(item.get("summary") or "").strip()
+            str(item.get(field) or "").strip()
+            for item in context.get("recalled_memories") or []
+            for field in ("message", "dialogue")
+            if str(item.get(field) or "").strip()
         ]
-        if not candidates and str(context.get("summary") or "").strip():
-            candidates.append(str(context["summary"]).strip())
         dialogue = next((item for item in candidates if not item.endswith("?")), candidates[0])
         emotion = "confident"
         intent = "recall"
@@ -2073,21 +2023,35 @@ def chat(payload):
         if emotions.get("current_mood") in ("neutral", "unknown") and speaker.get("current_mood"):
             emotions = save_emotion(speaker_id, default_emotion(speaker.get("current_mood")))
         relationship = relationship_with_payload(speaker_id, listener_id, payload.get("relationship") or {})
-        memories = recent_memories(
-            speaker_id,
-            listener_id,
-            topic=payload.get("topic") or "",
-            emotion=payload.get("emotion") or "",
-            location=payload.get("location") or "",
-            query=payload.get("message") or "",
+        with open_db(CORE_DB_PATH) as conn:
+            recalled = empneon_state.recalled_memories(
+                conn,
+                speaker_id,
+                listener_id,
+                payload.get("message") or "",
+                limit=3,
+            )
+            conversation = empneon_state.recent_conversations(
+                conn, speaker_id, listener_id, conversation_id, limit=6
+            )
+        model_config = task_model_config("large")
+        context = build_context(
+            payload,
+            speaker_profile,
+            listener_profile,
+            relationship,
+            emotions,
+            recalled,
         )
-        summary = {"summary": "; ".join(item["summary"] for item in memories[:4])}
-        context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
-        context["conversation"] = recent_conversation(
-            speaker_id, listener_id, conversation_id
-        )
+        context["conversation"] = conversation
         context["speaker_id"] = speaker_id
         context["listener_id"] = listener_id
+        context["max_context_tokens"] = int(
+            model_config.get("context_tokens") or 4096
+        )
+        context["max_completion_tokens"] = int(
+            model_config.get("max_tokens") or 350
+        )
         adapter = Sims4Adapter(payload)
         event = adapter.observe()[0]
         numeric_emotions = [
@@ -2097,11 +2061,10 @@ def chat(payload):
         ]
         urgency, preferred_clod, deeper_value = cognition_priority(
             payload,
-            novel=not memories,
+            novel=not conversation,
             emotion_intensity=max(numeric_emotions, default=0.0),
             goal_relevant=bool(speaker_profile.get("goals")),
         )
-        model_config = task_model_config("large")
         request = CognitiveRequest(
             speaker_id,
             preferred_clod,
@@ -2194,10 +2157,8 @@ def chat(payload):
         result["animation"] = action
     relationship_state = get_relationship(speaker_id, listener_id)
     emotion_state = get_emotion(speaker_id)
-    summary = memory_summary(speaker_id, listener_id)
     result["relationship_state"] = relationship_state
     result["emotion_state"] = emotion_state
-    result["memory_summary"] = summary
     result["agent"] = {"id": speaker_id, "state": "dormant"}
     result["decision_id"] = decision.id
     result["action_status"] = "proposed"
