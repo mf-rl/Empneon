@@ -120,7 +120,10 @@ coexistence, and persistence pass on a clean database.
 **Current status (2026-07-21): PARTIAL** — Automated coverage now includes the previously rejected
 accepted-sounding Karmine date reply, request-scoped action metadata, delivered-turn confirmation,
 held multi-turn queue ordering, and late-result suppression after cancellation. Live source-build
-evidence is still required; Test 5 is not passed.
+evidence is still required. Automated coverage also preserves the Sims `-100..100` motive scale,
+maps it to common `satisfied`/`low`/`critical` states, prompts with both actors' normalized current
+state, accepts valid model dialogue that omits a need, and retains recent dialogue during
+repetition retries. Test 5 is not passed.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
   start the source backend as documented in `setup.md`.
@@ -148,6 +151,11 @@ evidence is still required; Test 5 is not passed.
   wording for male Bernard, never `girlfriend`; the reply respects Karmine's reported life stage
   and traits without reciting trait labels; and exact facts such as `Saturday` remain usable when
   the surrounding response is distinct.
+- Focused need/continuity assertions: capture Karmine's and Bernard's visible mood/need state before
+  the conversation. Green needs do not force a need report; orange/red needs may influence natural
+  wording without exposing numeric values or replacing a valid model reply. Continue enough turns
+  to confirm replies introduce a new reaction, detail, question, or decision instead of recycling
+  earlier inputs or replies.
 - Focused queue/state assertions: held Empneon Social remains actionless and does not deadlock;
   autonomous decisions still retain native actions; Sims friendship/romance changes come only
   from game-observed behavior; and Empneon trust changes only after dialogue is displayed.
