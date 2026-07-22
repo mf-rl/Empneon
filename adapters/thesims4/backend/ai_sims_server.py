@@ -1477,16 +1477,41 @@ def _identity_gender(identity):
     return "unknown"
 
 
-def _direct_partner_terms(dialogue):
-    unquoted = re.sub(
+def _mask_quoted_dialogue(dialogue):
+    masked = re.sub(
         r'"[^"]*"|“[^”]*”|‘[^’]*’',
         " ",
         str(dialogue or "").casefold(),
     )
+    characters = list(masked)
+    opening = None
+    for index, character in enumerate(characters):
+        if character != "'":
+            continue
+        previous = characters[index - 1] if index else " "
+        following = characters[index + 1] if index + 1 < len(characters) else " "
+        if opening is None and not previous.isalnum():
+            opening = index
+        elif opening is not None and not following.isalnum():
+            characters[opening : index + 1] = " " * (index + 1 - opening)
+            opening = None
+    return "".join(characters)
+
+
+def _direct_partner_terms(dialogue):
+    unquoted = _mask_quoted_dialogue(dialogue)
     direct = re.findall(
-        r"\b(?:(?:will|would|could|can)\s+you(?:\s+[a-z']+){0,3}\s+(?:my|a)|"
-        r"you(?:\s+[a-z']+){0,4}\s+(?:my|a)|let['’]?s\s+be)\s+"
+        r"\b(?:(?:will|would|could|can)\s+you\s+"
+        r"(?:(?:like|want)\s+to\s+)?(?:be|become)|"
+        r"you(?:'re|\s+(?:are|were|will\s+be|would\s+be|could\s+be|"
+        r"can\s+be|have(?:\s+always)?\s+been))|"
+        r"i\s+(?:want|would\s+like)\s+you\s+to\s+(?:be|become))\s+"
+        r"(?:my|a)\s+"
         r"(boyfriend|girlfriend)s?\b",
+        unquoted,
+    )
+    collective = re.findall(
+        r"\blet['’]?s\s+be\s+(boyfriend|girlfriend)s?\b",
         unquoted,
     )
     imperative = re.findall(
@@ -1494,7 +1519,7 @@ def _direct_partner_terms(dialogue):
         r"(boyfriend|girlfriend)s?\b",
         unquoted,
     )
-    return direct + imperative
+    return direct + collective + imperative
 
 
 def response_has_role_confusion(response, context):

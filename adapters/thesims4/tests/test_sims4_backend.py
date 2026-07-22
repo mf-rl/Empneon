@@ -1231,6 +1231,14 @@ def test_role_confusion_grounds_direct_partner_terms_to_listener_gender() -> Non
         {"dialogue": "Would you be my girlfriend?"},
         unknown,
     )
+    assert ai_sims_server.response_has_role_confusion(
+        {"dialogue": "You're my girlfriend."},
+        male,
+    )
+    assert ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Let's be girlfriends."},
+        male,
+    )
     assert not ai_sims_server.response_has_role_confusion(
         {"dialogue": "Would you like to be my boyfriend?"},
         male,
@@ -1256,6 +1264,28 @@ def test_role_confusion_grounds_direct_partner_terms_to_listener_gender() -> Non
             )
         },
         male,
+    )
+
+
+@pytest.mark.parametrize(
+    "dialogue",
+    [
+        "She asked, 'Would you be my girlfriend?' I said I needed time.",
+        "You said that she was my girlfriend.",
+    ],
+)
+def test_role_confusion_preserves_quoted_and_reported_relationship_history(
+    dialogue: str,
+) -> None:
+    context = {
+        "speaker": {"name": "Karmine"},
+        "listener": {"name": "Bernard"},
+        "listener_identity": {"gender": {"key": "MALE", "label": "Male"}},
+    }
+
+    assert not ai_sims_server.response_has_role_confusion(
+        {"dialogue": dialogue},
+        context,
     )
 
 

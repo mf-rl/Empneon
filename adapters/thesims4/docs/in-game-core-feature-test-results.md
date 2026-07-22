@@ -250,8 +250,10 @@ dialogue behavior and a positive native romance consequence in game.
   dialogue.
 - **Status remains PARTIAL.** No 2026-07-21 in-game source-build result is recorded. Run the focused
   Test 5 procedure, including the manual-cancel repetition, and append the exact player message,
-  displayed response, relationship output before/after, decision ID, native finishing result, and
-  session continued/closed state before marking this test passed.
+  displayed response, relationship output before/after, held-session decision ID, confirmation
+  that no held native action ran, and session continued/closed state. Separately append an
+  autonomous decision ID, selected native action, and finishing result before marking this test
+  passed.
 
 **Automated/source-install handoff (2026-07-21):**
 
