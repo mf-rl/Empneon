@@ -235,8 +235,9 @@ dialogue behavior and a positive native romance consequence in game.
   `friendly_chat` proposal. Descriptive dialogue intent and native action selection remain separate.
 - Automated coverage also confirms that displayed turns, not generated turns, commit cognitive
   memory and Empneon trust; native friendship/romance persists only after the selected action
-  finishes and the game reports its tracks in autonomous flows; held Empneon Social sessions stay
-  actionless; and manual cancellation suppresses a late backend response.
+  finishes and the game reports its tracks. Held Empneon Social sessions remain actionless for
+  `none`, or execute the mapped native social after dialogue acknowledgement for a non-`none`
+  suggestion; manual cancellation suppresses a late backend response.
 - The owner accepted the full-scope critical Ruff gate (`E9,F63,F7,F82`); 119 unrelated legacy
   all-rule findings are deferred. This resolves verification scope only and is not in-game evidence.
 - The focused source-build retest must record Karmine's reported life stage, gender, and traits and
@@ -244,10 +245,10 @@ dialogue behavior and a positive native romance consequence in game.
   Karmine's response is distinct from Bernard's current and earlier messages and Karmine's earlier
   replies; male Bernard is called `boyfriend` or described neutrally, never `girlfriend`; dialogue
   reflects Karmine's life stage and traits without reciting trait labels; an exact date such as
-  `Saturday` remains usable inside an otherwise distinct reply; a held Empneon Social remains
-  actionless and completes without deadlock while autonomous decisions retain native actions; Sims
-  friendship/romance comes only from game-observed behavior; and Empneon trust changes on delivered
-  dialogue.
+  `Saturday` remains usable inside an otherwise distinct reply; a held Empneon Social completes
+  without deadlock, stays actionless for `none`, and executes a mapped native social for a non-`none`
+  suggestion; Sims friendship/romance comes only from game-observed behavior; and Empneon trust
+  changes on delivered dialogue.
 - **Status remains PARTIAL.** This handoff was subsequently exercised by the live Karmine runs
   recorded below. The latest remediation still requires a fresh source build and retest before
   Test 5 can pass.
@@ -330,13 +331,14 @@ dialogue behavior and a positive native romance consequence in game.
   wording is not required. The provider response is currently allowed to return zero romance even
   when that classification is romantic. The latest Karmine-to-Bernard snapshot records affinity
   `0.16`, romance `0.0`, trust `0.5`, and WickedWhims attraction `0.0` / `AMBIVALENT`.
-- This finding is separate from native Sims romance. The held Empneon Social flow intentionally
-  confirms dialogue with no native action and applies only Empneon trust. Even a nonzero model
-  romance proposal would not directly mutate Sims romance. Native romance changes only after an
-  actual Sims romantic interaction succeeds and the adapter observes a before/after romance
-  difference. Test 5 therefore needs two follow-ups: enforce semantically consistent provider
-  classification/deltas, and decide whether a held session may explicitly offer a confirmed native
-  `flirt` action without violating game-observed relationship authority.
+- This finding is separate from native Sims romance. A model romance proposal does not directly
+  mutate Sims romance. After dialogue acknowledgement, Empneon Social can execute the response's
+  mapped native action; `flirt` maps to the game's targeted romance compliment affordance, while
+  `none` runs no native social. All six recorded turns selected `none`, so the game never received a
+  romantic interaction to score. Native romance changes only after that interaction succeeds and
+  the adapter observes a before/after romance difference. The remaining defect is semantic action
+  selection: these reciprocated romantic replies should not all be classified as friendly with
+  zero romance and `none`.
 - Test 5 remains **PARTIAL**. The latest need normalization, both-actor context, model-first
   response acceptance, and continuity retry have automated evidence but no post-fix in-game run.
 - The source-built `.ts4script` and `.package` hashes recorded above predate commits `8319e11`

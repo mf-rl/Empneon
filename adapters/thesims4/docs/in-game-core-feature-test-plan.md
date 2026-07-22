@@ -139,19 +139,20 @@ repetition retries. Test 5 is not passed.
   manually cancelling the queued Empneon Social while the backend is still working.
 - Expected game result: the original grounded dialogue is displayed; Empneon Social stays in the
   queue while waiting; autonomy does not interrupt the session; each displayed turn updates
-  memory and Empneon trust; the held Empneon Social flow remains actionless; separately observed
-  autonomous decisions retain their native action, which finishes and reports before that
-  autonomous operation releases its in-flight guard; only game-observed friendship/romance
-  changes persist; manual queue cancellation suppresses the late backend result.
+  memory and Empneon trust. After delivery acknowledgement, a non-`none` suggested action launches
+  its mapped native Sims social; `none` remains dialogue-only. The native action finishes and
+  reports its observed before/after relationship tracks before the session continues. Only
+  game-observed friendship/romance changes persist; manual queue cancellation suppresses the late
+  backend result.
 - Expected diagnostic result: `/diagnostics/sim?sim_id=<ACTOR_ID>` shows the actor-to-target Core
   relationship. Friendship/trust are normalized, and a confirmed positive romance consequence
   marks the relationship romantic. Query the target separately to verify that directed edges can
   differ.
 - Evidence to capture for each run: exact player message and displayed response, before/after
-  `ai.relationship` output, held-session decision ID, confirmation that no native action was
-  selected, and whether the session continued or closed. Capture an autonomous decision ID,
-  selected native action, and finishing result separately. For the cancellation run, record that
-  no late dialogue, memory, trust, or native action appeared.
+  `ai.relationship` output, held-session decision ID, selected action, and whether the session
+  continued or closed. When the action is `none`, confirm no native social ran. When it is `flirt`,
+  capture the mapped native interaction, finishing result, and observed romance delta. For the
+  cancellation run, record that no late dialogue, memory, trust, or native action appeared.
 - Focused dialogue assertions: Karmine's reply is distinct from Bernard's current message,
   Bernard's earlier messages, and Karmine's earlier replies; Karmine uses `boyfriend` or neutral
   wording for male Bernard, never `girlfriend`; the reply respects Karmine's reported life stage
@@ -162,10 +163,10 @@ repetition retries. Test 5 is not passed.
   wording without exposing numeric values or replacing a valid model reply. Continue enough turns
   to confirm replies introduce a new reaction, detail, question, or decision instead of recycling
   earlier inputs or replies.
-- Focused queue/state assertions: held Empneon Social remains actionless and does not deadlock;
-  autonomous decisions still retain native actions; Sims friendship, romance, and attraction
-  changes come only from game-observed behavior; and Empneon trust changes only after dialogue is
-  displayed.
+- Focused queue/state assertions: held Empneon Social does not deadlock; it remains actionless for
+  `none` and runs the mapped native interaction for a non-`none` suggestion only after dialogue is
+  displayed. Sims friendship, romance, and attraction changes come only from game-observed
+  behavior; Empneon trust changes only after dialogue is displayed.
 - Persistence: save/reload and compare both directions again.
 - Cleanup: none; use a disposable save if relationship changes matter.
 
