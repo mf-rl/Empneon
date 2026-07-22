@@ -4,11 +4,11 @@ import json
 import pytest
 
 from empneon.core.contracts import (
+    SOCIAL_CATEGORIES,
     ActionResult,
     AgentStateSnapshot,
     CognitiveRequest,
     Decision,
-    SOCIAL_CATEGORIES,
     StateDelta,
     WorldEvent,
 )
