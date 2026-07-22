@@ -792,9 +792,17 @@ def apply_relationship_delta(sim_id_value, target_id_value, deltas):
 
 def relationship_with_payload(sim_id_value, target_id_value, payload_relationship):
     with open_db(CORE_DB_PATH) as conn:
-        return empneon_state.save_relationship(
+        relationship = empneon_state.save_relationship(
             conn, sim_id_value, target_id_value, payload_relationship or {}
         )
+    attraction = (payload_relationship or {}).get("attraction")
+    if (
+        isinstance(attraction, (int, float))
+        and not isinstance(attraction, bool)
+        and -1.0 <= float(attraction) <= 1.0
+    ):
+        relationship["attraction"] = float(attraction)
+    return relationship
 
 
 def default_emotion(mood="neutral"):
@@ -1430,6 +1438,10 @@ Grounding rules:
 - Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
 - Combine traits with current mood, needs, relationship, memories, and the current message.
 - Do not merely name or caricature traits.
+- Relationship attraction, when present, is the Speaker's attraction toward the Listener:
+  -1 is strong aversion, 0 is neutral, and 1 is strong attraction.
+- Attraction may shape warmth, hesitation, boundaries, or romantic openness, but
+  it does not imply consent or require flirtation and never overrides identity, mood, memory, history, or the message.
 - Use gendered relationship terms only when supported by supplied identity.
 - Do not guess gender or age when identity is unknown.
 - A fact about shared history is supported only when it appears in Relevant memories, Memory
@@ -1588,18 +1600,32 @@ def _direct_partner_prefix(prefix):
 
 def response_has_role_confusion(response, context):
     dialogue = str(response.get("dialogue") or "")
-    words = set(re.findall(r"\w+", dialogue.casefold()))
-    speaker = set(
-        re.findall(
-            r"\w+", str(context.get("speaker", {}).get("name") or "").casefold()
-        )
-    )
+    normalized_dialogue = dialogue.casefold().replace("’", "'")
+    words = set(re.findall(r"\w+", normalized_dialogue))
+    speaker_name = str(context.get("speaker", {}).get("name") or "").casefold()
+    speaker = set(re.findall(r"\w+", speaker_name))
     listener = set(
         re.findall(
             r"\w+", str(context.get("listener", {}).get("name") or "").casefold()
         )
     )
-    if {word for word in speaker - listener if len(word) > 1} & words:
+    asks_speaker_name = re.search(
+        r"\byour (?:full )?name\b",
+        str(context.get("message") or "").casefold(),
+    )
+    self_identifies = any(
+        re.search(
+            r"\b(?:my name is|i am|i'm|call me)\s+{}\b".format(re.escape(name)),
+            normalized_dialogue,
+        )
+        for name in (speaker_name, speaker_name.split()[0] if speaker_name else "")
+        if name
+    )
+    if (
+        {word for word in speaker - listener if len(word) > 1} & words
+        and not asks_speaker_name
+        and not self_identifies
+    ):
         return True
     gender = _identity_gender(context.get("listener_identity") or {})
     expected = "boyfriend" if gender == "male" else "girlfriend"

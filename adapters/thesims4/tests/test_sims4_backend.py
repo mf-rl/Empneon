@@ -599,11 +599,14 @@ def test_prompt_action_explanations_only_include_request_actions_and_none() -> N
     context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
 
     prompt = ai_sims_server.build_chat_prompt(payload, context)
+    action_section = prompt.split("Available actions:\n", 1)[1].split(
+        "Intent describes", 1
+    )[0]
 
-    assert "- friendly_chat: continue a friendly conversation." in prompt
-    assert "- none: dialogue only; perform no Sims action." in prompt
-    assert "apologize" not in prompt
-    assert "flirt" not in prompt
+    assert "- friendly_chat: continue a friendly conversation." in action_section
+    assert "- none: dialogue only; perform no Sims action." in action_section
+    assert "apologize" not in action_section
+    assert "flirt" not in action_section
 
 
 def test_memories_for_pair_uses_current_query_and_preserves_relevance(
@@ -1298,6 +1301,48 @@ def test_role_confusion_grounds_direct_partner_terms_to_listener_gender() -> Non
             )
         },
         male,
+    )
+
+
+def test_role_confusion_allows_speaker_to_answer_their_name() -> None:
+    context = {
+        "message": "What's your name, sweetheart?",
+        "speaker": {"name": "Karmine Luna"},
+        "listener": {"name": "Bernard Jaeger"},
+        "listener_identity": {"gender": {"key": "male"}},
+    }
+
+    assert not ai_sims_server.response_has_role_confusion(
+        {"dialogue": "My name is Karmine. It's nice to meet you, Bernard."},
+        context,
+    )
+
+
+def test_role_confusion_allows_conversational_name_questions() -> None:
+    context = {
+        "message": "Can you tell me your name?",
+        "speaker": {"name": "Karmine Luna"},
+        "listener": {"name": "Bernard Jaeger"},
+        "listener_identity": {"gender": {"key": "male"}},
+    }
+
+    assert not ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Of course. My name is Karmine Luna."},
+        context,
+    )
+
+
+def test_role_confusion_allows_first_person_self_identification() -> None:
+    context = {
+        "message": "Can you identify yourself?",
+        "speaker": {"name": "Karmine Luna"},
+        "listener": {"name": "Bernard Jaeger"},
+        "listener_identity": {"gender": {"key": "male"}},
+    }
+
+    assert not ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Of course. I'm Karmine Luna."},
+        context,
     )
 
 
@@ -2246,7 +2291,24 @@ def test_relationship_source_diagnostic_separates_native_and_empneon(tmp_path) -
                 1,
                 "sims4",
                 "karmine",
-                relationships={"bernard": {"affinity": 0.07, "romance": 0.12}},
+                relationships={
+                    "bernard": {
+                        "affinity": 0.07,
+                        "romance": 0.12,
+                        "attraction": 2 / 3,
+                    }
+                },
+                native={
+                    "relationships": {
+                        "bernard": {
+                            "attraction": {
+                                "source": "wickedwhims",
+                                "value": 2,
+                                "label": "HIGH",
+                            }
+                        }
+                    }
+                },
             ),
         )
 
@@ -2256,9 +2318,75 @@ def test_relationship_source_diagnostic_separates_native_and_empneon(tmp_path) -
 
     assert diagnostic == {
         "direction": {"source_id": "karmine", "target_id": "bernard"},
-        "native": {"friendship": 7, "romance": 12},
+        "native": {
+            "friendship": 7,
+            "romance": 12,
+            "attraction": {
+                "normalized": pytest.approx(2 / 3),
+                "source": "wickedwhims",
+                "value": 2,
+                "label": "HIGH",
+            },
+        },
         "empneon": {"trust": 51},
     }
+
+
+def test_attraction_is_directed_model_context_not_a_mutable_relationship(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        ai_sims_server, "CORE_DB_PATH", str(tmp_path / "core.sqlite3")
+    )
+
+    relationship = ai_sims_server.relationship_with_payload(
+        "karmine",
+        "bernard",
+        {
+            "friendship": 14,
+            "romance": 0,
+            "trust": 50,
+            "attraction": 2 / 3,
+            "native": {
+                "attraction": {
+                    "source": "wickedwhims",
+                    "value": 2,
+                    "label": "HIGH",
+                }
+            },
+        },
+    )
+
+    assert relationship["attraction"] == pytest.approx(2 / 3)
+    assert "native" not in relationship
+    assert "attraction" not in ai_sims_server.apply_relationship_delta(
+        "karmine", "bernard", {"attraction_delta": -1}
+    )
+
+
+def test_prompt_explains_directed_attraction_without_implying_consent() -> None:
+    payload = {
+        "speaker": {"id": "karmine"},
+        "listener": {"id": "bernard"},
+        "message": "How do you feel about me?",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {"friendship": 14, "romance": 0, "trust": 50, "attraction": 2 / 3},
+        {},
+        [],
+        {},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert '"attraction": 0.666' in prompt
+    assert "Speaker's attraction toward the Listener" in prompt
+    assert "-1 is strong aversion, 0 is neutral, and 1 is strong attraction" in prompt
+    assert "does not imply consent or require flirtation" in prompt
 
 
 def test_adapter_memory_is_stored_by_core(tmp_path, monkeypatch) -> None:

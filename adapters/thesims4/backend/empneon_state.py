@@ -153,12 +153,34 @@ def relationship_diagnostic(
     relationship = RelationshipStore(conn).get(source_id, target_id)
     snapshot = load_agent_state(conn, source_id)
     observed = snapshot.relationships.get(target_id, {}) if snapshot is not None else {}
+    native: dict[str, object] = {
+        "friendship": round(float(observed.get("affinity", 0)) * 100),
+        "romance": round(float(observed.get("romance", 0)) * 100),
+    }
+    attraction = observed.get("attraction")
+    native_relationships = (
+        snapshot.native.get("relationships", {}) if snapshot is not None else {}
+    )
+    target_native = (
+        native_relationships.get(target_id, {})
+        if isinstance(native_relationships, Mapping)
+        else {}
+    )
+    native_attraction = (
+        target_native.get("attraction", {})
+        if isinstance(target_native, Mapping)
+        else {}
+    )
+    if isinstance(attraction, (int, float)) and not isinstance(attraction, bool):
+        native["attraction"] = {
+            "normalized": float(attraction),
+            "source": native_attraction.get("source", "unknown"),
+            "value": native_attraction.get("value"),
+            "label": native_attraction.get("label", "unknown"),
+        }
     return {
         "direction": {"source_id": source_id, "target_id": target_id},
-        "native": {
-            "friendship": round(float(observed.get("affinity", 0)) * 100),
-            "romance": round(float(observed.get("romance", 0)) * 100),
-        },
+        "native": native,
         "empneon": {"trust": round((relationship.trust if relationship else 0.5) * 100)},
     }
 

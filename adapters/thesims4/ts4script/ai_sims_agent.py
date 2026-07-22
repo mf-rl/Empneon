@@ -2226,13 +2226,25 @@ def ai_relationship(*args, _connection=None):
     rel = data.get("relationship") or {}
     native = rel.get("native") or {}
     empneon = rel.get("empneon") or {}
+    attraction = native.get("attraction") or {}
+    attraction_text = "unavailable"
+    if isinstance(attraction, dict) and isinstance(
+        attraction.get("normalized"), (int, float)
+    ):
+        attraction_text = "{:+.2f} ({}: {})".format(
+            float(attraction["normalized"]),
+            attraction.get("source", "unknown"),
+            attraction.get("label", "unknown"),
+        )
     out(
         _connection,
-        "relationship {} -> {}: Sims friendship {}, Sims romance {}, Empneon trust {}".format(
+        "relationship {} -> {}: Sims friendship {}, Sims romance {}, "
+        "Sims attraction {}, Empneon trust {}".format(
             target_label,
             active["name"],
             native.get("friendship", 0),
             native.get("romance", 0),
+            attraction_text,
             empneon.get("trust", 50),
         ),
     )

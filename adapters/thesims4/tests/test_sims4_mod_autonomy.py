@@ -618,7 +618,16 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             or {
                 "relationship": {
                     "direction": {"source_id": "cam-id", "target_id": "bella"},
-                    "native": {"friendship": 7, "romance": 12},
+                    "native": {
+                        "friendship": 7,
+                        "romance": 12,
+                        "attraction": {
+                            "normalized": 2 / 3,
+                            "source": "wickedwhims",
+                            "value": 2,
+                            "label": "HIGH",
+                        },
+                    },
                     "empneon": {"trust": 51},
                 }
             },
@@ -633,7 +642,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         ("/relationship", {"sim_id": "cam-id", "target_id": "bella"})
     ]
     assert relationship_output == [
-        "relationship Cam Sadya -> Bella: Sims friendship 7, Sims romance 12, Empneon trust 51"
+        "relationship Cam Sadya -> Bella: Sims friendship 7, Sims romance 12, "
+        "Sims attraction +0.67 (wickedwhims: HIGH), Empneon trust 51"
     ]
 
     save_reports = []

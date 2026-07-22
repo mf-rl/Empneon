@@ -135,7 +135,7 @@ class Sims4Adapter:
         }
         relationships: dict[str, object] = {}
         if listener_id:
-            relationships[listener_id] = {
+            relationship_state: dict[str, object] = {
                 "affinity": max(
                     -1.0,
                     min(1.0, _number(relationship, "friendship") / 100),
@@ -147,11 +147,22 @@ class Sims4Adapter:
                     0.0, min(1.0, _number(relationship, "trust", 50) / 100)
                 ),
             }
+            attraction = relationship.get("attraction")
+            if isinstance(attraction, (int, float)) and not isinstance(attraction, bool):
+                relationship_state["attraction"] = float(attraction)
+            relationships[listener_id] = relationship_state
         mood = str(speaker.get("current_mood") or "unknown")
         identity = _mapping(speaker.get("identity"))
         native = _mapping(speaker.get("native"))
         native.setdefault("mood", mood)
         native.setdefault("moodlets", _items(speaker.get("moodlets")))
+        native_attraction = _mapping(
+            _mapping(relationship.get("native")).get("attraction")
+        )
+        if listener_id and native_attraction:
+            native_relationships = _mapping(native.get("relationships"))
+            native_relationships[listener_id] = {"attraction": native_attraction}
+            native["relationships"] = native_relationships
         return AgentStateSnapshot(
             1,
             "sims4",

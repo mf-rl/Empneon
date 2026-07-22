@@ -87,7 +87,19 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
                 },
             },
             "listener": {"id": "bernard"},
-            "relationship": {"friendship": 7, "romance": 12, "trust": 50},
+            "relationship": {
+                "friendship": 7,
+                "romance": 12,
+                "trust": 50,
+                "attraction": 2 / 3,
+                "native": {
+                    "attraction": {
+                        "source": "wickedwhims",
+                        "value": 2,
+                        "label": "HIGH",
+                    }
+                },
+            },
             "available_actions": ["friendly_chat", "flirt"],
         }
     ).observe()[0]
@@ -106,6 +118,7 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
         "affinity": 0.07,
         "romance": 0.12,
         "trust": 0.5,
+        "attraction": pytest.approx(2 / 3),
     }
     assert event.agent_state.capabilities == {
         "actions": ["friendly_chat", "flirt"]
@@ -116,6 +129,23 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
     assert event.agent_state.native["moodlets"] == [
         {"label": "Custom DLC Moodlet"}
     ]
+    assert event.agent_state.native["relationships"]["bernard"]["attraction"] == {
+        "source": "wickedwhims",
+        "value": 2,
+        "label": "HIGH",
+    }
+
+
+def test_sims_adapter_omits_unavailable_attraction() -> None:
+    state = Sims4Adapter(
+        {
+            "speaker": {"id": "alice"},
+            "listener": {"id": "bob"},
+            "relationship": {"friendship": 0, "romance": 0},
+        }
+    ).agent_state()
+
+    assert "attraction" not in state.relationships["bob"]
 
 
 @pytest.mark.parametrize(
