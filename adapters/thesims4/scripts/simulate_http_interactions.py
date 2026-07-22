@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 
 AVAILABLE_ACTIONS = ["friendly_chat", "apologize", "flirt"]
+SOCIAL_CATEGORIES = ["friendly", "funny", "romance", "mean", "mischief"]
 COUNT_TABLES = (
     "agents",
     "events",
@@ -74,19 +75,21 @@ def chat_payload(
     listener: dict[str, Any],
     message: str,
 ) -> dict[str, Any]:
+    relationship = {
+        "friendship": 50,
+        "romance": 0,
+        "trust": 50,
+        "resentment": 0,
+    }
     return {
         "speaker": speaker,
         "listener": listener,
-        "relationship": {
-            "friendship": 50,
-            "romance": 0,
-            "trust": 50,
-            "resentment": 0,
-        },
+        "relationship": relationship,
+        "listener_relationship": dict(relationship),
         "location": f"empneon-test-zone-{run_id}",
         "nearby_sims": [],
         "event": {"type": "player_conversation", "source": "http_simulation"},
-        "available_actions": AVAILABLE_ACTIONS,
+        "available_response_categories": SOCIAL_CATEGORIES,
         "message": message,
     }
 

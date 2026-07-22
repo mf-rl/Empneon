@@ -117,16 +117,29 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-21): PARTIAL** — Automated coverage now includes the previously rejected
-accepted-sounding Karmine date reply, request-scoped action metadata, delivered-turn confirmation,
-held multi-turn queue ordering, and late-result suppression after cancellation. Live source-build
-evidence is still required. Automated coverage also preserves the Sims `-100..100` motive scale,
-maps it to common `satisfied`/`low`/`critical` states, prompts with both actors' normalized current
-state, accepts valid model dialogue that omits a need, and retains recent dialogue during
-repetition retries. Test 5 is not passed.
+**Current status (2026-07-22): PARTIAL** — Automated coverage now classifies incoming and response
+dialogue independently as `friendly`, `funny`, `romance`, `mean`, or `mischief`; derives exactly
+one common native action; grounds the response in both actor states; and leaves friendship and
+romance to observed game results. It also covers held multi-turn queue ordering, post-display
+execution, zero native deltas, and cancellation. Live source-build evidence for all five exact
+native mappings is still required, so Test 5 is not passed.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
   start the source backend as documented in `setup.md`.
+- Run this matrix and capture every row:
+
+  | Incoming message | Expected incoming category | Acceptable response categories |
+  |---|---|---|
+  | “How was your day?” | `friendly` | any state-grounded category |
+  | “Tell me a joke.” | `funny` | any state-grounded category |
+  | “Would you go on a date with me?” | `romance` | any state-grounded category |
+  | “I hate you. Go away.” | `mean` | any state-grounded category |
+  | “Let's prank another Sim.” | `mischief` | any state-grounded category |
+
+  For each row record both actor snapshots, incoming and response category, tone tags, common
+  `social.<category>` action, exact native tuning, completion result, and relationship values before
+  and after. The response category may differ from the incoming category. A naturally completed
+  native interaction with a zero relationship delta is valid.
 - Attraction evidence: capture `ai.relationship Karmine` in both directions before dialogue. The
   command must show either `Sims attraction <normalized> (<source>: <label>)` or explicit
   `unavailable`. With supported WickedWhims attraction enabled, source must be `wickedwhims`; with
@@ -139,7 +152,7 @@ repetition retries. Test 5 is not passed.
   manually cancelling the queued Empneon Social while the backend is still working.
 - Expected game result: the original grounded dialogue is displayed; Empneon Social stays in the
   queue while waiting; autonomy does not interrupt the session; each displayed turn updates
-  memory and Empneon trust. After delivery acknowledgement, a non-`none` suggested action launches
+  memory and Empneon trust. After delivery acknowledgement, a non-`none` derived action launches
   its mapped native Sims social; `none` remains dialogue-only. The native action finishes and
   reports its observed before/after relationship tracks before the session continues. Only
   game-observed friendship/romance changes persist; manual queue cancellation suppresses the late
@@ -153,6 +166,9 @@ repetition retries. Test 5 is not passed.
   continued or closed. When the action is `none`, confirm no native social ran. When it is `flirt`,
   capture the mapped native interaction, finishing result, and observed romance delta. For the
   cancellation run, record that no late dialogue, memory, trust, or native action appeared.
+  Verify exact loaded tunings first with `ai.tunings AskAboutDay`, `TellJoke`,
+  `ComplimentAppearance`, `Insult`, and `LieAboutCareer`. If an exact tuning is absent, record that
+  category as unavailable; do not substitute another social category.
 - Focused dialogue assertions: Karmine's reply is distinct from Bernard's current message,
   Bernard's earlier messages, and Karmine's earlier replies; Karmine uses `boyfriend` or neutral
   wording for male Bernard, never `girlfriend`; the reply respects Karmine's reported life stage

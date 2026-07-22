@@ -29,7 +29,21 @@ def test_chat_payload_matches_mod_contract() -> None:
         "type": "player_conversation",
         "source": "http_simulation",
     }
-    assert payload["available_actions"] == ["friendly_chat", "apologize", "flirt"]
+    assert payload["available_response_categories"] == [
+        "friendly",
+        "funny",
+        "romance",
+        "mean",
+        "mischief",
+    ]
+    assert payload["relationship"] == {
+        "friendship": 50,
+        "romance": 0,
+        "trust": 50,
+        "resentment": 0,
+    }
+    assert payload["listener_relationship"] == payload["relationship"]
+    assert "available_actions" not in payload
     assert payload["message"] == "The code is BLUE-731"
 
 
@@ -126,8 +140,12 @@ def test_run_scenarios_records_all_evidence(monkeypatch) -> None:
             dialogue = fact if payload["speaker"]["id"].endswith("-b") else "I do not know."
             response = {
                 "decision_id": decision_id,
-                "animation": "friendly_chat",
+                "animation": "social.friendly",
+                "suggested_action": "social.friendly",
                 "dialogue": dialogue,
+                "response_category": "friendly",
+                "tone_tags": [],
+                "trust_delta": 0,
                 "selected_clod": 3,
             }
             decisions[decision_id] = {"status": None, "response": response}

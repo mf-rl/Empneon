@@ -321,7 +321,7 @@ class Sims4Adapter:
                 StateDelta(
                     "social.tone_tags",
                     "set",
-                    list(response.get("tone_tags") or []),
+                    _items(response.get("tone_tags")),
                 ),
                 StateDelta(
                     "animation",

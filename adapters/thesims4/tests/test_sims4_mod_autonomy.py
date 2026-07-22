@@ -951,8 +951,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
                 "dialogue": "I remember.",
                 "emotion": "warm",
                 "intent": "reassure",
+                "response_category": "friendly",
+                "tone_tags": ["warm"],
+                "trust_delta": 2,
                 "suggested_action": "none",
-                "relationship": {"trust_delta": 2},
             },
             None,
         )
@@ -960,7 +962,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert chat_dialog.kwargs["title"]() == "Bob says:"
     assert "Alice: Remember our promise?" in chat_dialog.kwargs["text"]()
     assert "Bob: I remember." in chat_dialog.kwargs["text"]()
-    assert "Trust +2" in chat_dialog.kwargs["text"]()
+    assert "Category: friendly" in chat_dialog.kwargs["text"]()
+    assert "Tone: warm" in chat_dialog.kwargs["text"]()
+    assert "Empneon trust +2" in chat_dialog.kwargs["text"]()
     assert hasattr(chat_dialog.kwargs["text_inputs"], "message")
     assert chat_dialog.show_kwargs == {}
     assert len(notifications) == notification_count
@@ -1159,7 +1163,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     }
 
     interaction._aop.super_affordance.all_affordances_gen = classmethod(
-        lambda _cls, **_kwargs: iter((mixer, apologize, romance))
+        lambda _cls, **_kwargs: iter(
+            (mixer, apologize, funny, romance, mean, mischief)
+        )
     )
     infos = {
         "bella": bella,
@@ -1368,12 +1374,102 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "second_submitted",
     ]
 
+    romance_reports = []
+    with monkeypatch.context() as romance_patch:
+        romance_patch.setattr(
+            agent,
+            "post_json",
+            lambda path, body, timeout=None: romance_reports.append((path, body)) or body,
+        )
+        romance_patch.setattr(
+            agent,
+            "relationship_payload",
+            lambda _source, _target: {"friendship": 0, "romance": 7},
+        )
+        romance_session = agent.EmpneonConversationSession(
+            pie_interaction, pie_interaction.sim, pie_interaction.target
+        )
+        romance_session.turn_id = 1
+        romance_session.phase = "showing_response"
+        romance_session.dialogue_acknowledged = True
+        romance_session.response_choice_ready = True
+        romance_session.response_data = {
+            "decision_id": "decision-social-romance",
+            "suggested_action": "social.romance",
+            "_empneon_payload": dict(
+                player_payload,
+                relationship={"friendship": 0, "romance": 0},
+            ),
+        }
+        agent._CONVERSATION_SESSIONS["social-romance"] = romance_session
+
+        assert agent.continue_displayed_turn(romance_session) is True
+        assert romance_session.phase == "running_native_action"
+        assert mapped_aops[-1].affordance is romance
+        romance_session.native_interaction.finishing_type = "FinishingType.NATURAL"
+        romance_session.native_interaction.finishing_callback(
+            romance_session.native_interaction
+        )
+        pump_outbox()
+
+    assert romance_reports[-1] == (
+        "/action-result",
+        {
+            "decision_id": "decision-social-romance",
+            "action": "social.romance",
+            "status": "succeeded",
+            "reason": None,
+            "changes": [
+                {
+                    "path": "relationship.romance",
+                    "operation": "increment",
+                    "value": 7,
+                }
+            ],
+        },
+    )
+
+    zero_reports = []
+    with monkeypatch.context() as zero_patch:
+        zero_patch.setattr(
+            agent,
+            "post_json",
+            lambda path, body, timeout=None: zero_reports.append((path, body)) or body,
+        )
+        zero_patch.setattr(
+            agent,
+            "relationship_payload",
+            lambda _source, _target: {"friendship": 0, "romance": 0},
+        )
+        zero_session = agent.EmpneonConversationSession(
+            pie_interaction, pie_interaction.sim, pie_interaction.target
+        )
+        zero_session.turn_id = 1
+        zero_session.phase = "running_native_action"
+        zero_session.pending_decision = ("decision-social-zero", "social.romance")
+        agent._CONVERSATION_SESSIONS["social-zero"] = zero_session
+        agent.execute_sims_action(
+            dict(player_payload, relationship={"friendship": 0, "romance": 0}),
+            {
+                "decision_id": "decision-social-zero",
+                "suggested_action": "social.romance",
+            },
+            None,
+            session_id=zero_session.id,
+            turn_id=1,
+        )
+        zero_session.native_interaction.finishing_type = "FinishingType.NATURAL"
+        zero_session.native_interaction.finishing_callback(zero_session.native_interaction)
+        pump_outbox()
+
+    assert zero_reports[-1][1]["changes"] == []
+
     cancellation_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
     )
     cancellation_session.turn_id = 1
     cancellation_session.phase = "running_native_action"
-    cancellation_session.pending_decision = ("decision-cancel-native", "friendly_chat")
+    cancellation_session.pending_decision = ("decision-cancel-native", "social.mean")
     agent._CONVERSATION_SESSIONS["cancel-native"] = cancellation_session
     cancellation_reports = []
     with monkeypatch.context() as cancellation_patch:
@@ -1391,7 +1487,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             player_payload,
             {
                 "decision_id": "decision-cancel-native",
-                "suggested_action": "friendly_chat",
+                "suggested_action": "social.mean",
             },
             None,
             session_id=cancellation_session.id,
@@ -1409,7 +1505,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             "/action-result",
             {
                 "decision_id": "decision-cancel-native",
-                "action": "friendly_chat",
+                "action": "social.mean",
                 "status": "failed",
                 "reason": "Empneon Social canceled",
                 "changes": [],

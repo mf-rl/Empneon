@@ -322,6 +322,25 @@ dialogue behavior and a positive native romance consequence in game.
 
 **Current handoff state:**
 
+- **July 22 common social-category remediation (automated only):** Empneon now uses the common
+  `friendly`, `funny`, `romance`, `mean`, and `mischief` vocabulary for incoming and response
+  dialogue. The model returns one response category plus up to three tone tags and Empneon trust;
+  Empneon derives `social.<category>` and ignores model friendship, romance, attraction, and
+  concrete-action proposals. Both directed actor relationships reach the prompt.
+- The Sims script advertises only categories whose exact mapped tuning is loaded. Automated held
+  session coverage confirms that acknowledged `social.romance` selects the exact targeted romance
+  compliment, reports an observed native romance `+7`, accepts a naturally completed zero-delta
+  result, and suppresses consequences for canceled `social.mean`. These are simulated game API
+  results, not live Sims evidence.
+- Fresh verification passed Core `192`, Sims 4 `145`, Godot `4`, cross-adapter `5`, and release
+  `18` tests, plus Ruff, mypy (`51` source files), compilation, and `git diff --check`. Fresh source
+  artifacts built with SHA-256 `3727762BB86B49CAAD83EFA5DE8B6E31665C74E946B62B7F55250CBC0CC243C3`
+  for `Empneon_TheSims4.ts4script` and
+  `B9F7F0758F07EFA1582E69E676E9755D44D4E049013918469D8AAEC43EF74622` for
+  `Empneon_TheSims4.package`.
+- **Test 5 remains PARTIAL.** Install the new source build and run all five matrix rows before
+  claiming the exact tunings are present in the current game build or that any live relationship
+  value changed.
 - **July 22 live romance finding:** Bernard used multiple unambiguous romantic messages, including
   `You are beautiful, Karmine. I love you`, `Would you like to go on a date with me?`, and
   `I love you very much. Do you love me too?`. Karmine's replies flowed naturally and accepted the
@@ -357,8 +376,8 @@ dialogue behavior and a positive native romance consequence in game.
   prompt grounding, diagnostics, and read-only behavior. Test 5 remains **PARTIAL** until the new
   source-built artifacts are installed and both attraction-source paths are observed in game; no
   live attraction value is claimed by automated tests.
-- Work remains on `feature/sims4-core-integration`; pull request #5 is the existing review surface.
-  The SQLite `-wal` and `-shm` sidecars remain local runtime files and are not committed.
+- Work is local on `main` and has not been pushed. The SQLite `-wal` and `-shm` sidecars remain local
+  runtime files and are not committed.
 - The first post-push Monorepo CI run (`29891676140`) stopped at Ruff with five test-only style
   findings: three long assertions, one `.format` call, and one long callback line. The assertions
   and test behavior are unchanged; the exact CI Ruff command now passes locally.

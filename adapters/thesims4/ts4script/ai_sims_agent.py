@@ -1819,23 +1819,15 @@ def show_empneon_chat_result(session, data, error):
         show_empneon_message_dialog(session, session.transcript)
         return
     payload = data.get("_empneon_payload")
-    relationship = data.get("relationship") or {}
-    details = "Emotion: {} | Intent: {} | Suggested action: {}".format(
+    details = "Emotion: {} | Category: {} | Tone: {} | Native action: {}".format(
         data.get("emotion", "neutral"),
-        data.get("intent", "respond"),
-        data.get("animation", "friendly_chat"),
+        data.get("response_category", "friendly"),
+        ", ".join(data.get("tone_tags") or []) or "neutral",
+        data.get("suggested_action", "none"),
     )
-    deltas = [
-        "{} {:+d}".format(label, int(relationship.get(key) or 0))
-        for label, key in (
-            ("Friendship", "friendship_delta"),
-            ("Romance", "romance_delta"),
-            ("Trust", "trust_delta"),
-        )
-        if int(relationship.get(key) or 0)
-    ]
-    if deltas:
-        details += "\nEmpneon state: " + ", ".join(deltas)
+    trust_delta = int(data.get("trust_delta") or 0)
+    if trust_delta:
+        details += "\nEmpneon trust {:+d}".format(trust_delta)
     dialogue = str(data.get("dialogue") or "...")
     transcript = "{}\n\n{}: {}\n\n{}".format(
         session.transcript,
