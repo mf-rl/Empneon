@@ -33,6 +33,26 @@ py -3.12 -m pip install -e .\core -e .\adapters\thesims4
 Python 3.12 may be replaced with any installed Python version supported by
 `pyproject.toml`.
 
+### Source-build development run
+
+To test the current worktree without creating a release, run from `adapters/thesims4`:
+
+```powershell
+py -3.12 .\build_mod.py
+.\install_mod.ps1
+$env:PYTHONPATH='..\..\core\src;src'
+py -3.12 .\backend\ai_sims_server.py
+```
+
+`build_mod.py` creates the current `Empneon_TheSims4.ts4script` and
+`Empneon_TheSims4.package`; `install_mod.ps1` installs those source-built artifacts. The explicit
+`PYTHONPATH` makes the backend import Core and the adapter from this worktree. This workflow does
+not build or install a release archive.
+
+For agent-assisted development, the source backend is not left running after automated work. Start
+it yourself for an in-game test. If an automated check must start it, that check stops it before
+handoff so the next manual run cannot connect to a stale process.
+
 ## Install and Run
 
 1. Configure and start an OpenAI-compatible provider. The default is LM Studio at
@@ -68,6 +88,10 @@ Python 3.12 may be replaced with any installed Python version supported by
    proposal or queue acceptance is not treated as a confirmed outcome. Confirmed friendship
    changes also update Core's actor-to-target relationship strength.
 
+For cognitive-state inspection, use `empneon.status`, `empneon.timeline`,
+`empneon.beliefs`, `empneon.goals`, and `empneon.usage`. The complete verification procedure is
+the [in-game Core feature test plan](in-game-core-feature-test-plan.md).
+
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `ts4script/ai_sims_agent.py` and rebuilding
 the mod. Do not expose the reference HTTP server to another machine; it has no authentication.
@@ -81,8 +105,9 @@ JSON file. Environment variables override the loaded file.
 |---|---|---|
 | `host`, `AI_SIM_HOST` | Backend bind address | `127.0.0.1` |
 | `port`, `AI_SIM_PORT` | Backend port | `8765` |
+| `memory_database` | Single active identity, memory, action, and cognition database | `empneon_core_memory.sqlite3` |
 | `database`, `AI_SIM_DB` | Former adapter database imported once for compatibility | `ai_sims_memory.sqlite3` |
-| `core_database` | Core identity, memory, action, and cognition database | `empneon_core.sqlite3` |
+| `core_database` | Former Core database adopted once for compatibility | `empneon_core.sqlite3` |
 | `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `false` |
 | `active_agent_limit` | Concurrent reference-adapter sessions and Core admissions | `1` |
 | `agent_wake_timeout_seconds` | Wait for an agent-session slot | `60` |
@@ -92,8 +117,9 @@ JSON file. Environment variables override the loaded file.
 | `AI_SIM_API_KEY` | Authorization bearer token | unset |
 | `debug` | Verbose backend logging | `true` |
 
-Relative database paths resolve from the backend process's working directory. The former
-adapter path is read only for one-time import; current state is written to the Core database.
+Relative database paths resolve from the backend process's working directory. Both former
+database paths are read-only migration sources. All current state is written to the single active
+`empneon_core_memory.sqlite3` database; legacy sources are never deleted automatically.
 
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
@@ -121,7 +147,8 @@ Memory settings:
 - `summary_limit`: maximum memories included in a summary request
 
 When `preserve_memory_only_on_game_save` is `false`, memories, conversations,
-emotions, profiles, and relationships are written continuously to the Core database;
+emotions, profiles, and relationships are written continuously to
+`empneon_core_memory.sqlite3`;
 save slots are ignored. When it is `true`, the backend keeps those changes as the current
 session state and maintains an independent checkpoint for each The Sims 4 save slot.
 The mod checkpoints that state only after The Sims 4 successfully completes `save_game_gen` for
@@ -139,7 +166,7 @@ Live validation on 2026-07-16 confirmed that an unsaved codeword was removed aft
 the Main Menu, a normal save retained `PERSIST-GREEN-963` for Nanami Ito after reload, scratch-slot
 saves did not checkpoint memory, and separate Save As branches restored their own histories.
 
-Checkpoints and the session marker are stored beside the configured Core database with
+Checkpoints and the session marker are stored beside the configured active database with
 `.empneon-saved.slot-<id>` and `.empneon-session` suffixes. The former single
 `.empneon-saved` checkpoint is migrated to its recorded slot when possible. Preserve these files
 when backing up retained memory. Stop the game and backend before deleting them.
@@ -163,7 +190,7 @@ enabling them.
 
 The adapter backend has no user accounts, encryption layer, retention scheduler, or authenticated
 HTTP API. Keep the backend bound to loopback. To remove retained reference data, stop the game
-and backend, then delete the configured Core SQLite database, legacy import database,
+and backend, then delete the configured `empneon_core_memory.sqlite3`, legacy migration sources,
 Empneon checkpoint/session files,
 and `logs` files. Back up
 save-related data first if continuity matters.
@@ -201,18 +228,20 @@ callback APIs, the result must remain failed and the Stage 2 checklist must stay
 3. From the repository root, copy the configuration for the test:
 
    ```powershell
-   Copy-Item .\config\config.json .\stage2-config.json
+   Copy-Item .\adapters\thesims4\config\config.json .\stage2-config.json
    ```
 
-4. Open `stage2-config.json`, set `core_database` to `stage2-core.sqlite3`, and keep
+4. Open `stage2-config.json`, set `memory_database` to
+   `stage2-empneon_core_memory.sqlite3`, and keep
    `host`/`port` at `127.0.0.1:8765`. Then set the test paths:
 
    ```powershell
    $env:AI_SIM_CONFIG = "$PWD\stage2-config.json"
    ```
 
-   `core_database` has no environment-variable override. With the copied config and a
-   backend started from the repository root, Core writes to `$PWD\stage2-core.sqlite3`.
+   `memory_database` has no environment-variable override. With the copied config and a
+   backend started from the repository root, Core writes to
+   `$PWD\stage2-empneon_core_memory.sqlite3`.
 5. Preserve any existing files with these names if they contain wanted data. Do not delete
    an unverified database.
 6. Install Core and the mod, then start the backend as described in **Install and Run**.
@@ -253,7 +282,7 @@ def scalar(db, sql):
     with sqlite3.connect(db) as connection:
         return connection.execute(sql).fetchone()[0]
 
-core = "stage2-core.sqlite3"
+core = "stage2-empneon_core_memory.sqlite3"
 participants = """
     SELECT actor_id AS id FROM action_results
     UNION
@@ -281,7 +310,7 @@ identify actions that never received a game result.
 ### 5. Save, exit, and reload
 
 1. Save the game under a new name after visible consequences occur.
-2. Exit The Sims 4 completely and stop the backend cleanly. Do not remove the Core database.
+2. Exit The Sims 4 completely and stop the backend cleanly. Do not remove the active database.
 3. Restart the backend with the same configuration, launch the game, and reload that save.
 4. Bring the same agents onto the test lot and allow another automatic interval to run.
 5. Verify the same stable Sim IDs are reused, prior Core records are still present,

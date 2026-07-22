@@ -2,6 +2,7 @@
   "host": "127.0.0.1",
   "port": 8765,
   "debug": true,
+  "memory_database": "empneon_core_memory.sqlite3",
   "database": "ai_sims_memory.sqlite3",
   "core_database": "empneon_core.sqlite3",
   "preserve_memory_only_on_game_save": false,
@@ -41,11 +42,19 @@
   "models": {
     "small": {
       "temperature": 0.3,
-      "max_tokens": 120
+      "max_tokens": 120,
+      "context_tokens": 2048,
+      "latency_ms": 30000,
+      "ram_mb": 64,
+      "vram_mb": 0
     },
     "large": {
       "temperature": 0.6,
-      "max_tokens": 300
+      "max_tokens": 300,
+      "context_tokens": 4096,
+      "latency_ms": 90000,
+      "ram_mb": 128,
+      "vram_mb": 0
     }
   },
   "memory": {

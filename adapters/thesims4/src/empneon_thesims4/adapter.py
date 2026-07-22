@@ -1,8 +1,17 @@
 """Translate between The Sims 4 observations and Empneon Core contracts."""
 
+import hashlib
+import math
+import re
 from collections.abc import Mapping
 
-from empneon.core.contracts import ActionResult, Decision, StateDelta, WorldEvent
+from empneon.core.contracts import (
+    ActionResult,
+    AgentStateSnapshot,
+    Decision,
+    StateDelta,
+    WorldEvent,
+)
 
 SIMS_ACTIONS = frozenset(
     {
@@ -35,15 +44,133 @@ INTENT_ACTIONS = {
 }
 
 
+def feature_hash(text: str, dimensions: int = 384) -> list[float]:
+    vector = [0.0] * dimensions
+    for token in re.findall(r"\w+", text.casefold()):
+        raw = int.from_bytes(
+            hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest(), "big"
+        )
+        vector[raw % dimensions] += -1.0 if raw & 1 else 1.0
+    norm = math.sqrt(sum(value * value for value in vector))
+    return [value / norm for value in vector] if norm else vector
+
+
+def _mapping(value: object) -> dict[str, object]:
+    return {str(key): item for key, item in value.items()} if isinstance(value, Mapping) else {}
+
+
+def _items(value: object) -> list[object]:
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _number(mapping: Mapping[str, object], key: str, default: float = 0.0) -> float:
+    value = mapping.get(key, default)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return default
+
+
+def cognition_priority(
+    payload: Mapping[str, object],
+    *,
+    novel: bool = False,
+    emotion_intensity: float = 0.0,
+    goal_relevant: bool = False,
+) -> tuple[float, int, float]:
+    event = payload.get("event")
+    event_data = event if isinstance(event, Mapping) else {}
+    event_type = str(event_data.get("type") or "")
+    if event_type == "player_conversation":
+        urgency, preferred_clod = 1.0, 3
+    elif event_type in ("crisis", "critical_need"):
+        urgency, preferred_clod = 0.85, 3
+    elif goal_relevant:
+        urgency, preferred_clod = 0.65, 2
+    else:
+        urgency, preferred_clod = 0.35, 1
+    value = (
+        (0.4 if event_type == "player_conversation" else 0.0)
+        + (0.2 if novel else 0.0)
+        + 0.2 * max(0.0, min(1.0, float(emotion_intensity)))
+        + (0.2 if goal_relevant else 0.0)
+    )
+    return urgency, preferred_clod, min(1.0, value)
+
+
+def _need_state(value: int | float) -> dict[str, object]:
+    native = max(-100.0, min(100.0, float(value)))
+    level = (native + 100.0) / 200.0
+    status = "critical" if native < -50 else "low" if native < -25 else "satisfied"
+    return {
+        "level": level,
+        "urgency": 1.0 - level,
+        "status": status,
+        "native": {
+            "value": int(native) if native.is_integer() else native,
+            "minimum": -100,
+            "maximum": 100,
+        },
+    }
+
+
 class Sims4Adapter:
     def __init__(self, payload: Mapping[str, object]) -> None:
         self._payload = payload
 
-    def observe(self) -> tuple[WorldEvent, ...]:
+    def _sim_data(self) -> dict[str, object]:
         sim = self._payload.get("sim")
         speaker = self._payload.get("speaker")
-        sim_data = sim if isinstance(sim, Mapping) else speaker
-        sim_data = sim_data if isinstance(sim_data, Mapping) else self._payload
+        selected = sim if isinstance(sim, Mapping) else speaker
+        return _mapping(selected if isinstance(selected, Mapping) else self._payload)
+
+    def agent_state(self) -> AgentStateSnapshot:
+        speaker = self._sim_data()
+        listener = _mapping(self._payload.get("listener"))
+        relationship = _mapping(self._payload.get("relationship"))
+        listener_id = str(listener.get("id") or "")
+        needs: dict[str, object] = {
+            str(name): _need_state(value)
+            for name, value in _mapping(speaker.get("needs")).items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        relationships: dict[str, object] = {}
+        if listener_id:
+            relationships[listener_id] = {
+                "affinity": max(
+                    -1.0,
+                    min(1.0, _number(relationship, "friendship") / 100),
+                ),
+                "romance": max(
+                    0.0, min(1.0, _number(relationship, "romance") / 100)
+                ),
+                "trust": max(
+                    0.0, min(1.0, _number(relationship, "trust", 50) / 100)
+                ),
+            }
+        mood = str(speaker.get("current_mood") or "unknown")
+        identity = _mapping(speaker.get("identity"))
+        native = _mapping(speaker.get("native"))
+        native.setdefault("mood", mood)
+        native.setdefault("moodlets", _items(speaker.get("moodlets")))
+        return AgentStateSnapshot(
+            1,
+            "sims4",
+            str(speaker.get("id") or speaker.get("name") or "unknown-sim"),
+            identity=identity,
+            affect={"tags": [] if mood == "unknown" else [mood]},
+            needs=needs,
+            effects=_items(speaker.get("effects")),
+            relationships=relationships,
+            goals=_items(speaker.get("goals")),
+            intentions=_items(speaker.get("intentions")),
+            capabilities={
+                "actions": _items(self._payload.get("available_actions"))
+            },
+            native=native,
+        )
+
+    def observe(self) -> tuple[WorldEvent, ...]:
+        sim_data = self._sim_data()
         actor_id = str(sim_data.get("id") or sim_data.get("name") or "unknown-sim")
         listener = self._payload.get("listener")
         listener_data = listener if isinstance(listener, Mapping) else {}
@@ -72,12 +199,23 @@ class Sims4Adapter:
                         if item
                     },
                     "relationship": dict(relationship_data),
+                    "needs": _mapping(sim_data.get("needs")),
+                    "moodlets": _items(sim_data.get("moodlets")),
+                    "aspiration": str(sim_data.get("aspiration") or "unknown"),
+                    "career": str(sim_data.get("career") or "unknown"),
+                    "skills": _mapping(sim_data.get("skills")),
+                    "household": _mapping(sim_data.get("household")),
+                    "nearby_sims": _items(self._payload.get("nearby_sims")),
+                    "available_actions": _items(
+                        self._payload.get("available_actions")
+                    ),
                 },
+                agent_state=self.agent_state(),
             ),
         )
 
     def execute(self, decision: Decision, /) -> ActionResult:
-        supported = {"dialogue", "emotion", "memory"}
+        supported = {"animation", "dialogue", "emotion", "memory"}
         unsupported = [
             change.path
             for change in decision.state_changes
@@ -94,10 +232,24 @@ class Sims4Adapter:
             return ActionResult(
                 decision.id, "rejected", reason="no supported Sims action available"
             )
-        applied = decision.state_changes + (StateDelta("animation", "set", action),)
+        applied = decision.state_changes
+        if not any(change.path == "animation" for change in applied):
+            applied += (StateDelta("animation", "set", action),)
         return ActionResult(decision.id, "succeeded", applied)
 
     def action_for(self, decision: Decision) -> str | None:
+        configured = self._payload.get("available_actions")
+        available = {
+            str(action)
+            for action in (
+                configured if isinstance(configured, (list, tuple)) else SIMS_ACTIONS
+            )
+            if str(action) in SIMS_ACTIONS
+        }
+        for change in decision.state_changes:
+            if change.path == "animation":
+                action = str(change.value)
+                return action if action == "none" or action in available else None
         return self._action_for(decision.intent)
 
     def decision_from_response(self, response: Mapping[str, object], event_id: str) -> Decision:
@@ -106,13 +258,32 @@ class Sims4Adapter:
         memory = response.get("memory")
         changes = [
             StateDelta("dialogue", "set", str(response.get("dialogue") or "...")),
-            StateDelta("emotion", "set", str(response.get("emotion") or "neutral")),
+            StateDelta(
+                "emotion",
+                "set",
+                str(
+                    response.get("expressed_emotion")
+                    or response.get("emotion")
+                    or "neutral"
+                ),
+            ),
             StateDelta("memory", "append", memory if isinstance(memory, Mapping) else {}),
         ]
         changes.extend(
             StateDelta(f"relationship.{key.removesuffix('_delta')}", "increment", value)
             for key, value in relationship_data.items()
             if key.endswith("_delta")
+        )
+        changes.append(
+            StateDelta(
+                "animation",
+                "set",
+                str(
+                    response.get("suggested_action")
+                    or response.get("animation")
+                    or "none"
+                ),
+            )
         )
         event = self.observe()[0]
         return Decision(
@@ -127,16 +298,20 @@ class Sims4Adapter:
         self, decision: Decision, result: ActionResult | None = None
     ) -> dict[str, object]:
         response: dict[str, object] = {
-            "dialogue": "I hear you.",
+            "dialogue": (
+                "My language model is unavailable, so I can't answer reliably right now."
+            ),
             "emotion": "neutral",
+            "expressed_emotion": "neutral",
             "intent": decision.intent,
             "relationship": {
                 "friendship_delta": 0,
                 "romance_delta": 0,
                 "trust_delta": 0,
             },
-            "memory": {"importance": 0.2, "summary": "The conversation was acknowledged."},
-            "animation": "friendly_chat",
+            "memory": {"importance": 0.0, "summary": ""},
+            "suggested_action": "none",
+            "animation": "none",
         }
         relationship = response["relationship"]
         assert isinstance(relationship, dict)
@@ -144,6 +319,10 @@ class Sims4Adapter:
         for change in changes:
             if change.path.startswith("relationship."):
                 relationship[f"{change.path.split('.', 1)[1]}_delta"] = change.value
+            elif change.path == "emotion":
+                response["expressed_emotion"] = response["emotion"] = change.value
+            elif change.path == "animation":
+                response["suggested_action"] = response["animation"] = change.value
             elif change.path in response:
                 response[change.path] = change.value
         return response

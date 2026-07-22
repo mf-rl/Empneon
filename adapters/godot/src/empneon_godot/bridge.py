@@ -8,7 +8,13 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, cast
 
 from empneon.core.clod.rules import resolve_clod1
-from empneon.core.contracts import ActionResult, CognitiveRequest, StateDelta, WorldEvent
+from empneon.core.contracts import (
+    ActionResult,
+    AgentStateSnapshot,
+    CognitiveRequest,
+    StateDelta,
+    WorldEvent,
+)
 
 MAX_BODY_BYTES = 65_536
 
@@ -32,6 +38,22 @@ class GodotBridge:
         actor_ids = tuple(str(actor) for actor in actors if str(actor))
         if not agent_id or agent_id not in actor_ids:
             raise ValueError("agent_id must identify an event actor")
+        raw_state = event_data.get("agent_state")
+        state = (
+            AgentStateSnapshot.from_mapping(raw_state)
+            if isinstance(raw_state, Mapping)
+            else AgentStateSnapshot(
+                1,
+                "godot",
+                agent_id,
+                capabilities={"actions": ["acknowledge"]},
+                native={"facts": dict(facts)},
+            )
+        )
+        if state.agent_id != agent_id:
+            raise ValueError("agent state agent_id must match request agent_id")
+        if state.adapter != "godot":
+            raise ValueError("agent state adapter must be godot")
         event = WorldEvent(
             id=event_id,
             type=str(event_data.get("type") or ""),
@@ -39,6 +61,7 @@ class GodotBridge:
             location=str(event_data["location"]) if event_data.get("location") else None,
             facts=dict(facts),
             happened_at=int(event_data.get("happened_at", 0)),
+            agent_state=state,
         )
         decision = resolve_clod1(CognitiveRequest(agent_id, 1, event))
         self._pending.add(decision.id)

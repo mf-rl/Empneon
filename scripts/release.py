@@ -125,11 +125,14 @@ def package_component(root: Path, component: str, version: str, output: Path) ->
             runtime.update(
                 {
                     "backend/ai_sims_server.py": path / "backend/ai_sims_server.py",
+                    "backend/empneon_state.py": path / "backend/empneon_state.py",
                     "config/config.json": path / "config/config.json",
                     "dist/Empneon_TheSims4.package": path / "dist/Empneon_TheSims4.package",
                     "dist/Empneon_TheSims4.ts4script": path
                     / "dist/Empneon_TheSims4.ts4script",
                     "docs/setup.md": path / "docs/setup.md",
+                    "docs/in-game-core-feature-test-plan.md": path
+                    / "docs/in-game-core-feature-test-plan.md",
                     "install_mod.ps1": path / "install_mod.ps1",
                     "run_backend.ps1": path / "run_backend.ps1",
                 }

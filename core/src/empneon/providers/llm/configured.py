@@ -4,7 +4,7 @@ import os
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
-from empneon.providers.llm.base import GenerationRequest, LLMProvider, Message
+from empneon.providers.llm.base import GenerationRequest, GenerationResult, LLMProvider, Message
 from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 
@@ -77,7 +77,21 @@ class ConfiguredProviderRouter:
         schema: dict[str, object] | None = None,
         temperature: float | None = None,
     ) -> str:
+        return (
+            await self.generate_result(
+                task, messages, schema=schema, temperature=temperature
+            )
+        ).content
+
+    async def generate_result(
+        self,
+        task: str,
+        messages: tuple[Message, ...],
+        *,
+        schema: dict[str, object] | None = None,
+        temperature: float | None = None,
+    ) -> GenerationResult:
         request = self.generation_request(
             task, messages, schema=schema, temperature=temperature
         )
-        return (await self.provider_for(task).generate(request)).content
+        return await self.provider_for(task).generate(request)

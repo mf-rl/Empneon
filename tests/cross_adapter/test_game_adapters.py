@@ -3,15 +3,22 @@ from dataclasses import asdict, dataclass
 
 import pytest
 
+import empneon_godot.bridge as bridge_module
 from empneon_godot import GodotBridge
 from empneon_thesims4 import Sims4Adapter
 from empneon.core.clod import resolve_clod1
-from empneon.core.contracts import CognitiveRequest, WorldEvent
+from empneon.core.contracts import (
+    AgentStateSnapshot,
+    CognitiveRequest,
+    Decision,
+    WorldEvent,
+)
 
 
 @dataclass(frozen=True)
 class RoundTrip:
     event: WorldEvent
+    agent_state: AgentStateSnapshot
     actor_id: str
     decision_id: str
     evidence_ids: tuple[str, ...]
@@ -19,7 +26,7 @@ class RoundTrip:
     result_status: str
 
 
-def _sims4_round_trip() -> RoundTrip:
+def _sims4_round_trip(_monkeypatch: pytest.MonkeyPatch) -> RoundTrip:
     adapter = Sims4Adapter(
         {
             "speaker": {"id": "agent-a"},
@@ -31,8 +38,10 @@ def _sims4_round_trip() -> RoundTrip:
     event = adapter.observe()[0]
     decision = resolve_clod1(CognitiveRequest("agent-a", 1, event))
     result = adapter.execute(decision)
+    assert event.agent_state is not None
     return RoundTrip(
         event,
+        event.agent_state,
         decision.actor_id,
         decision.id,
         decision.evidence_ids,
@@ -41,8 +50,26 @@ def _sims4_round_trip() -> RoundTrip:
     )
 
 
-def _godot_round_trip() -> RoundTrip:
-    event = WorldEvent("encounter", ("agent-a", "agent-b"), id="contract-encounter")
+def _godot_round_trip(monkeypatch: pytest.MonkeyPatch) -> RoundTrip:
+    event = WorldEvent(
+        "encounter",
+        ("agent-a", "agent-b"),
+        id="contract-encounter",
+        agent_state=AgentStateSnapshot(
+            1,
+            "godot",
+            "agent-a",
+            native={"unknown_engine_value": "preserved"},
+        ),
+    )
+    captured = {}
+    resolve = bridge_module.resolve_clod1
+
+    def capture(request: CognitiveRequest) -> Decision:
+        captured["event"] = request.event
+        return resolve(request)
+
+    monkeypatch.setattr(bridge_module, "resolve_clod1", capture)
     bridge = GodotBridge()
     decision = bridge.decide({"agent_id": "agent-a", "event": asdict(event)})
     decision_id = str(decision["id"])
@@ -57,8 +84,14 @@ def _godot_round_trip() -> RoundTrip:
     )
     evidence_ids = decision["evidence_ids"]
     assert isinstance(evidence_ids, (list, tuple))
+    reconstructed = captured["event"]
+    assert reconstructed.agent_state is not None
+    assert reconstructed.agent_state.native == {
+        "unknown_engine_value": "preserved"
+    }
     return RoundTrip(
-        event,
+        reconstructed,
+        reconstructed.agent_state,
         str(decision["actor_id"]),
         decision_id,
         tuple(str(item) for item in evidence_ids),
@@ -70,10 +103,16 @@ def _godot_round_trip() -> RoundTrip:
 @pytest.mark.parametrize(
     "round_trip", [_sims4_round_trip, _godot_round_trip], ids=["sims4", "godot"]
 )
-def test_adapter_preserves_generic_contracts(round_trip: Callable[[], RoundTrip]) -> None:
-    completed = round_trip()
+def test_adapter_preserves_generic_contracts(
+    round_trip: Callable[[pytest.MonkeyPatch], RoundTrip],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = round_trip(monkeypatch)
 
     assert completed.event.actor_ids[0] == completed.actor_id
     assert completed.event.id in completed.evidence_ids
     assert completed.result_decision_id == completed.decision_id
     assert completed.result_status == "succeeded"
+    assert completed.agent_state.schema_version == 1
+    assert completed.agent_state.adapter in {"sims4", "godot"}
+    assert completed.agent_state.agent_id == completed.actor_id

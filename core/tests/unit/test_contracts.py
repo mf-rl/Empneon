@@ -1,13 +1,149 @@
+import dataclasses
+import json
+
 import pytest
 
 from empneon.core.contracts import (
     ActionResult,
+    AgentStateSnapshot,
     CognitiveRequest,
     Decision,
     StateDelta,
     WorldEvent,
 )
 from empneon.core.ports import GameAdapter
+
+
+def test_agent_state_snapshot_is_json_compatible_and_embedded_in_event() -> None:
+    snapshot = AgentStateSnapshot.from_mapping(
+        {
+            "schema_version": 1,
+            "adapter": "test",
+            "agent_id": "alice",
+            "affect": {"tags": ["calm"], "valence": 0.2, "intensity": 0.5},
+            "needs": {"energy": {"level": 0.8, "urgency": 0.2}},
+            "native": {"unknown_mod_state": "preserved"},
+            "identity": {
+                "gender": {"key": "female", "label": "Female"},
+                "age": {"kind": "life_stage", "value": "adult", "label": "Adult"},
+                "traits": [{"id": "outgoing", "label": "Outgoing"}],
+            },
+        }
+    )
+    event = WorldEvent("observation", ("alice",), agent_state=snapshot)
+
+    encoded = json.loads(json.dumps(dataclasses.asdict(event)))
+
+    assert encoded["agent_state"]["native"] == {
+        "unknown_mod_state": "preserved"
+    }
+    assert encoded["agent_state"]["effects"] == []
+    assert encoded["agent_state"]["identity"] == {
+        "gender": {"key": "female", "label": "Female"},
+        "age": {"kind": "life_stage", "value": "adult", "label": "Adult"},
+        "traits": [{"id": "outgoing", "label": "Outgoing"}],
+    }
+
+
+def test_agent_state_snapshot_rejects_non_json_identity() -> None:
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        AgentStateSnapshot(
+            1,
+            "test",
+            "alice",
+            identity={"traits": [{"id": object()}]},
+        )
+
+
+def test_agent_state_snapshot_accepts_common_need_status_and_native_scale() -> None:
+    snapshot = AgentStateSnapshot.from_mapping(
+        {
+            "schema_version": 1,
+            "adapter": "example-game",
+            "agent_id": "alice",
+            "needs": {
+                "energy": {
+                    "level": 0.4,
+                    "urgency": 0.6,
+                    "status": "low",
+                    "native": {"value": 40, "minimum": 0, "maximum": 100},
+                }
+            },
+        }
+    )
+
+    energy = snapshot.needs["energy"]
+    assert isinstance(energy, dict)
+    assert energy["status"] == "low"
+    assert energy["native"] == {"value": 40, "minimum": 0, "maximum": 100}
+
+
+def test_agent_state_snapshot_rejects_unknown_need_status() -> None:
+    with pytest.raises(ValueError, match="need status"):
+        AgentStateSnapshot.from_mapping(
+            {
+                "schema_version": 1,
+                "adapter": "test",
+                "agent_id": "alice",
+                "needs": {
+                    "energy": {
+                        "level": 0.5,
+                        "urgency": 0.5,
+                        "status": "orange",
+                    }
+                },
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "section,key,value",
+    [
+        ("affect", "valence", 1.1),
+        ("affect", "intensity", -0.1),
+        ("relationships", "affinity", -1.1),
+        ("relationships", "romance", 1.1),
+    ],
+)
+def test_agent_state_snapshot_rejects_out_of_range_values(
+    section: str, key: str, value: float
+) -> None:
+    data: dict[str, object] = {
+        "schema_version": 1,
+        "adapter": "test",
+        "agent_id": "alice",
+    }
+    data[section] = (
+        {"bob": {key: value}} if section == "relationships" else {key: value}
+    )
+
+    with pytest.raises(ValueError, match=key):
+        AgentStateSnapshot.from_mapping(data)
+
+
+def test_agent_state_snapshot_rejects_out_of_range_effect_intensity() -> None:
+    with pytest.raises(ValueError, match="intensity"):
+        AgentStateSnapshot.from_mapping(
+            {
+                "schema_version": 1,
+                "adapter": "test",
+                "agent_id": "alice",
+                "effects": [{"name": "energized", "intensity": 1.01}],
+            }
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_agent_state_snapshot_rejects_nested_non_finite_values(value: float) -> None:
+    with pytest.raises(ValueError, match="JSON-compatible"):
+        AgentStateSnapshot.from_mapping(
+            {
+                "schema_version": 1,
+                "adapter": "test",
+                "agent_id": "alice",
+                "native": {"nested": [{"sensor": value}]},
+            }
+        )
 
 
 def test_generic_event_to_decision_contract() -> None:

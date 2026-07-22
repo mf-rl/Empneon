@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import contextlib
+import dataclasses
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -14,23 +15,37 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from collections import Counter
+from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from empneon_thesims4 import Sims4Adapter
+from empneon_thesims4 import Sims4Adapter, cognition_priority
 from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
-from empneon.core.identity.models import Agent
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event
 from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
+from empneon.core.replay import replay_action_record
+from empneon.core.timeline import agent_timeline
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
+from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineExceeded
+from empneon.core.scheduler.selection import CognitionRoute
+from empneon.core.scheduler.usage import UsageStore
+from empneon.core.state import save_agent_state
 from empneon.db.connection import open_db
-from empneon.providers.llm import ConfiguredProviderRouter, Message, ProviderError
+from empneon.providers.llm import (
+    ConfiguredProviderRouter,
+    GenerationResult,
+    Message,
+    ProviderError,
+)
+from backend import empneon_state
 
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
 
@@ -40,6 +55,7 @@ DEFAULT_CONFIG = {
     "debug": True,
     "database": "ai_sims_memory.sqlite3",
     "core_database": "empneon_core.sqlite3",
+    "memory_database": "empneon_core_memory.sqlite3",
     "preserve_memory_only_on_game_save": False,
     "active_agent_limit": 1,
     "agent_wake_timeout_seconds": 60,
@@ -57,8 +73,22 @@ DEFAULT_CONFIG = {
         "textgenwebui": {"endpoint": "http://127.0.0.1:5000/v1", "model": "local-model"},
     },
     "models": {
-        "small": {"temperature": 0.4, "max_tokens": 300},
-        "large": {"temperature": 0.6, "max_tokens": 500},
+        "small": {
+            "temperature": 0.4,
+            "max_tokens": 120,
+            "context_tokens": 2048,
+            "latency_ms": 30000,
+            "ram_mb": 64,
+            "vram_mb": 0,
+        },
+        "large": {
+            "temperature": 0.6,
+            "max_tokens": 300,
+            "context_tokens": 4096,
+            "latency_ms": 90000,
+            "ram_mb": 128,
+            "vram_mb": 0,
+        },
     },
     "memory": {
         "recent_limit": 6,
@@ -103,7 +133,9 @@ def load_config():
         for task in ("small", "large"):
             config.setdefault("models", {}).setdefault(task, {})["model"] = os.environ["AI_SIM_MODEL"]
     if os.environ.get("AI_SIM_DB"):
-        config["database"] = os.environ["AI_SIM_DB"]
+        config["memory_database"] = os.environ["AI_SIM_DB"]
+    if os.environ.get("AI_SIM_MEMORY_DB"):
+        config["memory_database"] = os.environ["AI_SIM_MEMORY_DB"]
     if os.environ.get("AI_SIM_PORT"):
         config["port"] = int(os.environ["AI_SIM_PORT"])
     if os.environ.get("AI_SIM_HOST"):
@@ -116,16 +148,24 @@ if not isinstance(CONFIG.get("preserve_memory_only_on_game_save"), bool):
     raise ValueError("preserve_memory_only_on_game_save must be true or false")
 HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
-DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
-CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
+MEMORY_DB_PATH = str(CONFIG.get("memory_database") or "empneon_core_memory.sqlite3")
+LEGACY_ADAPTER_DB_PATH = str(CONFIG.get("database") or "ai_sims_memory.sqlite3")
+LEGACY_CORE_DB_PATH = str(CONFIG.get("core_database") or "empneon_core.sqlite3")
+# Compatibility aliases while legacy table access is removed in Task 2.
+DB_PATH = MEMORY_DB_PATH
+CORE_DB_PATH = MEMORY_DB_PATH
 ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 1)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
 ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
-LEGACY_MEMORY_CHECKED = set()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
+GENERATION_CONTEXT = threading.local()
+MIGRATION_STATUS = empneon_state.MigrationStatus(
+    os.path.abspath(MEMORY_DB_PATH), completed=False, error="not started"
+)
 
 
 def setup_logging():
@@ -172,8 +212,9 @@ a fact introduced only by the Sim's generated reply.
 Use this exact shape with concrete values:
 {
   "dialogue": "expressive in-character reply",
-  "emotion": "tense",
+  "expressed_emotion": "tense",
   "intent": "deflect",
+  "player_interaction_kind": "friendly",
   "relationship": {
     "friendship_delta": 1,
     "romance_delta": 0,
@@ -183,17 +224,37 @@ Use this exact shape with concrete values:
     "importance": 0.4,
     "summary": "One concrete event memory."
   },
-  "animation": "awkward_chat"
+  "suggested_action": "friendly_chat"
 }
+
+Classify the player's current message as exactly one of: friendly, romantic_compliment,
+romantic_invitation, hostile, informational, or neutral. A romantic compliment is not an
+invitation: respond freely without forcing an acceptance or rejection. A romantic invitation
+must be accepted or declined directly.
+The intent field describes the dialogue; it does not select a game action.
+Choose suggested_action only from the current request's available actions, or use none.
 """
+
+PLAYER_INTERACTION_KINDS = (
+    "friendly",
+    "romantic_compliment",
+    "romantic_invitation",
+    "hostile",
+    "informational",
+    "neutral",
+)
 
 DIALOGUE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
         "dialogue": {"type": "string"},
-        "emotion": {"type": "string"},
+        "expressed_emotion": {"type": "string"},
         "intent": {"type": "string"},
+        "player_interaction_kind": {
+            "type": "string",
+            "enum": list(PLAYER_INTERACTION_KINDS),
+        },
         "relationship": {
             "type": "object",
             "additionalProperties": False,
@@ -218,24 +279,38 @@ DIALOGUE_SCHEMA = {
             },
             "required": ["importance", "summary"],
         },
-        "animation": {
-            "type": "string",
-            "enum": [
-                "friendly_chat",
-                "funny_chat",
-                "romantic_chat",
-                "awkward_chat",
-                "angry_chat",
-                "sad_chat",
-                "apologize",
-                "argue",
-                "flirt",
-                "laugh",
-            ],
-        },
+        "suggested_action": {"type": "string", "enum": ["none"]},
     },
-    "required": ["dialogue", "emotion", "intent", "relationship", "memory", "animation"],
+    "required": [
+        "dialogue",
+        "expressed_emotion",
+        "intent",
+        "player_interaction_kind",
+        "relationship",
+        "memory",
+        "suggested_action",
+    ],
 }
+
+
+def available_actions(value):
+    return tuple(
+        dict.fromkeys(
+            str(action)
+            for action in (value if isinstance(value, (list, tuple)) else ())
+            if str(action) in ("friendly_chat", "apologize", "flirt")
+        )
+    )
+
+
+def dialogue_schema(value):
+    schema = json.loads(json.dumps(DIALOGUE_SCHEMA))
+    schema["properties"]["suggested_action"] = {
+        "type": "string",
+        "enum": list(available_actions(value)) + ["none"],
+    }
+    return schema
+
 
 DIRECTOR_SCHEMA = {
     "type": "object",
@@ -357,9 +432,8 @@ def start_memory_session(session_id, save_slot_id=""):
             if os.path.exists(legacy_saved) and (
                 not previous_slot or previous_slot == save_slot_id
             ):
-                _import_legacy_memory(
-                    legacy_saved, "legacy-checkpoint-{}".format(save_slot_id)
-                )
+                with open_db(database) as conn:
+                    empneon_state.import_legacy_adapter(conn, legacy_saved)
                 backup_memory_database(database, saved)
             elif not previous:
                 backup_memory_database(database, saved)
@@ -644,70 +718,39 @@ def default_profile(sim):
 
 
 def save_profile(profile):
-    timestamp = now()
-    existing = _get_memory("thesims4.profile", str(profile["id"]))
-    value = dict(profile)
-    value["created_at"] = (
-        existing.get("created_at", timestamp) if isinstance(existing, dict) else timestamp
-    )
-    value["updated_at"] = timestamp
-    _set_memory("thesims4.profile", str(profile["id"]), value)
+    identity = profile.get("identity") or {}
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.sync_sim(
+            conn,
+            {
+                "id": profile["id"],
+                "name": profile.get("name"),
+                "traits": identity.get("traits") or [],
+                "career": identity.get("career") or "unknown",
+                "voice": profile.get("voice") or {},
+            },
+        )
 
 
 def get_profile(sim_or_id):
     sid = sim_id(sim_or_id) if isinstance(sim_or_id, dict) else str(sim_or_id)
-    profile = _get_memory("thesims4.profile", sid)
-    return profile if isinstance(profile, dict) else get_profile_by_name(sid)
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.profile_for(conn, sid) or empneon_state.profile_by_name(conn, sid)
 
 
 def get_profile_by_name(name):
-    expected = str(name or "").casefold()
-    return next(
-        (
-            profile
-            for profile in _memory_values("thesims4.profile")
-            if str(profile.get("name") or "").casefold() == expected
-        ),
-        None,
-    )
-
-
-def migrate_agent_id(old_id, new_id):
-    old_id = str(old_id or "")
-    new_id = str(new_id or "")
-    if not old_id or not new_id or old_id == new_id:
-        return
-    profile = _get_memory("thesims4.profile", old_id)
-    if not isinstance(profile, dict) or _get_memory("thesims4.profile", new_id):
-        return
-    profile["id"] = new_id
-    profile.setdefault("identity", {})["sim_id"] = new_id
-    _set_memory("thesims4.profile", new_id, profile)
-    _delete_memory("thesims4.profile", old_id)
-    AGENT_LOG.info("migrated agent id old=%s new=%s", old_id, new_id)
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.profile_by_name(conn, str(name or ""))
 
 
 def list_profiles(limit=100):
-    return _memory_values("thesims4.profile")[: int(limit)]
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.profiles(conn, int(limit))
 
 
 def upsert_profile(sim):
-    profile = get_profile(sim)
-    if not profile:
-        named_profile = get_profile_by_name(sim_name(sim))
-        new_id = sim_id(sim)
-        if named_profile and named_profile["id"] != new_id:
-            migrate_agent_id(named_profile["id"], new_id)
-            profile = get_profile(new_id)
-        else:
-            profile = default_profile(sim)
-    else:
-        profile["name"] = sim_name(sim)
-        profile["identity"].update(default_profile(sim)["identity"])
-        profile["knowledge"].update({"career": sim.get("career") or profile["knowledge"].get("career", "unknown")})
-        profile["knowledge"]["skills"] = sim.get("skills") or profile["knowledge"].get("skills") or {}
-    save_profile(profile)
-    return profile
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.sync_sim(conn, sim)
 
 
 def default_relationship():
@@ -724,47 +767,34 @@ def default_relationship():
 
 
 def get_relationship(sim_id_value, target_id_value):
-    value = _get_memory(
-        "thesims4.relationship", _pair_key_directional(sim_id_value, target_id_value)
-    )
-    return value if isinstance(value, dict) else default_relationship()
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.relationship_view(conn, sim_id_value, target_id_value)
+
+
+def get_relationship_diagnostic(sim_id_value, target_id_value):
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.relationship_diagnostic(conn, sim_id_value, target_id_value)
 
 
 def save_relationship(sim_id_value, target_id_value, relationship):
-    values = default_relationship()
-    for key, value in (relationship or {}).items():
-        if key in values:
-            values[key] = value
-    for key in values:
-        values[key] = clamp_int(values[key], 0, 100)
-    _set_memory(
-        "thesims4.relationship",
-        _pair_key_directional(sim_id_value, target_id_value),
-        values,
-    )
-    return values
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_relationship(
+            conn, sim_id_value, target_id_value, relationship or {}
+        )
 
 
 def apply_relationship_delta(sim_id_value, target_id_value, deltas):
-    relationship = get_relationship(sim_id_value, target_id_value)
-    for key in default_relationship():
-        delta = deltas.get(key + "_delta", 0) if isinstance(deltas, dict) else 0
-        relationship[key] = clamp_int(relationship.get(key, 0) + delta, 0, 100)
-    saved = save_relationship(sim_id_value, target_id_value, relationship)
-    reverse = get_relationship(target_id_value, sim_id_value)
-    for key in ("friendship", "romance", "trust", "respect"):
-        reverse[key] = max(reverse.get(key, 0), saved[key])
-    save_relationship(target_id_value, sim_id_value, reverse)
-    return saved
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.apply_relationship_deltas(
+            conn, sim_id_value, target_id_value, deltas or {}
+        )
 
 
 def relationship_with_payload(sim_id_value, target_id_value, payload_relationship):
-    relationship = get_relationship(sim_id_value, target_id_value)
-    for key, value in (payload_relationship or {}).items():
-        if key in relationship:
-            relationship[key] = clamp_int(value, 0, 100)
-    save_relationship(sim_id_value, target_id_value, relationship)
-    return relationship
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_relationship(
+            conn, sim_id_value, target_id_value, payload_relationship or {}
+        )
 
 
 def default_emotion(mood="neutral"):
@@ -779,17 +809,13 @@ def default_emotion(mood="neutral"):
 
 
 def get_emotion(sim_id_value):
-    value = _get_memory("thesims4.emotion", str(sim_id_value))
-    return value if isinstance(value, dict) else default_emotion()
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.emotion_view(conn, sim_id_value)
 
 
 def save_emotion(sim_id_value, emotion):
-    values = default_emotion((emotion or {}).get("current_mood"))
-    values.update(emotion or {})
-    for key in ("happiness", "anger", "sadness", "stress", "confidence"):
-        values[key] = clamp_int(values[key], 0, 100)
-    _set_memory("thesims4.emotion", str(sim_id_value), values)
-    return values
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_emotion(conn, sim_id_value, emotion or {})
 
 
 def emotion_from_label(label):
@@ -815,63 +841,47 @@ def update_emotion_from_response(sim_id_value, label):
     return save_emotion(sim_id_value, emotion)
 
 
-def recent_memories(speaker_id, listener_id, limit=None, topic="", emotion="", location=""):
+def recent_memories(
+    speaker_id, listener_id, limit=None, topic="", emotion="", location="", query=""
+):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
     return [
         item
-        for item in memories_for_pair(speaker_id, listener_id, limit=10_000)
-        if (not topic or topic.casefold() in item["topic"].casefold())
-        and (not emotion or emotion.casefold() in item["emotion"].casefold())
-        and (not location or location.casefold() in item["location"].casefold())
+        for item in memories_for_pair(
+            speaker_id, listener_id, limit=10_000, query=query or topic
+        )
+        if (not topic or topic.casefold() in str(item.get("summary") or "").casefold())
+        and (not emotion or emotion.casefold() in str(item.get("summary") or "").casefold())
+        and (not location or location.casefold() in str(item.get("location") or "").casefold())
     ][:limit]
 
 
 def memories_for_sim(speaker_id, limit=10):
-    memories = _memory_values("thesims4.memory")
-    selected = [
-        item
-        for item in memories
-        if speaker_id in (item["speaker_id"], item["listener_id"], item["sim_id"])
-    ]
-    return _rank_memories(selected, limit)
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.relevant_memories(conn, speaker_id, "", int(limit))
 
 
 def add_memory(speaker_id, listener_id, summary, importance, emotion="", category="", topic="", location=""):
     summary = str(summary or "").strip()
     if not summary:
         return
-    category = category or ("long_term" if clamp_float(importance) >= 0.75 else "short_term")
-    created_at = now()
-    value = {
-        "id": time.time_ns(),
-        "speaker_id": speaker_id,
-        "listener_id": listener_id,
-        "sim_id": speaker_id,
-        "target_id": listener_id,
-        "event": summary,
-        "summary": summary,
-        "emotion": str(emotion or ""),
-        "category": str(category or "short_term"),
-        "topic": str(topic or ""),
-        "location": str(location or ""),
-        "importance": clamp_float(importance),
-        "created_at": created_at,
-    }
-    _set_memory("thesims4.memory", str(value["id"]), value)
+    with open_db(CORE_DB_PATH) as conn:
+        empneon_state.add_experience(
+            conn, speaker_id, listener_id, summary, location=str(location or "")
+        )
     MEMORY_LOG.info("memory saved sim=%s target=%s importance=%s summary=%s", speaker_id, listener_id, importance, summary)
 
 
 def memory_summary(sim_id_value, target_id_value):
-    value = _get_memory("thesims4.summary", _pair_key(sim_id_value, target_id_value))
-    return value or {"summary": "", "updated_at": 0}
+    memories = memories_for_pair(sim_id_value, target_id_value, limit=4)
+    return {
+        "summary": "; ".join(item["summary"] for item in memories),
+        "updated_at": max((item.get("created_at", 0) for item in memories), default=0),
+    }
 
 
 def save_memory_summary(sim_id_value, target_id_value, summary):
-    _set_memory(
-        "thesims4.summary",
-        _pair_key(sim_id_value, target_id_value),
-        {"summary": str(summary or "").strip(), "updated_at": now()},
-    )
+    add_memory(sim_id_value, target_id_value, summary, 1.0, category="summary")
 
 
 def maybe_summarize_memories(sim_id_value, target_id_value):
@@ -899,116 +909,19 @@ def maybe_summarize_memories(sim_id_value, target_id_value):
     return memory_summary(sim_id_value, target_id_value)
 
 
-def memories_for_pair(sim_id_value, target_id_value, limit=20):
+def memories_for_pair(sim_id_value, target_id_value, limit=20, query=""):
     pair = {str(sim_id_value), str(target_id_value)}
-    selected = [
-        item
-        for item in _memory_values("thesims4.memory")
-        if {str(item["speaker_id"]), str(item["listener_id"])} == pair
-    ]
+    with open_db(CORE_DB_PATH) as conn:
+        selected = [
+            item
+            for item in empneon_state.relevant_memories(
+                conn, sim_id_value, str(query or ""), 10_000
+            )
+            if set(item.get("participant_ids") or ()) == pair
+        ]
+    if query:
+        return selected[: int(limit)]
     return _rank_memories(selected, int(limit))
-
-
-def _pair_key(first, second):
-    return "\x1f".join(sorted((str(first), str(second))))
-
-
-def _pair_key_directional(first, second):
-    return "{}\x1f{}".format(first, second)
-
-
-def _set_memory(namespace, key, value):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        DocumentMemoryStore(conn).set(namespace, key, value)
-
-
-def _get_memory(namespace, key):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        return DocumentMemoryStore(conn).get(namespace, key)
-
-
-def _delete_memory(namespace, key):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        DocumentMemoryStore(conn).delete(namespace, key)
-
-
-def _memory_values(namespace):
-    _ensure_legacy_memory_imported()
-    with open_db(CORE_DB_PATH) as conn:
-        values = [document.value for document in DocumentMemoryStore(conn).list(namespace)]
-    return [value for value in values if isinstance(value, dict)]
-
-
-def _ensure_legacy_memory_imported():
-    _import_legacy_memory(DB_PATH, "legacy-v1")
-
-
-def _import_legacy_memory(source_path, marker):
-    paths = (os.path.abspath(source_path), os.path.abspath(CORE_DB_PATH), marker)
-    if paths in LEGACY_MEMORY_CHECKED:
-        return
-    LEGACY_MEMORY_CHECKED.add(paths)
-    if paths[0] == paths[1] or not os.path.exists(paths[0]):
-        return
-    try:
-        legacy = sqlite3.connect(paths[0])
-        legacy.row_factory = sqlite3.Row
-        tables = {
-            row["name"]
-            for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        }
-        with open_db(paths[1]) as core:
-            store = DocumentMemoryStore(core)
-            if store.get("thesims4.migration", marker) is not None:
-                return
-            if "sim_profiles" in tables:
-                for row in legacy.execute("SELECT * FROM sim_profiles"):
-                    store.set("thesims4.profile", row["sim_id"], row_profile(row))
-            if "memories" in tables:
-                for row in legacy.execute("SELECT * FROM memories"):
-                    store.set("thesims4.memory", str(row["id"]), dict(row))
-            if "memory_summaries" in tables:
-                for row in legacy.execute("SELECT * FROM memory_summaries"):
-                    store.set(
-                        "thesims4.summary",
-                        _pair_key(row["sim_id"], row["target_id"]),
-                        {"summary": row["summary"], "updated_at": row["updated_at"]},
-                    )
-            if "relationships" in tables:
-                for row in legacy.execute("SELECT * FROM relationships"):
-                    store.set(
-                        "thesims4.relationship",
-                        _pair_key_directional(row["sim_id"], row["target_id"]),
-                        {key: row[key] for key in default_relationship()},
-                    )
-            if "emotions" in tables:
-                for row in legacy.execute("SELECT * FROM emotions"):
-                    value = {key: row[key] for key in default_emotion()}
-                    store.set("thesims4.emotion", row["sim_id"], value)
-            if "conversations" in tables:
-                for row in legacy.execute("SELECT * FROM conversations"):
-                    store.set(
-                        "thesims4.conversation",
-                        str(row["id"]),
-                        {
-                            "conversation_id": row["conversation_id"],
-                            "speaker_id": row["speaker_id"],
-                            "listener_id": row["listener_id"],
-                            "message": row["message"],
-                            "response": loads(row["response_json"], {}),
-                            "created_at": row["created_at"],
-                        },
-                    )
-            store.set("thesims4.migration", marker, {"imported": True})
-    except sqlite3.Error as exc:
-        MEMORY_LOG.warning("legacy memory import failed: %s", exc)
-        LEGACY_MEMORY_CHECKED.discard(paths)
-    finally:
-        if "legacy" in locals():
-            legacy.close()
 
 
 def _rank_memories(memories, limit):
@@ -1037,7 +950,22 @@ def clamp_float(value, low=0.0, high=1.0):
     return max(low, min(high, value))
 
 
-def normalize_response(raw):
+def sanitize_action_proposal(response, actions):
+    allowed = set(available_actions(actions))
+    action = str(response.get("suggested_action") or "none")
+    if action not in allowed:
+        action = "none"
+    dialogue = str(response.get("dialogue") or "").casefold()
+    if action == "flirt" and re.search(
+        r"\bno\b|not interested|rather stay friends|do not want|don't want",
+        dialogue,
+    ):
+        action = "none"
+    response["suggested_action"] = action
+    return response
+
+
+def normalize_response(raw, available_actions=()):
     if not isinstance(raw, dict):
         raw = {}
 
@@ -1052,24 +980,23 @@ def normalize_response(raw):
         memory = {}
 
     dialogue = str(raw.get("dialogue") or "").strip() or "..."
-    animation = str(raw.get("animation") or "friendly_chat").strip()
-    if animation not in (
-        "friendly_chat",
-        "funny_chat",
-        "romantic_chat",
-        "awkward_chat",
-        "angry_chat",
-        "sad_chat",
-        "apologize",
-        "argue",
-        "flirt",
-        "laugh",
-    ):
-        animation = "friendly_chat"
-    return {
+    player_interaction_kind = str(
+        raw.get("player_interaction_kind") or "neutral"
+    ).strip()
+    if player_interaction_kind not in PLAYER_INTERACTION_KINDS:
+        player_interaction_kind = "neutral"
+    expressed_emotion = str(
+        raw.get("expressed_emotion") or raw.get("emotion") or "neutral"
+    ).strip().lower()
+    suggested_action = str(
+        raw.get("suggested_action") or raw.get("animation") or "none"
+    ).strip()
+    response = {
         "dialogue": dialogue,
-        "emotion": str(raw.get("emotion") or "neutral").strip().lower(),
+        "expressed_emotion": expressed_emotion,
+        "emotion": expressed_emotion,
         "intent": str(raw.get("intent") or "respond").strip(),
+        "player_interaction_kind": player_interaction_kind,
         "relationship": {
             "friendship_delta": clamp_int(relationship.get("friendship_delta")),
             "romance_delta": clamp_int(relationship.get("romance_delta")),
@@ -1084,8 +1011,12 @@ def normalize_response(raw):
             "importance": clamp_float(memory.get("importance")),
             "summary": str(memory.get("summary") or "").strip(),
         },
-        "animation": animation,
+        "suggested_action": suggested_action,
+        "animation": suggested_action,
     }
+    sanitize_action_proposal(response, available_actions)
+    response["animation"] = response["suggested_action"]
+    return response
 
 
 def extract_json(text):
@@ -1097,6 +1028,15 @@ def extract_json(text):
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
+
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            parsed, _end = decoder.raw_decode(text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
 
     start = text.find("{")
     end = text.rfind("}")
@@ -1118,26 +1058,75 @@ def extract_json(text):
     return json.loads(quoted_keys)
 
 
-def fallback_response(text):
-    text = str(text or "").strip()
-    if text.startswith("```"):
-        text = "\n".join(line for line in text.splitlines() if not line.startswith("```")).strip()
+def fallback_response(text, available_actions=()):
     return normalize_response(
         {
-            "dialogue": text[:500] or "...",
+            "dialogue": "I couldn't form a reliable response. Please try again.",
             "emotion": "neutral",
             "intent": "respond",
             "relationship": {},
             "memory": {"importance": 0.0, "summary": ""},
-            "animation": "friendly_chat",
-        }
+            "suggested_action": "none",
+        },
+        available_actions,
     )
+
+
+class CognitionQueue:
+    def __init__(self, workers, max_queue_size):
+        self._scheduler = PriorityScheduler(max_queue_size)
+        self._jobs = {}
+        self._condition = threading.Condition()
+        for index in range(max(1, int(workers))):
+            worker = threading.Thread(
+                target=self._work,
+                name="empneon-cognition-{}".format(index),
+                daemon=True,
+            )
+            worker.start()
+
+    def __len__(self):
+        return len(self._scheduler)
+
+    def run(self, request, work):
+        job = {"work": work, "done": threading.Event(), "result": None, "error": None}
+        with self._condition:
+            self._jobs[request.id] = job
+            self._scheduler.submit(request)
+            self._condition.notify()
+        if not job["done"].wait(request.deadline_ms / 1000):
+            with self._condition:
+                self._jobs.pop(request.id, None)
+            raise RequestDeadlineExceeded("cognitive request deadline exceeded")
+        if job["error"] is not None:
+            raise job["error"]
+        return job["result"]
+
+    def _work(self):
+        while True:
+            with self._condition:
+                while len(self._scheduler) == 0:
+                    self._condition.wait()
+                try:
+                    request = self._scheduler.pop()
+                except RequestDeadlineExceeded:
+                    continue
+                job = self._jobs.get(request.id)
+            if job is None:
+                continue
+            try:
+                job["result"] = job["work"]()
+            except Exception as exc:
+                job["error"] = exc
+            finally:
+                with self._condition:
+                    self._jobs.pop(request.id, None)
+                job["done"].set()
 
 
 class AgentManager:
     def __init__(self, limit):
         self.limit = max(1, int(limit or 1))
-        self._semaphore = threading.BoundedSemaphore(self.limit)
         self._lock = threading.RLock()
         self._active = {}
 
@@ -1151,9 +1140,6 @@ class AgentManager:
                 AGENT_LOG.info("agent reused sim=%s reason=%s refs=%s", sid, reason, self._active[sid]["refs"])
                 return profile
 
-        acquired = self._semaphore.acquire(timeout=AGENT_WAKE_TIMEOUT if timeout is None else timeout)
-        if not acquired:
-            raise RuntimeError("active agent limit reached; request timed out")
         with self._lock:
             self._active[sid] = {
                 "sim_id": sid,
@@ -1178,7 +1164,6 @@ class AgentManager:
                 self._active.pop(str(sim_id_value), None)
                 release = True
         if release:
-            self._semaphore.release()
             AGENT_LOG.info("agent slept sim=%s reason=%s", sim_id_value, reason)
         return True
 
@@ -1196,6 +1181,7 @@ class AgentManager:
 
 
 AGENTS = AgentManager(ACTIVE_AGENT_LIMIT)
+COGNITION_QUEUE = CognitionQueue(ACTIVE_AGENT_LIMIT, max(8, ACTIVE_AGENT_LIMIT * 4))
 
 
 def task_model_config(task="large"):
@@ -1217,23 +1203,82 @@ def configured_model(task="large"):
 
 def llm_chat(messages, temperature=None, schema=None, schema_name="response", task="large"):
     del schema_name  # Core providers use the schema itself, not an adapter label.
+    task = str(getattr(GENERATION_CONTEXT, "task", task) or task)
     core_messages = tuple(
         Message(str(message.get("role") or "user"), str(message.get("content") or ""))
         for message in messages
     )
-    return asyncio.run(
-        provider_router().generate(
-            task,
-            core_messages,
-            schema=schema,
-            temperature=temperature,
+    router = provider_router()
+    if hasattr(router, "generate_result"):
+        result = asyncio.run(
+            router.generate_result(
+                task,
+                core_messages,
+                schema=schema,
+                temperature=temperature,
+            )
         )
-    )
+    else:
+        result = GenerationResult(
+            asyncio.run(
+                router.generate(
+                    task,
+                    core_messages,
+                    schema=schema,
+                    temperature=temperature,
+                )
+            )
+        )
+    attempts = getattr(GENERATION_CONTEXT, "attempts", None)
+    if isinstance(attempts, list):
+        attempts.append((task, router.config_for(task), result))
+    return result.content
+
+
+def cognition_routes(resolvers):
+    router = provider_router()
+    routes = []
+    for task, clod in (("small", 2), ("large", 3), ("deep", 4)):
+        if task == "deep" and task not in (CONFIG.get("models") or {}):
+            continue
+        config = router.config_for(task)
+        estimate = ResourceEstimate(
+            ram_mb=int(config.get("ram_mb") or 64),
+            vram_mb=int(config.get("vram_mb") or 0),
+            context_tokens=int(config.get("context_tokens") or 4096),
+            completion_tokens=int(config.get("max_tokens") or 300),
+            latency_ms=int(config.get("latency_ms") or 3000),
+        )
+        routes.append(
+            CognitionRoute(
+                str(config["name"]),
+                clod,
+                router.provider_for(task).capabilities,
+                estimate,
+                resolvers[task],
+            )
+        )
+    return tuple(routes)
+
+
+def _actor_snapshot(payload, role):
+    other = "listener" if role == "speaker" else "speaker"
+    actor_payload = dict(payload)
+    actor_payload.pop("sim", None)
+    actor_payload["speaker"] = payload.get(role) or {}
+    actor_payload["listener"] = payload.get(other) or {}
+    if role == "listener":
+        actor_payload["relationship"] = {}
+    return dataclasses.asdict(Sims4Adapter(actor_payload).agent_state())
 
 
 def build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary):
     speaker = payload.get("speaker") or {}
     listener = payload.get("listener") or {}
+    speaker_identity = speaker.get("identity") or {}
+    listener_identity = listener.get("identity") or {}
+    speaker_state = _actor_snapshot(payload, "speaker")
+    listener_state = _actor_snapshot(payload, "listener")
     return {
         "speaker": speaker_profile,
         "listener": listener_profile,
@@ -1244,8 +1289,28 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
         "location": payload.get("location") or "unknown",
         "nearby_sims": payload.get("nearby_sims") or [],
         "message": payload.get("message") or "",
-        "speaker_traits": speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or [],
-        "listener_traits": listener.get("traits") or listener_profile.get("identity", {}).get("traits") or [],
+        "speaker_identity": speaker_identity,
+        "listener_identity": listener_identity,
+        "speaker_state": speaker_state,
+        "listener_state": listener_state,
+        "speaker_traits": (
+            speaker_identity.get("traits") or []
+            if isinstance(speaker_identity, dict) and "traits" in speaker_identity
+            else speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or []
+        ),
+        "listener_traits": (
+            listener_identity.get("traits") or []
+            if isinstance(listener_identity, dict) and "traits" in listener_identity
+            else listener.get("traits") or listener_profile.get("identity", {}).get("traits") or []
+        ),
+        "game_state": {
+            "needs": speaker.get("needs") or {},
+            "moodlets": speaker.get("moodlets") or [],
+            "aspiration": speaker.get("aspiration") or "unknown",
+            "career": speaker.get("career") or "unknown",
+            "skills": speaker.get("skills") or {},
+            "household": speaker.get("household") or {},
+        },
     }
 
 
@@ -1256,7 +1321,18 @@ def build_chat_prompt(payload, context):
     emotions = context["emotions"]
     memory_lines = "\n".join("- " + item["summary"] for item in context["memories"]) or "- None yet"
     nearby = ", ".join(sim_name(item) if isinstance(item, dict) else str(item) for item in context["nearby_sims"]) or "none"
+    game_state = context["game_state"]
+    household = game_state["household"]
+    household_name = household.get("name") if isinstance(household, dict) else household
     goals = speaker_profile.get("goals") or []
+    speaker_traits = ", ".join(
+        str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
+        for item in context["speaker_traits"]
+    ) or "unknown"
+    listener_traits = ", ".join(
+        str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
+        for item in context["listener_traits"]
+    ) or "unknown"
     conversation_lines = []
     current_message = " ".join(str(payload.get("message") or "").casefold().split())
     for turn in context.get("conversation") or []:
@@ -1275,6 +1351,16 @@ def build_chat_prompt(payload, context):
             )
         )
     recent_conversation = "\n".join(conversation_lines) or "None yet"
+    actions = available_actions(payload.get("available_actions"))
+    action_descriptions = {
+        "friendly_chat": "continue a friendly conversation.",
+        "apologize": "perform an apology.",
+        "flirt": "perform a romantic social action.",
+    }
+    action_explanations = "\n".join(
+        ["- {}: {}".format(action, action_descriptions[action]) for action in actions]
+        + ["- none: dialogue only; perform no Sims action."]
+    )
 
     return """Role assignment:
 You are {speaker_name}, the Speaker.
@@ -1285,17 +1371,30 @@ Do not include the Speaker's name in dialogue.
 
 Speaker:
 {speaker_name}
-Identity: {identity}
+Speaker identity: {speaker_identity}
 Traits: {speaker_traits}
 Personality: {personality}
 Values: {values}
 Behavior rules: {rules}
 Knowledge: {knowledge}
 Goals: {goals}
+Needs: {needs}
+Moodlets: {moodlets}
+Aspiration: {aspiration}
+Career: {career}
+Skills: {skills}
+Household: {household}
 
 Listener:
 {listener_name}
+Listener identity: {listener_identity}
 Traits: {listener_traits}
+
+Speaker current state:
+{speaker_state}
+
+Listener current state:
+{listener_state}
 
 Relationship:
 {relationship}
@@ -1315,10 +1414,24 @@ Location:
 Nearby Sims:
 {nearby}
 
+Available actions:
+{available_actions}
+{action_explanations}
+Intent describes the reply and never selects an action.
+
 Recent conversation:
 {recent_conversation}
 
 Grounding rules:
+- Answer the current message without restating or closely paraphrasing it.
+- Keep the reply distinct from every recent player input and Speaker reply.
+- Advance the conversation with a new reaction, detail, question, or decision instead of reusing
+  an earlier opening or sentence frame.
+- Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
+- Combine traits with current mood, needs, relationship, memories, and the current message.
+- Do not merely name or caricature traits.
+- Use gendered relationship terms only when supported by supplied identity.
+- Do not guess gender or age when identity is unknown.
 - A fact about shared history is supported only when it appears in Relevant memories, Memory
   summary, or something the Listener previously said.
 - The Speaker's earlier generated replies provide conversational tone, but are not evidence that
@@ -1329,20 +1442,35 @@ Grounding rules:
   memory.summary.
 - When asked about a supported plan or agreement, answer with the exact activity, date, and time
   available in the evidence.
+- Needs are context, not required topics. A satisfied need is normally silent; a low need may
+  motivate a gentle suggestion; a critical need should strongly influence urgency and may redirect
+  the conversation, but the Speaker may still continue the current topic.
+- Express needs naturally in-world. Do not recite need names, status labels, or numeric values.
+- memory.summary must describe the concrete exchange; never use placeholders such as "None yet"
+  or "One concrete event memory."
 
 Player says:
 {message}
 """.format(
         speaker_name=speaker_profile.get("name") or "Unknown Sim",
-        identity=dumps(speaker_profile.get("identity") or {}),
-        speaker_traits=", ".join(context["speaker_traits"]) or "unknown",
+        speaker_identity=dumps(context["speaker_identity"]),
+        speaker_traits=speaker_traits,
         personality=dumps(speaker_profile.get("personality") or {}),
         values=", ".join(speaker_profile.get("values") or []) or "unknown",
         rules=", ".join(speaker_profile.get("behavioral_rules") or []) or "none",
         knowledge=dumps(speaker_profile.get("knowledge") or {}),
         goals=", ".join(str(goal) for goal in goals) or "none",
+        needs=dumps(game_state["needs"]),
+        moodlets=", ".join(str(item) for item in game_state["moodlets"]) or "none",
+        aspiration=game_state["aspiration"],
+        career=game_state["career"],
+        skills=dumps(game_state["skills"]),
+        household=household_name or "unknown",
         listener_name=listener_profile.get("name") or "Unknown Sim",
-        listener_traits=", ".join(context["listener_traits"]) or "unknown",
+        listener_identity=dumps(context["listener_identity"]),
+        listener_traits=listener_traits,
+        speaker_state=dumps(context["speaker_state"]),
+        listener_state=dumps(context["listener_state"]),
         relationship=dumps(relationship),
         emotions=dumps(emotions),
         recent_conversation=recent_conversation,
@@ -1350,54 +1478,321 @@ Player says:
         memories=memory_lines,
         location=context["location"],
         nearby=nearby,
+        available_actions=", ".join(actions) or "none",
+        action_explanations=action_explanations,
         message=payload.get("message") or "",
     )
 
 
+def _identity_gender(identity):
+    value = identity.get("gender") if isinstance(identity, dict) else identity
+    if isinstance(value, dict):
+        value = value.get("key") or value.get("value") or value.get("label")
+    tokens = set(re.findall(r"[a-z]+", str(value or "").casefold()))
+    if tokens & {"female", "woman", "girl"}:
+        return "female"
+    if tokens & {"male", "man", "boy"}:
+        return "male"
+    return "unknown"
+
+
+def _mask_quoted_dialogue(dialogue):
+    masked = re.sub(
+        r'"[^"]*"|“[^”]*”|‘[^’]*’',
+        " ",
+        str(dialogue or "").casefold(),
+    )
+    characters = list(masked)
+    opening = None
+    for index, character in enumerate(characters):
+        if character != "'":
+            continue
+        previous = characters[index - 1] if index else " "
+        following = characters[index + 1] if index + 1 < len(characters) else " "
+        if opening is None and not previous.isalnum():
+            opening = index
+        elif opening is not None and not following.isalnum():
+            characters[opening : index + 1] = " " * (index + 1 - opening)
+            opening = None
+    return "".join(characters)
+
+
+def _direct_partner_terms(dialogue):
+    terms = {
+        "boyfriend": "boyfriend",
+        "boyfriends": "boyfriend",
+        "girlfriend": "girlfriend",
+        "girlfriends": "girlfriend",
+    }
+    results = []
+    unquoted = _mask_quoted_dialogue(dialogue).replace("’", "'")
+    for sentence in re.split(r"[.!?]+", unquoted):
+        tokens = re.findall(r"[a-z]+(?:'[a-z]+)?", sentence)
+        for index, token in enumerate(tokens):
+            term = terms.get(token)
+            if term and _direct_partner_prefix(tokens[:index]):
+                results.append(term)
+    return results
+
+
+def _direct_partner_prefix(prefix):
+    ownership = bool(prefix) and prefix[-1] in ("my", "a")
+    if prefix in (["let's", "be"], ["be", "my"], ["become", "my"]):
+        return True
+    if prefix in (["please", "be", "my"], ["please", "become", "my"]):
+        return True
+    if not ownership:
+        return False
+    stem = prefix[:-1]
+    if stem == ["you're"]:
+        return True
+    if stem[0:2] == ["you", "are"]:
+        modifiers = stem[2:]
+        return not modifiers or modifiers in (
+            ["definitely"],
+            ["certainly"],
+            ["really"],
+            ["truly"],
+        )
+    if stem in (
+        ["you", "were"],
+        ["you", "will", "be"],
+        ["you", "would", "be"],
+        ["you", "could", "be"],
+        ["you", "can", "be"],
+        ["you", "have", "been"],
+        ["you", "have", "always", "been"],
+    ):
+        return True
+    if len(stem) >= 2 and stem[0] in ("will", "would", "could", "can"):
+        if stem[1] != "you":
+            return False
+        proposal = stem[2:]
+        if proposal[0:1] == ["please"]:
+            proposal = proposal[1:]
+        return proposal in (
+            ["be"],
+            ["become"],
+            ["like", "to", "be"],
+            ["like", "to", "become"],
+            ["want", "to", "be"],
+            ["want", "to", "become"],
+        )
+    return stem in (
+        ["i", "want", "you", "to", "be"],
+        ["i", "want", "you", "to", "become"],
+        ["i", "would", "like", "you", "to", "be"],
+        ["i", "would", "like", "you", "to", "become"],
+    )
+
+
 def response_has_role_confusion(response, context):
-    words = set(re.findall(r"\w+", str(response.get("dialogue") or "").casefold()))
-    speaker = set(re.findall(r"\w+", str(context["speaker"].get("name") or "").casefold()))
-    listener = set(re.findall(r"\w+", str(context["listener"].get("name") or "").casefold()))
-    return bool({word for word in speaker - listener if len(word) > 1} & words)
+    dialogue = str(response.get("dialogue") or "")
+    words = set(re.findall(r"\w+", dialogue.casefold()))
+    speaker = set(
+        re.findall(
+            r"\w+", str(context.get("speaker", {}).get("name") or "").casefold()
+        )
+    )
+    listener = set(
+        re.findall(
+            r"\w+", str(context.get("listener", {}).get("name") or "").casefold()
+        )
+    )
+    if {word for word in speaker - listener if len(word) > 1} & words:
+        return True
+    gender = _identity_gender(context.get("listener_identity") or {})
+    expected = "boyfriend" if gender == "male" else "girlfriend"
+    return any(gender == "unknown" or term != expected for term in _direct_partner_terms(dialogue))
+
+
+def _dialogue_words(value, context):
+    names = set()
+    for role in ("speaker", "listener"):
+        names.update(
+            re.findall(
+                r"[a-z0-9']+",
+                str(context.get(role, {}).get("name") or "").casefold(),
+            )
+        )
+    return [
+        word
+        for word in re.findall(r"[a-z0-9']+", str(value or "").casefold())
+        if word not in names
+    ]
+
+
+def _dialogue_similarity(left, right):
+    if not left or not right:
+        return 0.0
+    matcher = SequenceMatcher(None, left, right, autojunk=False)
+    sequence_ratio = matcher.ratio()
+    overlap_ratio = sum((Counter(left) & Counter(right)).values()) / min(
+        len(left), len(right)
+    )
+    blocks = [block.size for block in matcher.get_matching_blocks() if block.size]
+    longest_length = max(len(left), len(right))
+    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / longest_length
+    total_matching_coverage = sum(blocks) / longest_length
+    if secondary_coverage >= 0.25 and total_matching_coverage >= 0.55:
+        return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
+    return max(sequence_ratio, overlap_ratio)
+
+
+def classify_player_interaction(message):
+    value = str(message or "").casefold()
+    if re.search(
+        r"\b(go(?:ing)? out|go on a date|on a date with|date me|"
+        r"take (?:you|them|him|her) on a date|"
+        r"be my (?:girl|boy)friend|be (?:girl|boy)friends|kiss me|marry me|"
+        r"be together)\b",
+        value,
+    ):
+        return "romantic_invitation"
+    if re.search(
+        r"\b(attracted|attractive|beautiful|cute|gorgeous|handsome|hot|sexy|"
+        r"have feelings for|love you|like you romantically)\b",
+        value,
+    ):
+        return "romantic_compliment"
+    if re.search(r"\b(hate|despise|idiot|stupid|leave me alone|go away)\b", value):
+        return "hostile"
+    if "?" in value or re.search(
+        r"\b(where|when|who|what|why|how|tell me|explain)\b", value
+    ):
+        return "informational"
+    if re.search(r"\b(friend|friends|nice|kind|hello|hi|thank|glad to meet)\b", value):
+        return "friendly"
+    return "neutral"
+
+
+def _is_romantic_request(message):
+    return classify_player_interaction(message) == "romantic_invitation"
+
+
+def response_grounding_issue(payload, response, context):
+    message = str(payload.get("message") or "").casefold()
+    dialogue = str(response.get("dialogue") or "").casefold()
+    message_words = _dialogue_words(message, context)
+    dialogue_words = _dialogue_words(dialogue, context)
+    if (
+        len(message_words) >= 6
+        and len(dialogue_words) >= 4
+        and _dialogue_similarity(message_words, dialogue_words) >= 0.72
+    ):
+        return "respond naturally; do not copy the player's message"
+    for turn in context.get("conversation") or []:
+        previous_message = _dialogue_words(turn.get("message"), context)
+        if (
+            len(previous_message) >= 6
+            and len(dialogue_words) >= 4
+            and _dialogue_similarity(dialogue_words, previous_message) >= 0.72
+        ):
+            return "do not copy a previous player message"
+        previous_reply = _dialogue_words(turn.get("dialogue"), context)
+        if (
+            len(previous_reply) >= 4
+            and len(dialogue_words) >= 4
+            and _dialogue_similarity(dialogue_words, previous_reply) >= 0.72
+        ):
+            return "do not reuse a previous reply for a different message"
+    asks_recalled_fact = "?" in message and (
+        message.startswith(("where ", "when ", "who ", "what did "))
+        or "remember" in message
+        or "did i say" in message
+    )
+    has_evidence = _memory_supports_question(message, context)
+    uncertainty = (
+        "don't know",
+        "do not know",
+        "not sure",
+        "don't remember",
+        "do not remember",
+        "what are you talking",
+    )
+    if asks_recalled_fact and has_evidence and any(phrase in dialogue for phrase in uncertainty):
+        return "use the supporting memory instead of denying it"
+    if asks_recalled_fact and not has_evidence and not any(
+        phrase in dialogue for phrase in uncertainty
+    ):
+        return "state uncertainty because no supporting memory exists"
+    return ""
+
+
+def _memory_supports_question(message, context):
+    ignored = {
+        "where",
+        "when",
+        "who",
+        "what",
+        "which",
+        "remember",
+        "said",
+        "say",
+        "item",
+        "hidden",
+        "there",
+        "about",
+    }
+    terms = {
+        term
+        for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(message).casefold())
+        if len(term) >= 4 and term not in ignored
+    }
+    evidence = " ".join(
+        [str(context.get("summary") or "")]
+        + [str(item.get("summary") or "") for item in context.get("memories") or []]
+    ).casefold()
+    return bool(terms and any(term in evidence for term in terms))
 
 def save_conversation(conversation_id, speaker_id, listener_id, message, response):
-    created_at = time.time_ns()
-    _set_memory(
-        "thesims4.conversation",
-        uuid.uuid4().hex,
-        {
-            "conversation_id": conversation_id,
-            "speaker_id": speaker_id,
-            "listener_id": listener_id,
-            "message": str(message or ""),
-            "response": response,
-            "created_at": created_at,
-        },
-    )
+    with open_db(CORE_DB_PATH) as conn:
+        empneon_state.record_conversation(
+            conn, conversation_id, speaker_id, listener_id, str(message or ""), response
+        )
 
 
 def recent_conversation(speaker_id, listener_id, limit=None):
     limit = int(limit or CONFIG.get("memory", {}).get("recent_limit", 6))
-    pair = {str(speaker_id), str(listener_id)}
-    rows = [
-        value
-        for value in _memory_values("thesims4.conversation")
-        if {str(value["speaker_id"]), str(value["listener_id"])} == pair
-    ][:limit]
-    return [
-        {
-            "speaker_id": row["speaker_id"],
-            "listener_id": row["listener_id"],
-            "message": row["message"],
-            "dialogue": str((row.get("response") or {}).get("dialogue") or ""),
-        }
-        for row in reversed(rows)
-    ]
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.recent_conversations(
+            conn, speaker_id, listener_id, limit
+        )
 
 
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
-    if any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
+    interaction_kind = classify_player_interaction(message)
+    if interaction_kind == "romantic_invitation":
+        dialogue = "No, I would rather stay friends."
+        emotion = "awkward"
+        intent = "set_boundary"
+        animation = "awkward_chat"
+        trust_delta = 0
+    elif "?" in message and _memory_supports_question(message, context):
+        candidates = [
+            str(item.get("summary") or "").strip()
+            for item in context.get("memories") or []
+            if str(item.get("summary") or "").strip()
+        ]
+        if not candidates and str(context.get("summary") or "").strip():
+            candidates.append(str(context["summary"]).strip())
+        dialogue = next((item for item in candidates if not item.endswith("?")), candidates[0])
+        emotion = "confident"
+        intent = "recall"
+        animation = "friendly_chat"
+        trust_delta = 0
+    elif "?" in message and not _memory_supports_question(message, context) and (
+        message.startswith(("where ", "when ", "who ", "what did "))
+        or "remember" in message
+        or "did i say" in message
+    ):
+        dialogue = "I don't know or remember that."
+        emotion = "uncertain"
+        intent = "admit_uncertainty"
+        animation = "awkward_chat"
+        trust_delta = 0
+    elif any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
         dialogue = "I wasn't trying to avoid you. I just needed a little space to sort through my feelings."
         emotion = "tense"
         intent = "reassure"
@@ -1409,11 +1804,17 @@ def reasoning_fallback_response(payload, context):
         intent = "accept_apology"
         animation = "apologize"
         trust_delta = 1
-    elif any(word in message for word in ("date", "love", "romance", "kiss")):
-        dialogue = "You certainly know how to surprise me. Let's see where the moment takes us."
-        emotion = "romantic"
-        intent = "flirt"
-        animation = "flirt"
+    elif interaction_kind == "hostile":
+        dialogue = "I won't continue this conversation while you speak to me that way."
+        emotion = "tense"
+        intent = "set_boundary"
+        animation = "awkward_chat"
+        trust_delta = -1
+    elif interaction_kind == "romantic_compliment":
+        dialogue = "That is flattering. Thank you for being honest with me."
+        emotion = "flattered"
+        intent = "acknowledge_flirtation"
+        animation = "friendly_chat"
         trust_delta = 0
     elif any(word in message for word in ("sex", "woohoo")):
         dialogue = "Slow down. If there is something between us, I want it to feel right, not rushed."
@@ -1421,22 +1822,67 @@ def reasoning_fallback_response(payload, context):
         intent = "set_boundary"
         animation = "awkward_chat"
         trust_delta = -1
-    else:
-        dialogue = "I hear you. Give me a moment to choose my words carefully."
+    elif interaction_kind == "informational":
+        dialogue = "I may not have every answer, but I'll tell you what I know."
         emotion = context.get("emotions", {}).get("current_mood", "neutral")
         intent = "respond"
         animation = "friendly_chat"
         trust_delta = 0
-    return normalize_response(
+    elif interaction_kind == "friendly":
+        dialogue = "It's good to hear that. I enjoy talking with you."
+        emotion = "happy"
+        intent = "respond"
+        animation = "friendly_chat"
+        trust_delta = 0
+    else:
+        dialogue = "I hear you. Thank you for telling me."
+        emotion = context.get("emotions", {}).get("current_mood", "neutral")
+        intent = "respond"
+        animation = "friendly_chat"
+        trust_delta = 0
+    fallback = normalize_response(
         {
             "dialogue": dialogue,
             "emotion": emotion,
             "intent": intent,
+            "player_interaction_kind": interaction_kind,
             "relationship": {"friendship_delta": 0, "romance_delta": 0, "trust_delta": trust_delta},
-            "memory": {"importance": 0.2, "summary": "The conversation needed a careful response."},
-            "animation": animation,
-        }
+            "memory": {
+                "importance": 0.2,
+                "summary": "{} {}".format(payload.get("message") or "", dialogue).strip(),
+            },
+            "suggested_action": animation,
+        },
+        payload.get("available_actions"),
     )
+    if not response_grounding_issue(payload, fallback, context) and not response_has_role_confusion(
+        fallback, context
+    ):
+        return fallback
+
+    candidates = []
+    if "?" in message and _memory_supports_question(message, context):
+        candidates.append("Here is the detail I remember: {}".format(dialogue))
+    elif "?" in message and (
+        message.startswith(("where ", "when ", "who ", "what did "))
+        or "remember" in message
+        or "did i say" in message
+    ):
+        candidates.append("I'm not sure; I don't remember enough to answer that.")
+    candidates.extend(
+        (
+            "Let me think about that in my own words.",
+            "I understand. Give me a moment to respond.",
+            "There is more I want to consider before I answer.",
+        )
+    )
+    for candidate_dialogue in candidates:
+        candidate = dict(fallback, dialogue=candidate_dialogue)
+        if not response_grounding_issue(
+            payload, candidate, context
+        ) and not response_has_role_confusion(candidate, context):
+            return candidate
+    raise RuntimeError("could not build a grounded dialogue fallback")
 
 
 class HermesRuntime:
@@ -1448,21 +1894,37 @@ class HermesRuntime:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                schema=DIALOGUE_SCHEMA,
+                schema=dialogue_schema(payload.get("available_actions")),
                 schema_name="sims_dialogue",
                 task="large",
             )
             try:
-                response = normalize_response(extract_json(content))
+                response = normalize_response(
+                    extract_json(content), payload.get("available_actions")
+                )
             except (ValueError, json.JSONDecodeError):
-                response = fallback_response(content)
-            if not response_has_role_confusion(response, context):
+                response = fallback_response(content, payload.get("available_actions"))
+            sanitize_action_proposal(response, payload.get("available_actions"))
+            issue = response_grounding_issue(payload, response, context)
+            if not response_has_role_confusion(response, context) and not issue:
                 return response
-            PROVIDER_LOG.warning("model confused speaker and listener; retrying=%s", attempt == 0)
+            PROVIDER_LOG.warning(
+                "model response failed grounding (%s); retrying=%s",
+                issue or "speaker/listener confusion",
+                attempt == 0,
+            )
             prompt += (
                 "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
                 "If using a name, use the Listener's name, '{}'."
             ).format(context["speaker"]["name"], context["listener"]["name"])
+            if issue:
+                prompt += "\nCorrection: {}.".format(issue)
+            if issue and ("copy" in issue or "previous reply" in issue):
+                prompt += (
+                    "\nCorrection: Keep the facts and conversational continuity, but advance the "
+                    "conversation with a new reaction, detail, question, or decision. Do not reuse "
+                    "an earlier opening or sentence frame."
+                )
         return reasoning_fallback_response(payload, context)
 
     def story_beat(self, prompt):
@@ -1509,68 +1971,127 @@ def chat(payload):
             topic=payload.get("topic") or "",
             emotion=payload.get("emotion") or "",
             location=payload.get("location") or "",
+            query=payload.get("message") or "",
         )
-        summary = memory_summary(speaker_id, listener_id)
+        summary = {"summary": "; ".join(item["summary"] for item in memories[:4])}
         context = build_context(payload, speaker_profile, listener_profile, relationship, emotions, memories, summary)
         context["conversation"] = recent_conversation(speaker_id, listener_id)
         context["speaker_id"] = speaker_id
         context["listener_id"] = listener_id
         adapter = Sims4Adapter(payload)
         event = adapter.observe()[0]
+        numeric_emotions = [
+            float(value) / 100
+            for key, value in emotions.items()
+            if key != "current_mood" and isinstance(value, (int, float))
+        ]
+        urgency, preferred_clod, deeper_value = cognition_priority(
+            payload,
+            novel=not memories,
+            emotion_intensity=max(numeric_emotions, default=0.0),
+            goal_relevant=bool(speaker_profile.get("goals")),
+        )
+        model_config = task_model_config("large")
         request = CognitiveRequest(
             speaker_id,
-            3,
+            preferred_clod,
             event,
-            max_tokens=int(task_model_config("large").get("max_tokens") or 350),
+            urgency=urgency,
+            max_tokens=int(model_config.get("max_tokens") or 350),
+            max_context_tokens=int(model_config.get("context_tokens") or 4096),
+            deadline_ms=int(model_config.get("latency_ms") or 3000),
         )
+        generations = []
+        selected = {"clod": 1, "task": "core-rules"}
 
-        async def resolve_dialogue(_request):
-            try:
-                response = HERMES.dialogue(payload, context)
-            except RuntimeError as exc:
-                raise ProviderError("Sims dialogue provider failed") from exc
-            return adapter.decision_from_response(response, event.id)
+        def resolver(task):
+            async def resolve_dialogue(current):
+                def invoke():
+                    GENERATION_CONTEXT.task = task
+                    GENERATION_CONTEXT.attempts = []
+                    try:
+                        return HERMES.dialogue(payload, context)
+                    finally:
+                        generated = list(GENERATION_CONTEXT.attempts)
+                        generations.extend(generated)
+                        GENERATION_CONTEXT.task = None
+                        GENERATION_CONTEXT.attempts = None
 
-        prompt = build_chat_prompt(payload, context)
-        estimate = ResourceEstimate(
-            context_tokens=max(1, len(prompt) // 4),
-            completion_tokens=request.max_tokens,
-            latency_ms=request.deadline_ms,
-        )
+                try:
+                    response = await asyncio.to_thread(invoke)
+                except RuntimeError as exc:
+                    raise ProviderError("Sims dialogue provider failed") from exc
+                selected.update(clod=current.preferred_clod, task=task)
+                return adapter.decision_from_response(response, event.id)
+
+            return resolve_dialogue
+
+        resolvers = {task: resolver(task) for task in ("small", "large", "deep")}
         with open_db(CORE_DB_PATH) as conn:
             actions = ActionRecordStore(conn)
             runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
-            decision = asyncio.run(runtime.decide(request, resolve_dialogue, estimate))
+            decision = COGNITION_QUEUE.run(
+                request,
+                lambda: asyncio.run(
+                    runtime.decide_dynamic(
+                        request,
+                        cognition_routes(resolvers),
+                        deeper_value,
+                    )
+                ),
+            )
+            if selected["clod"] == 1:
+                decision = adapter.decision_from_response(
+                    reasoning_fallback_response(payload, context),
+                    event.id,
+                )
             action = adapter.action_for(decision)
             if action is None:
                 raise ValueError("no supported Sims action available")
             persist_core_agent(conn, speaker)
             persist_core_agent(conn, listener)
             persist_core_event(conn, event)
+            if event.agent_state is not None:
+                save_agent_state(conn, event.agent_state)
             actions.propose(event.id, decision, action)
+            usage = UsageStore(conn)
+            if generations:
+                for task, config, generation in generations:
+                    usage.record(
+                        request,
+                        ResourceEstimate(
+                            ram_mb=int(config.get("ram_mb") or 64),
+                            vram_mb=int(config.get("vram_mb") or 0),
+                            context_tokens=int(config.get("context_tokens") or 4096),
+                            completion_tokens=int(config.get("max_tokens") or 300),
+                            latency_ms=int(config.get("latency_ms") or 3000),
+                        ),
+                        str(config["name"]),
+                        str(config["model"]),
+                        generation,
+                        int(selected["clod"]),
+                    )
+            else:
+                usage.record(
+                    request,
+                    ResourceEstimate(),
+                    "core-rules" if selected["clod"] == 1 else "test-double",
+                    "clod1" if selected["clod"] == 1 else str(selected["task"]),
+                    GenerationResult("", 0, 0, 0),
+                    int(selected["clod"]),
+                )
         result = adapter.response_for(decision)
         result["animation"] = action
-    memory = result["memory"]
-    if memory["summary"] and memory["importance"] >= 0.2:
-        add_memory(
-            speaker_id,
-            listener_id,
-            memory["summary"],
-            memory["importance"],
-            emotion=result.get("emotion", ""),
-            topic=payload.get("topic") or "",
-            location=payload.get("location") or "",
-        )
-    relationship_state = apply_relationship_delta(speaker_id, listener_id, result.get("relationship") or {})
-    emotion_state = update_emotion_from_response(speaker_id, result.get("emotion"))
-    summary = maybe_summarize_memories(speaker_id, listener_id)
-    save_conversation(conversation_id, speaker_id, listener_id, payload.get("message") or "", result)
+    relationship_state = get_relationship(speaker_id, listener_id)
+    emotion_state = get_emotion(speaker_id)
+    summary = memory_summary(speaker_id, listener_id)
     result["relationship_state"] = relationship_state
     result["emotion_state"] = emotion_state
     result["memory_summary"] = summary
     result["agent"] = {"id": speaker_id, "state": "dormant"}
     result["decision_id"] = decision.id
     result["action_status"] = "proposed"
+    result["selected_clod"] = int(selected["clod"])
     return result
 
 
@@ -1614,7 +2135,9 @@ def autonomous_action(payload):
     with open_db(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
-        decision = asyncio.run(runtime.decide(request, unused_resolver))
+        decision = COGNITION_QUEUE.run(
+            request, lambda: asyncio.run(runtime.decide(request, unused_resolver))
+        )
         action = adapter.action_for(decision)
         if action is None:
             raise ValueError("no supported Sims action available")
@@ -1622,6 +2145,14 @@ def autonomous_action(payload):
             persist_core_agent(conn, payload.get(key) or {})
         persist_core_event(conn, event)
         actions.propose(event.id, decision, action)
+        UsageStore(conn).record(
+            request,
+            ResourceEstimate(),
+            "core-rules",
+            "clod1",
+            GenerationResult("", 0, 0, 0),
+            1,
+        )
     return {
         "hook": "Core proposed autonomous action",
         "target": decision.target_id or "",
@@ -1629,44 +2160,41 @@ def autonomous_action(payload):
         "decision_id": decision.id,
         "status": "proposed",
         "activation": "empneon_core",
+        "selected_clod": 1,
         "agent_state": "dormant",
     }
 
 
 def persist_core_agent(conn, sim):
-    agent_id = str(sim.get("id") or "").strip()
-    if not agent_id:
-        raise ValueError("observed Sim id is required")
-    store = AgentStore(conn)
-    agent = store.get(agent_id)
-    name = str(sim.get("name") or agent_id)
-    if agent is None:
-        store.create(
-            Agent(
-                id=agent_id,
-                name=name,
-                game_id=agent_id,
-                adapter="sims4",
-            ),
-            commit=False,
-        )
-    elif agent.name != name:
-        agent.name = name
-        store.update(agent, commit=False)
+    return empneon_state.sync_sim(conn, sim)
 
 
 def persist_core_event(conn, event):
-    store = EpisodicMemoryStore(conn)
-    if store.get(event.id) is None:
-        store.create(
-            Event(
-                id=event.id,
-                description=event.type,
-                participant_ids=list(event.actor_ids),
-                location=event.location,
-                happened_at=event.happened_at,
-            )
-        )
+    message = str(event.facts.get("message") or "")
+    description = dumps(
+        {
+            "kind": "observed_interaction",
+            "type": event.type,
+            "source": event.facts.get("source") or "sims4",
+            "message": message,
+            "summary": message or event.type,
+            "agent_state": (
+                dataclasses.asdict(event.agent_state)
+                if event.agent_state is not None
+                else None
+            ),
+        }
+    )
+    empneon_state.record_pending_event(
+        conn,
+        Event(
+            id=event.id,
+            description=description,
+            participant_ids=list(event.actor_ids),
+            location=event.location,
+            happened_at=event.happened_at,
+        ),
+    )
 
 
 def confirm_action(payload):
@@ -1687,40 +2215,74 @@ def confirm_action(payload):
             path = str(change.get("path") or "")
             operation = str(change.get("operation") or "")
             value = change.get("value")
-            if path not in ("relationship.friendship", "relationship.romance"):
-                raise ValueError("unsupported confirmed consequence")
-            if (
-                operation != "increment"
-                or isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not -100 <= value <= 100
+            parts = path.split(".")
+            numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+            valid = False
+            if path in (
+                "relationship.friendship",
+                "relationship.romance",
             ):
-                raise ValueError("invalid confirmed consequence")
-            changes.append(StateDelta(path, "increment", value))
+                valid = operation == "increment" and numeric and -100 <= value <= 100
+            elif len(parts) == 2 and parts[0] == "emotion" and re.fullmatch(
+                r"[a-zA-Z0-9_-]{1,64}", parts[1]
+            ):
+                valid = (
+                    operation in ("set", "increment")
+                    and numeric
+                    and (-100 <= value <= 100 if operation == "increment" else 0 <= value <= 100)
+                )
+            elif len(parts) == 2 and parts[0] == "need" and re.fullmatch(
+                r"[a-zA-Z0-9 _-]{1,64}", parts[1]
+            ):
+                valid = operation == "set" and numeric and 0 <= value <= 100
+            elif len(parts) == 3 and parts[0] == "goal" and parts[2] == "status":
+                try:
+                    uuid.UUID(parts[1])
+                except (ValueError, AttributeError):
+                    valid = False
+                else:
+                    valid = operation == "set" and value in (
+                        "active",
+                        "completed",
+                        "abandoned",
+                    )
+            if not valid:
+                raise ValueError("invalid or unsupported confirmed consequence")
+            changes.append(StateDelta(path, operation, value))
+    elif payload.get("changes"):
+        raise ValueError("unsuccessful action cannot apply consequences")
     result = ActionResult(decision_id, status, tuple(changes), reason)
     with open_db(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(decision_id)
-        friendship_delta = sum(
-            float(change.value)
-            for change in changes
-            if change.path == "relationship.friendship"
+        if proposal is None:
+            existing = actions.get(decision_id)
+            receipt = DocumentMemoryStore(conn).get(
+                "thesims4.action-result", decision_id
+            )
+            if (
+                existing is not None
+                and isinstance(receipt, dict)
+                and receipt.get("action") == action
+                and existing.result.status == result.status
+                and existing.result.applied_changes == result.applied_changes
+                and existing.result.reason == result.reason
+            ):
+                return {
+                    "decision_id": existing.decision.id,
+                    "status": existing.result.status,
+                    "consequences": len(existing.result.applied_changes),
+                }
+            raise ValueError("unknown or conflicting action proposal")
+        if proposal.adapter_action != action:
+            raise ValueError("confirmed action does not match its proposal")
+        DocumentMemoryStore(conn).set(
+            "thesims4.action-result",
+            decision_id,
+            {"action": action},
+            commit=False,
         )
-        if proposal is not None and proposal.decision.target_id and friendship_delta:
-            relationships = RelationshipStore(conn)
-            relationship = relationships.get(
-                proposal.decision.actor_id,
-                proposal.decision.target_id,
-            ) or Relationship(
-                proposal.decision.actor_id,
-                proposal.decision.target_id,
-                "acquaintance",
-            )
-            relationship.strength = max(
-                -1.0,
-                min(1.0, relationship.strength + friendship_delta / 100.0),
-            )
-            relationships.set(relationship, commit=False)
+        empneon_state.apply_confirmed_consequences(conn, proposal, result)
         record = actions.confirm(result, action)
     return {
         "decision_id": record.decision.id,
@@ -1729,34 +2291,64 @@ def confirm_action(payload):
     }
 
 
+def confirm_dialogue_delivery(payload):
+    decision_id = str(payload.get("decision_id") or "").strip()
+    if not decision_id or payload.get("status") != "displayed":
+        raise ValueError("displayed dialogue decision_id is required")
+    with open_db(CORE_DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            documents = DocumentMemoryStore(conn)
+            if documents.get("thesims4.dialogue-delivery", decision_id) is not None:
+                conn.commit()
+                return {"decision_id": decision_id, "status": "already_displayed"}
+            actions = ActionRecordStore(conn)
+            proposal = actions.get_proposal(decision_id)
+            if proposal is None:
+                raise ValueError("unknown or already confirmed action proposal")
+            empneon_state.record_delivered_experience(conn, proposal, commit=False)
+            for change in proposal.decision.state_changes:
+                if change.path == "relationship.trust" and proposal.decision.target_id:
+                    relationships = RelationshipStore(conn)
+                    relationship = relationships.get(
+                        proposal.decision.actor_id, proposal.decision.target_id
+                    ) or Relationship(
+                        proposal.decision.actor_id,
+                        proposal.decision.target_id,
+                        "acquaintance",
+                    )
+                    relationship.trust = max(
+                        0.0,
+                        min(1.0, relationship.trust + float(change.value or 0) / 100),
+                    )
+                    relationships.set(relationship, commit=False)
+            if proposal.adapter_action == "none":
+                actions.confirm(
+                    ActionResult(decision_id, "succeeded"), "none", commit=False
+                )
+            documents.set(
+                "thesims4.dialogue-delivery",
+                decision_id,
+                {"displayed": True},
+                commit=False,
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return {"decision_id": decision_id, "status": "displayed"}
+
+
 def voice_profile(sim_id_value):
-    profile = get_profile(sim_id_value) or {"voice": {}}
-    voice = dict(profile.get("voice") or {})
-    stored = _get_memory("thesims4.voice", str(sim_id_value))
-    if isinstance(stored, dict):
-        voice.update(stored)
-    return voice
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.voice_view(conn, sim_id_value)
 
 
 def save_voice_profile(sim_id_value, voice):
-    voice = voice or {}
-    _set_memory(
-        "thesims4.voice",
-        str(sim_id_value),
-        {
-            "voice": str(voice.get("voice") or ""),
-            "speed": float(voice.get("speed") or 1.0),
-            "pitch": float(voice.get("pitch") or 0.0),
-            "provider": str(
-                voice.get("provider") or CONFIG.get("tts", {}).get("provider") or ""
-            ),
-        },
-    )
-    profile = get_profile(sim_id_value)
-    if profile:
-        profile["voice"] = voice_profile(sim_id_value)
-        save_profile(profile)
-    return voice_profile(sim_id_value)
+    values = dict(voice or {})
+    values.setdefault("provider", CONFIG.get("tts", {}).get("provider") or "")
+    with open_db(CORE_DB_PATH) as conn:
+        return empneon_state.save_voice(conn, sim_id_value, values)
 
 
 def tts_generate(payload):
@@ -1787,6 +2379,27 @@ def tts_generate(payload):
     return data
 
 
+class DiagnosticInputError(ValueError):
+    pass
+
+
+class DiagnosticNotFound(ValueError):
+    pass
+
+
+def diagnostic_identifier(query, name):
+    value = str(query.get(name, [""])[0]).strip()
+    if not value:
+        raise DiagnosticInputError("{} is required".format(name))
+    if len(value) > 128:
+        raise DiagnosticInputError("{} is too long".format(name))
+    return value
+
+
+class EmpneonHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = False
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
@@ -1801,7 +2414,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def read_json(self):
         length = int(self.headers.get("Content-Length") or "0")
-        if length > 65536:
+        if length > MAX_REQUEST_BODY_BYTES:
             raise ValueError("request body too large")
         if not length:
             return {}
@@ -1810,6 +2423,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
+        if parsed.path.startswith("/diagnostics/") or parsed.path == "/identity/export":
+            try:
+                self._send_diagnostic(parsed.path, query)
+            except DiagnosticInputError as exc:
+                self.send_json(400, {"error": str(exc)})
+            except DiagnosticNotFound as exc:
+                self.send_json(404, {"error": str(exc)})
+            except Exception:
+                LOG.exception("diagnostic request failed")
+                self.send_json(500, {"error": "diagnostic request failed"})
+            return
         if parsed.path == "/health":
             small = task_model_config("small")
             large = task_model_config("large")
@@ -1858,7 +2482,10 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/relationship":
             sim_id_value = query.get("sim_id", [""])[0]
             target_id_value = query.get("target_id", [""])[0]
-            self.send_json(200, {"relationship": get_relationship(sim_id_value, target_id_value)})
+            self.send_json(
+                200,
+                {"relationship": get_relationship_diagnostic(sim_id_value, target_id_value)},
+            )
             return
         if parsed.path == "/emotion":
             sim_id_value = query.get("sim_id", [""])[0]
@@ -1870,10 +2497,57 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(404, {"error": "not found"})
 
+    def _send_diagnostic(self, path, query):
+        if path == "/diagnostics/migration":
+            body = MIGRATION_STATUS.as_dict()
+            with open_db(CORE_DB_PATH) as conn:
+                body["completion_markers"] = [
+                    document.key
+                    for document in DocumentMemoryStore(conn).list(
+                        "thesims4.migration"
+                    )
+                ]
+            self.send_json(200, body)
+            return
+        name = "decision_id" if path == "/diagnostics/replay" else "sim_id"
+        identifier = diagnostic_identifier(query, name)
+        with open_db(CORE_DB_PATH) as conn:
+            if path == "/diagnostics/replay":
+                try:
+                    body = replay_action_record(conn, identifier)
+                except ValueError as exc:
+                    raise DiagnosticNotFound(str(exc)) from exc
+            else:
+                if AgentStore(conn).get(identifier) is None:
+                    raise DiagnosticNotFound("Sim does not exist")
+                if path == "/diagnostics/sim":
+                    body = empneon_state.sim_diagnostics(conn, identifier)
+                elif path == "/diagnostics/timeline":
+                    body = agent_timeline(conn, identifier)
+                elif path == "/diagnostics/usage":
+                    body = UsageStore(conn).telemetry(identifier)
+                elif path == "/identity/export":
+                    body = empneon_state.export_identity(conn, identifier)
+                else:
+                    raise DiagnosticNotFound("diagnostic route does not exist")
+        self.send_json(200, body)
+
     def do_POST(self):
         try:
             payload = self.read_json()
             parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/identity/import":
+                if not isinstance(payload, dict):
+                    self.send_json(400, {"error": "identity must be a JSON object"})
+                    return
+                try:
+                    with open_db(CORE_DB_PATH) as conn:
+                        agent = empneon_state.import_identity(conn, payload)
+                except (KeyError, TypeError, ValueError) as exc:
+                    self.send_json(400, {"error": str(exc)})
+                    return
+                self.send_json(200, {"agent": {"id": agent.id, "name": agent.name}})
+                return
             session_id = payload.get("_empneon_session_id")
             save_slot_id = payload.get("_empneon_save_slot_id") or ""
             if parsed.path == "/game-session/start":
@@ -1899,6 +2573,12 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/action-result":
                 try:
                     self.send_json(200, confirm_action(payload))
+                except ValueError as exc:
+                    self.send_json(400, {"error": str(exc)})
+                return
+            if parsed.path == "/dialogue-result":
+                try:
+                    self.send_json(200, confirm_dialogue_delivery(payload))
                 except ValueError as exc:
                     self.send_json(400, {"error": str(exc)})
                 return
@@ -1951,13 +2631,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "not found"})
         except Exception as exc:
             LOG.exception("request failed")
-            self.send_json(500, {"error": str(exc)})
+            self.send_json(500, {"error": "request failed"})
 
 
 def run():
+    global MIGRATION_STATUS
+    MIGRATION_STATUS = empneon_state.prepare_database(
+        MEMORY_DB_PATH, LEGACY_CORE_DB_PATH, LEGACY_ADAPTER_DB_PATH
+    )
+    if not MIGRATION_STATUS.completed:
+        raise RuntimeError(
+            "Empneon memory migration failed: {}".format(MIGRATION_STATUS.error)
+        )
+    with open_db(MEMORY_DB_PATH) as conn:
+        empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
-    _ensure_legacy_memory_imported()
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = EmpneonHTTPServer((HOST, PORT), Handler)
     print("Empneon for The Sims 4 on http://{}:{}".format(HOST, PORT))
     print("Provider: {}".format(PRIMARY_PROVIDER))
     print("Endpoint: {}".format(task_model_config("large").get("endpoint")))

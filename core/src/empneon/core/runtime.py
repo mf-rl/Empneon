@@ -66,13 +66,21 @@ class ActionRecordStore:
             return None
         return ActionProposal(row["event_id"], _decision_from_row(row), row["adapter_action"])
 
-    def confirm(self, result: ActionResult, adapter_action: str) -> ActionRecord:
+    def confirm(
+        self, result: ActionResult, adapter_action: str, *, commit: bool = True
+    ) -> ActionRecord:
         proposal = self.get_proposal(result.decision_id)
         if proposal is None:
             raise ValueError("unknown or already confirmed action proposal")
         if proposal.adapter_action != adapter_action:
             raise ValueError("confirmed action does not match its proposal")
-        with self._conn:
+        if commit:
+            with self._conn:
+                self._insert_record(proposal.event_id, proposal.decision, result)
+                self._conn.execute(
+                    "DELETE FROM action_proposals WHERE decision_id=?", (result.decision_id,)
+                )
+        else:
             self._insert_record(proposal.event_id, proposal.decision, result)
             self._conn.execute(
                 "DELETE FROM action_proposals WHERE decision_id=?", (result.decision_id,)

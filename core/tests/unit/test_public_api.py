@@ -8,6 +8,7 @@ def test_supported_api_and_version_source() -> None:
     expected = {
         "ActionRecordStore",
         "ActionResult",
+        "AgentStateSnapshot",
         "CognitiveRequest",
         "CognitiveRuntime",
         "Decision",
@@ -19,8 +20,10 @@ def test_supported_api_and_version_source() -> None:
         "UsageStore",
         "WorldEvent",
         "agent_timeline",
+        "load_agent_state",
         "open_db",
         "replay_action_record",
+        "save_agent_state",
     }
     assert empneon.__version__ == "0.3.0"
     assert set(empneon.__all__) == expected
