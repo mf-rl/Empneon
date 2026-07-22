@@ -1465,8 +1465,41 @@ Player says:
     )
 
 
+def _identity_gender(identity):
+    value = identity.get("gender") if isinstance(identity, dict) else identity
+    if isinstance(value, dict):
+        value = value.get("key") or value.get("value") or value.get("label")
+    tokens = set(re.findall(r"[a-z]+", str(value or "").casefold()))
+    if tokens & {"female", "woman", "girl"}:
+        return "female"
+    if tokens & {"male", "man", "boy"}:
+        return "male"
+    return "unknown"
+
+
+def _direct_partner_terms(dialogue):
+    unquoted = re.sub(
+        r'"[^"]*"|“[^”]*”|‘[^’]*’',
+        " ",
+        str(dialogue or "").casefold(),
+    )
+    direct = re.findall(
+        r"\b(?:(?:will|would|could|can)\s+you(?:\s+[a-z']+){0,3}\s+(?:my|a)|"
+        r"you(?:\s+[a-z']+){0,4}\s+(?:my|a)|let['’]?s\s+be)\s+"
+        r"(boyfriend|girlfriend)s?\b",
+        unquoted,
+    )
+    imperative = re.findall(
+        r"(?:^|[.!?]\s+)(?:please\s+)?(?:be|become)\s+my\s+"
+        r"(boyfriend|girlfriend)s?\b",
+        unquoted,
+    )
+    return direct + imperative
+
+
 def response_has_role_confusion(response, context):
-    words = set(re.findall(r"\w+", str(response.get("dialogue") or "").casefold()))
+    dialogue = str(response.get("dialogue") or "")
+    words = set(re.findall(r"\w+", dialogue.casefold()))
     speaker = set(
         re.findall(
             r"\w+", str(context.get("speaker", {}).get("name") or "").casefold()
@@ -1477,7 +1510,11 @@ def response_has_role_confusion(response, context):
             r"\w+", str(context.get("listener", {}).get("name") or "").casefold()
         )
     )
-    return bool({word for word in speaker - listener if len(word) > 1} & words)
+    if {word for word in speaker - listener if len(word) > 1} & words:
+        return True
+    gender = _identity_gender(context.get("listener_identity") or {})
+    expected = "boyfriend" if gender == "male" else "girlfriend"
+    return any(gender == "unknown" or term != expected for term in _direct_partner_terms(dialogue))
 
 
 def _dialogue_words(value, context):

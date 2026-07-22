@@ -130,17 +130,19 @@ evidence is still required; Test 5 is not passed.
   manually cancelling the queued Empneon Social while the backend is still working.
 - Expected game result: the original grounded dialogue is displayed; Empneon Social stays in the
   queue while waiting; autonomy does not interrupt the session; each displayed turn updates
-  memory and Empneon trust; each selected native action finishes before another input is
-  submitted; only game-observed friendship/romance changes persist; manual queue cancellation
-  suppresses the late backend result.
+  memory and Empneon trust; the held Empneon Social flow remains actionless; separately observed
+  autonomous decisions retain their native action, which finishes and reports before that
+  autonomous operation releases its in-flight guard; only game-observed friendship/romance
+  changes persist; manual queue cancellation suppresses the late backend result.
 - Expected diagnostic result: `/diagnostics/sim?sim_id=<ACTOR_ID>` shows the actor-to-target Core
   relationship. Friendship/trust are normalized, and a confirmed positive romance consequence
   marks the relationship romantic. Query the target separately to verify that directed edges can
   differ.
 - Evidence to capture for each run: exact player message and displayed response, before/after
-  `ai.relationship` output, decision ID, selected native action and finishing result, and whether
-  the session continued or closed. For the cancellation run, record that no late dialogue, memory,
-  trust, or native action appeared.
+  `ai.relationship` output, held-session decision ID, confirmation that no native action was
+  selected, and whether the session continued or closed. Capture an autonomous decision ID,
+  selected native action, and finishing result separately. For the cancellation run, record that
+  no late dialogue, memory, trust, or native action appeared.
 - Focused dialogue assertions: Karmine's reply is distinct from Bernard's current message,
   Bernard's earlier messages, and Karmine's earlier replies; Karmine uses `boyfriend` or neutral
   wording for male Bernard, never `girlfriend`; the reply respects Karmine's reported life stage

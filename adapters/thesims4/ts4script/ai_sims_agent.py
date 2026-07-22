@@ -1626,16 +1626,17 @@ def report_dialogue_delivery(
                 {"decision_id": decision_id, "status": "displayed"},
                 timeout=10,
             )
+            status = delivered.get("status")
+            acknowledged = status in ("displayed", "already_displayed")
             if session_id is not None:
-                status = delivered.get("status")
                 event = (
                     "dialogue_displayed"
-                    if status == "displayed"
+                    if acknowledged
                     else "dialogue_failed"
                 )
                 detail = (
                     None
-                    if status == "displayed"
+                    if acknowledged
                     else "Dialogue was not freshly displayed"
                 )
                 with _AUTONOMY_RESPONSES_LOCK:
@@ -1643,7 +1644,7 @@ def report_dialogue_delivery(
                 return
             action = str(data.get("suggested_action") or data.get("animation") or "")
             if (
-                delivered.get("status") == "displayed"
+                status == "displayed"
                 and queue_native
                 and payload is not None
                 and action != "none"

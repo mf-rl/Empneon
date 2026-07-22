@@ -50,6 +50,10 @@ class GodotBridge:
                 native={"facts": dict(facts)},
             )
         )
+        if state.agent_id != agent_id:
+            raise ValueError("agent state agent_id must match request agent_id")
+        if state.adapter != "godot":
+            raise ValueError("agent state adapter must be godot")
         event = WorldEvent(
             id=event_id,
             type=str(event_data.get("type") or ""),

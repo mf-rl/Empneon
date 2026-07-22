@@ -1207,6 +1207,58 @@ def test_grounding_reasoning_fallback_direct_call_handles_critical_need() -> Non
     assert not ai_sims_server.response_has_role_confusion(response, context)
 
 
+def test_role_confusion_grounds_direct_partner_terms_to_listener_gender() -> None:
+    def context(gender):
+        return {
+            "speaker": {"name": "Karmine"},
+            "listener": {"name": "Bernard"},
+            "listener_identity": {"gender": gender},
+        }
+
+    male = context({"key": "MALE", "label": "Male"})
+    female = context("female")
+    unknown = context({"key": "unknown", "label": "Unknown"})
+
+    assert ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Bernard, I care about you. Could you become my girlfriend?"},
+        male,
+    )
+    assert ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Would you like to be my boyfriend?"},
+        female,
+    )
+    assert ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Would you be my girlfriend?"},
+        unknown,
+    )
+    assert not ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Would you like to be my boyfriend?"},
+        male,
+    )
+    assert not ai_sims_server.response_has_role_confusion(
+        {"dialogue": "Would you be my partner?"},
+        unknown,
+    )
+    assert not ai_sims_server.response_has_role_confusion(
+        {
+            "dialogue": (
+                'You asked, "Would you be my girlfriend?" '
+                "I care about you, but I need more time."
+            )
+        },
+        male,
+    )
+    assert not ai_sims_server.response_has_role_confusion(
+        {
+            "dialogue": (
+                "She used to be my girlfriend, and I learned a lot from that "
+                "relationship."
+            )
+        },
+        male,
+    )
+
+
 def test_local_social_classifier_distinguishes_common_player_interactions() -> None:
     examples = {
         "Would you go out with me sometime?": "romantic_invitation",

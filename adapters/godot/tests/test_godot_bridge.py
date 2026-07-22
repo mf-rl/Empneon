@@ -92,3 +92,34 @@ def test_godot_bridge_reconstructs_serialized_agent_state(monkeypatch: pytest.Mo
     assert state.needs == {"energy": {"level": 0.63, "urgency": 0.37}}
     assert state.capabilities == {"actions": ["idle"]}
     assert state.native == {"unknown_engine_value": "preserved"}
+
+
+@pytest.mark.parametrize(
+    ("state_agent_id", "state_adapter", "message"),
+    [
+        ("godot-b", "godot", "agent_id"),
+        ("godot-a", "sims4", "adapter"),
+    ],
+)
+def test_godot_bridge_rejects_serialized_state_outside_request_boundary(
+    state_agent_id: str,
+    state_adapter: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        GodotBridge().decide(
+            {
+                "agent_id": "godot-a",
+                "event": {
+                    "id": "godot-invalid-state",
+                    "type": "encounter",
+                    "actor_ids": ["godot-a", "godot-b"],
+                    "facts": {},
+                    "agent_state": {
+                        "schema_version": 1,
+                        "adapter": state_adapter,
+                        "agent_id": state_agent_id,
+                    },
+                },
+            }
+        )

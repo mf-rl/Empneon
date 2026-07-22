@@ -1298,6 +1298,49 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert acknowledgement_failure_session.closed is True
     assert len(mapped_aops) == action_count
 
+    lost_ack_session = agent.EmpneonConversationSession(
+        pie_interaction, pie_interaction.sim, pie_interaction.target
+    )
+    lost_ack_session.turn_id = 1
+    lost_ack_session.phase = "showing_response"
+    lost_ack_session.pending_decision = ("decision-lost-ack", "none")
+    lost_ack_session.response_data = {
+        "decision_id": "decision-lost-ack",
+        "suggested_action": "none",
+    }
+    lost_ack_session.response_choice_ready = True
+    lost_ack_session.next_message = "Continue after retry"
+    agent._CONVERSATION_SESSIONS["lost-ack"] = lost_ack_session
+    monkeypatch.setattr(
+        agent,
+        "post_json",
+        lambda *_args, **_kwargs: {
+            "decision_id": "decision-lost-ack",
+            "status": "already_displayed",
+        },
+    )
+    agent.report_dialogue_delivery(
+        pie_interaction.sim,
+        player_payload,
+        {"decision_id": "decision-lost-ack", "suggested_action": "none"},
+        queue_native=False,
+        session_id=lost_ack_session.id,
+        turn_id=1,
+    )
+    assert agent._SESSION_EVENTS[-1][2] == "dialogue_displayed"
+    lost_ack_submitted = []
+    with monkeypatch.context() as lost_ack_patch:
+        lost_ack_patch.setattr(
+            agent,
+            "submit_empneon_chat",
+            lambda session, message: lost_ack_submitted.append((session, message)),
+        )
+        agent.process_autonomy_responses(None)
+    assert lost_ack_session.closed is False
+    assert lost_ack_session.canceled is False
+    assert lost_ack_session.phase == "waiting_for_backend"
+    assert lost_ack_submitted == [(lost_ack_session, "Continue after retry")]
+
     retry_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
     )

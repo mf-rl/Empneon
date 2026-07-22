@@ -235,8 +235,8 @@ dialogue behavior and a positive native romance consequence in game.
   `friendly_chat` proposal. Descriptive dialogue intent and native action selection remain separate.
 - Automated coverage also confirms that displayed turns, not generated turns, commit cognitive
   memory and Empneon trust; native friendship/romance persists only after the selected action
-  finishes and the game reports its tracks; queued multi-turn sessions wait for that result; and
-  manual cancellation suppresses a late backend response.
+  finishes and the game reports its tracks in autonomous flows; held Empneon Social sessions stay
+  actionless; and manual cancellation suppresses a late backend response.
 - The owner accepted the full-scope critical Ruff gate (`E9,F63,F7,F82`); 119 unrelated legacy
   all-rule findings are deferred. This resolves verification scope only and is not in-game evidence.
 - The focused source-build retest must record Karmine's reported life stage, gender, and traits and
