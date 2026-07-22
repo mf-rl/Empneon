@@ -385,9 +385,12 @@ def short_trait_name(trait):
     return ""
 
 
+def raw_enum_text(value):
+    return str(getattr(value, "name", None) or value or "unknown")
+
+
 def enum_key(value):
-    raw = getattr(value, "name", None)
-    text = str(raw or value or "").rsplit(".", 1)[-1].strip().casefold()
+    text = raw_enum_text(value).rsplit(".", 1)[-1].strip().casefold()
     return text.replace("youngadult", "young_adult") or "unknown"
 
 
@@ -674,7 +677,7 @@ def sim_info_payload(sim_info):
         "name": sim_full_name(sim_info),
         "age": None,
         "identity": identity,
-        "traits": sim_traits(sim_info),
+        "traits": [record["label"] for record in identity["traits"]],
         "current_mood": mood,
         "needs": sim_needs(sim_info),
         "moodlets": [item["label"] for item in moodlets if item["label"]],
@@ -686,12 +689,8 @@ def sim_info_payload(sim_info):
             "moodlets": moodlets,
             "sentiments": sentiments,
             "identity": {
-                "gender": str(
-                    getattr(getattr(sim_info, "gender", None), "name", "unknown")
-                ),
-                "age": str(
-                    getattr(getattr(sim_info, "age", None), "name", "unknown")
-                ),
+                "gender": raw_enum_text(getattr(sim_info, "gender", None)),
+                "age": raw_enum_text(getattr(sim_info, "age", None)),
             },
         },
         "aspiration": sim_aspiration(sim_info),

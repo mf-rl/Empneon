@@ -461,8 +461,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     modded_payload = agent.sim_info_payload(
         SimpleNamespace(
-            gender=SimpleNamespace(name="ROBOT", value=99),
-            age=SimpleNamespace(name="ANCIENT", value=999),
+            gender="ROBOT",
+            age=999,
             trait_tracker=SimpleNamespace(
                 equipped_traits=[outgoing, BrokenTrait()]
             ),
@@ -482,6 +482,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
                 "description": "Enjoys socializing and speaks confidently.",
             }
         ],
+    }
+    assert modded_payload["native"]["identity"] == {
+        "gender": "ROBOT",
+        "age": "999",
     }
     assert modded_payload["traits"] == ["Outgoing"]
 
