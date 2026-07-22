@@ -464,6 +464,46 @@ def test_rich_game_state_is_grounded_in_dialogue_prompt() -> None:
         assert expected in prompt
 
 
+def test_identity_is_grounded_in_dialogue_prompt() -> None:
+    payload = {
+        "speaker": {
+            "id": "karmine",
+            "identity": {
+                "gender": {"key": "female", "label": "Female"},
+                "age": {"kind": "life_stage", "value": "young_adult", "label": "Young Adult"},
+                "traits": [{"id": "outgoing", "label": "Outgoing"}],
+            },
+        },
+        "listener": {
+            "id": "bernard",
+            "identity": {
+                "gender": {"key": "male", "label": "Male"},
+                "age": {"kind": "life_stage", "value": "adult", "label": "Adult"},
+                "traits": [],
+            },
+        },
+        "message": "Hello.",
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    prompt = ai_sims_server.build_chat_prompt(payload, context)
+
+    assert 'Speaker identity: {"age": {"kind": "life_stage", "label": "Young Adult", "value": "young_adult"}, "gender": {"key": "female", "label": "Female"}, "traits": [{"id": "outgoing", "label": "Outgoing"}]}' in prompt
+    assert 'Listener identity: {"age": {"kind": "life_stage", "label": "Adult", "value": "adult"}, "gender": {"key": "male", "label": "Male"}, "traits": []}' in prompt
+    assert "Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices" in prompt
+    assert "Do not guess gender or age when identity is unknown" in prompt
+    assert "Do not merely name or caricature traits" in prompt
+
+
 def test_prompt_action_explanations_only_include_request_actions_and_none() -> None:
     payload = {
         "speaker": {"id": "bella"},

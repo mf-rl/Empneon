@@ -1272,6 +1272,8 @@ def build_context(payload, speaker_profile, listener_profile, relationship, emot
         "location": payload.get("location") or "unknown",
         "nearby_sims": payload.get("nearby_sims") or [],
         "message": payload.get("message") or "",
+        "speaker_identity": speaker.get("identity") or {},
+        "listener_identity": listener.get("identity") or {},
         "speaker_traits": speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or [],
         "listener_traits": listener.get("traits") or listener_profile.get("identity", {}).get("traits") or [],
         "game_state": {
@@ -1335,7 +1337,7 @@ Do not include the Speaker's name in dialogue.
 
 Speaker:
 {speaker_name}
-Identity: {identity}
+Speaker identity: {speaker_identity}
 Traits: {speaker_traits}
 Personality: {personality}
 Values: {values}
@@ -1351,6 +1353,7 @@ Household: {household}
 
 Listener:
 {listener_name}
+Listener identity: {listener_identity}
 Traits: {listener_traits}
 
 Relationship:
@@ -1386,6 +1389,11 @@ Recent conversation:
 {recent_conversation}
 
 Grounding rules:
+- Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
+- Combine traits with current mood, needs, relationship, memories, and the current message.
+- Do not merely name or caricature traits.
+- Use gendered relationship terms only when supported by supplied identity.
+- Do not guess gender or age when identity is unknown.
 - A fact about shared history is supported only when it appears in Relevant memories, Memory
   summary, or something the Listener previously said.
 - The Speaker's earlier generated replies provide conversational tone, but are not evidence that
@@ -1405,7 +1413,7 @@ Player says:
 {message}
 """.format(
         speaker_name=speaker_profile.get("name") or "Unknown Sim",
-        identity=dumps(speaker_profile.get("identity") or {}),
+        speaker_identity=dumps(context["speaker_identity"]),
         speaker_traits=", ".join(context["speaker_traits"]) or "unknown",
         personality=dumps(speaker_profile.get("personality") or {}),
         values=", ".join(speaker_profile.get("values") or []) or "unknown",
@@ -1419,6 +1427,7 @@ Player says:
         skills=dumps(game_state["skills"]),
         household=household_name or "unknown",
         listener_name=listener_profile.get("name") or "Unknown Sim",
+        listener_identity=dumps(context["listener_identity"]),
         listener_traits=", ".join(context["listener_traits"]) or "unknown",
         relationship=dumps(relationship),
         emotions=dumps(emotions),

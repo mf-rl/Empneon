@@ -76,6 +76,11 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
                 "id": "karmine",
                 "current_mood": "uncomfortable",
                 "needs": {"hunger": 63},
+                "identity": {
+                    "gender": {"key": "female", "label": "Female"},
+                    "age": {"kind": "life_stage", "value": "adult", "label": "Adult"},
+                    "traits": [{"id": "good", "label": "Good"}],
+                },
                 "native": {
                     "mood": "Mood_Uncomfortable",
                     "moodlets": [{"label": "Custom DLC Moodlet"}],
@@ -100,6 +105,9 @@ def test_sims_payload_becomes_normalized_agent_state_without_losing_native_value
     assert event.agent_state.capabilities == {
         "actions": ["friendly_chat", "flirt"]
     }
+    assert event.agent_state.identity["gender"]["key"] == "female"
+    assert event.agent_state.identity["age"]["value"] == "adult"
+    assert event.agent_state.identity["traits"] == [{"id": "good", "label": "Good"}]
     assert event.agent_state.native["moodlets"] == [
         {"label": "Custom DLC Moodlet"}
     ]

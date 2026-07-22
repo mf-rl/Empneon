@@ -135,6 +135,7 @@ class Sims4Adapter:
                 ),
             }
         mood = str(speaker.get("current_mood") or "unknown")
+        identity = _mapping(speaker.get("identity"))
         native = _mapping(speaker.get("native"))
         native.setdefault("mood", mood)
         native.setdefault("moodlets", _items(speaker.get("moodlets")))
@@ -142,6 +143,7 @@ class Sims4Adapter:
             1,
             "sims4",
             str(speaker.get("id") or speaker.get("name") or "unknown-sim"),
+            identity=identity,
             affect={"tags": [] if mood == "unknown" else [mood]},
             needs=needs,
             effects=_items(speaker.get("effects")),
