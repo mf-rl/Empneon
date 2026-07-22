@@ -1499,27 +1499,65 @@ def _mask_quoted_dialogue(dialogue):
 
 
 def _direct_partner_terms(dialogue):
-    unquoted = _mask_quoted_dialogue(dialogue)
-    direct = re.findall(
-        r"\b(?:(?:will|would|could|can)\s+you\s+"
-        r"(?:(?:like|want)\s+to\s+)?(?:be|become)|"
-        r"you(?:'re|\s+(?:are|were|will\s+be|would\s+be|could\s+be|"
-        r"can\s+be|have(?:\s+always)?\s+been))|"
-        r"i\s+(?:want|would\s+like)\s+you\s+to\s+(?:be|become))\s+"
-        r"(?:my|a)\s+"
-        r"(boyfriend|girlfriend)s?\b",
-        unquoted,
+    terms = {
+        "boyfriend": "boyfriend",
+        "boyfriends": "boyfriend",
+        "girlfriend": "girlfriend",
+        "girlfriends": "girlfriend",
+    }
+    results = []
+    unquoted = _mask_quoted_dialogue(dialogue).replace("’", "'")
+    for sentence in re.split(r"[.!?]+", unquoted):
+        tokens = re.findall(r"[a-z]+(?:'[a-z]+)?", sentence)
+        for index, token in enumerate(tokens):
+            term = terms.get(token)
+            if term and _direct_partner_prefix(tokens[:index]):
+                results.append(term)
+    return results
+
+
+def _direct_partner_prefix(prefix):
+    ownership = bool(prefix) and prefix[-1] in ("my", "a")
+    if prefix in (["let's", "be"], ["be", "my"], ["become", "my"]):
+        return True
+    if prefix in (["please", "be", "my"], ["please", "become", "my"]):
+        return True
+    if not ownership:
+        return False
+    stem = prefix[:-1]
+    if stem == ["you're"]:
+        return True
+    if stem[0:2] == ["you", "are"]:
+        modifiers = stem[2:]
+        return not modifiers or modifiers in (
+            ["definitely"],
+            ["certainly"],
+            ["really"],
+            ["truly"],
+        )
+    if stem in (
+        ["you", "were"],
+        ["you", "will", "be"],
+        ["you", "would", "be"],
+        ["you", "could", "be"],
+        ["you", "can", "be"],
+        ["you", "have", "been"],
+        ["you", "have", "always", "been"],
+    ):
+        return True
+    if len(stem) >= 2 and stem[0] in ("will", "would", "could", "can"):
+        if stem[1] != "you":
+            return False
+        proposal = stem[2:]
+        if proposal[0:1] == ["please"]:
+            proposal = proposal[1:]
+        return proposal in (["be"], ["become"], ["like", "to", "be"], ["want", "to", "be"])
+    return stem in (
+        ["i", "want", "you", "to", "be"],
+        ["i", "want", "you", "to", "become"],
+        ["i", "would", "like", "you", "to", "be"],
+        ["i", "would", "like", "you", "to", "become"],
     )
-    collective = re.findall(
-        r"\blet['’]?s\s+be\s+(boyfriend|girlfriend)s?\b",
-        unquoted,
-    )
-    imperative = re.findall(
-        r"(?:^|[.!?]\s+)(?:please\s+)?(?:be|become)\s+my\s+"
-        r"(boyfriend|girlfriend)s?\b",
-        unquoted,
-    )
-    return direct + collective + imperative
 
 
 def response_has_role_confusion(response, context):
