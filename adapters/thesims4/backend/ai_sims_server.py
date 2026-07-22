@@ -15,6 +15,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from collections import Counter
 from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -1407,6 +1408,8 @@ Recent conversation:
 {recent_conversation}
 
 Grounding rules:
+- Answer the current message without restating or closely paraphrasing it.
+- Keep the reply distinct from every recent player input and Speaker reply.
 - Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
 - Combine traits with current mood, needs, relationship, memories, and the current message.
 - Do not merely name or caricature traits.
@@ -1488,7 +1491,11 @@ def _dialogue_words(value, context):
 def _dialogue_similarity(left, right):
     if not left or not right:
         return 0.0
-    return SequenceMatcher(None, left, right, autojunk=False).ratio()
+    sequence_ratio = SequenceMatcher(None, left, right, autojunk=False).ratio()
+    overlap_ratio = sum((Counter(left) & Counter(right)).values()) / min(
+        len(left), len(right)
+    )
+    return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
 
 
 def classify_player_interaction(message):
@@ -1548,19 +1555,23 @@ def response_grounding_issue(payload, response, context):
     dialogue_words = _dialogue_words(dialogue, context)
     if (
         len(message_words) >= 6
-        and classify_player_interaction(message) != "romantic_invitation"
-        and _dialogue_similarity(message_words, dialogue_words) >= 0.8
+        and len(dialogue_words) >= 4
+        and _dialogue_similarity(message_words, dialogue_words) >= 0.72
     ):
         return "respond naturally; do not copy the player's message"
     for turn in context.get("conversation") or []:
+        previous_message = _dialogue_words(turn.get("message"), context)
         if (
-            len(dialogue_words) >= 4
-            and _dialogue_similarity(
-                dialogue_words,
-                _dialogue_words(turn.get("dialogue"), context),
-            )
-            >= 0.8
-            and message_words != _dialogue_words(turn.get("message"), context)
+            len(previous_message) >= 6
+            and len(dialogue_words) >= 4
+            and _dialogue_similarity(dialogue_words, previous_message) >= 0.72
+        ):
+            return "do not copy a previous player message"
+        previous_reply = _dialogue_words(turn.get("dialogue"), context)
+        if (
+            len(previous_reply) >= 4
+            and len(dialogue_words) >= 4
+            and _dialogue_similarity(dialogue_words, previous_reply) >= 0.72
         ):
             return "do not reuse a previous reply for a different message"
     asks_recalled_fact = "?" in message and (

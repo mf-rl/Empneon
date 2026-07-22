@@ -687,7 +687,7 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
 
     accepted = ai_sims_server.normalize_response(
         {
-            "dialogue": "Yes, I would like to go on a date.",
+            "dialogue": "Yes, that sounds wonderful. I'd be happy to spend time together.",
             "intent": "flirt",
             "relationship": {"romance_delta": 1},
         }
@@ -765,6 +765,74 @@ def test_grounding_rejects_stale_needs_memory_denial_and_ignored_romance() -> No
     )
     assert fallback["intent"] == "set_boundary"
     assert fallback["relationship"]["romance_delta"] == 0
+
+
+def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+    message = (
+        "You make me happier than I ever expected, and I don't want to wonder "
+        "what this could be anymore. I want us to be together. Will you be my girlfriend?"
+    )
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": (
+                "That's wonderful to hear! You make me happier than I ever expected, "
+                "and it makes you wonder what this could be anymore. You are the most "
+                "beautiful flower, Bernard. Would you be my girlfriend?"
+            )
+        }
+    )
+    assert ai_sims_server._dialogue_similarity(
+        ai_sims_server._dialogue_words(message, context),
+        ai_sims_server._dialogue_words(response["dialogue"], context),
+    ) >= 0.72
+    assert "copy" in ai_sims_server.response_grounding_issue(
+        {"message": message}, response, context
+    )
+
+    context["conversation"] = [
+        {
+            "message": "You make ordinary afternoons feel exciting and full of possibility.",
+            "dialogue": "I treasure how easily we can laugh and relax together.",
+        }
+    ]
+    previous_input_copy = ai_sims_server.normalize_response(
+        {"dialogue": "You make ordinary afternoons feel exciting and full of possibility."}
+    )
+    assert "copy" in ai_sims_server.response_grounding_issue(
+        {"message": "What would you enjoy doing today?"}, previous_input_copy, context
+    )
+
+    previous_reply_copy = ai_sims_server.normalize_response(
+        {"dialogue": "I treasure how easily we can laugh and relax together."}
+    )
+    assert "previous reply" in ai_sims_server.response_grounding_issue(
+        {"message": "Where should we go next?"}, previous_reply_copy, context
+    )
+
+    distinct = ai_sims_server.normalize_response(
+        {"dialogue": "Saturday sounds perfect. Where would you like to go?"}
+    )
+    assert ai_sims_server._dialogue_similarity(
+        ai_sims_server._dialogue_words(
+            "How about Saturday evening? I know a place I'd love to take you.", context
+        ),
+        ai_sims_server._dialogue_words(distinct["dialogue"], context),
+    ) < 0.72
+    assert ai_sims_server.response_grounding_issue(
+        {"message": "How about Saturday evening? I know a place I'd love to take you."},
+        distinct,
+        context,
+    ) == ""
 
 
 def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
@@ -892,6 +960,88 @@ def test_repetition_retry_removes_recent_conversation_history(monkeypatch) -> No
     assert response["dialogue"] == "Thank you. I enjoy spending time with you too."
     assert "You have a very kind presence." in prompts[0]
     assert "Recent conversation:\nNone yet" in prompts[1]
+
+
+def test_current_message_mirror_retries_and_returns_distinct_response(monkeypatch) -> None:
+    message = (
+        "You make me happier than I ever expected, and I don't want to wonder "
+        "what this could be anymore. I want us to be together. Will you be my girlfriend?"
+    )
+    responses = iter(
+        [
+            {
+                "dialogue": (
+                    "That's wonderful to hear! You make me happier than I ever expected, "
+                    "and it makes you wonder what this could be anymore. You are the most "
+                    "beautiful flower, Bernard. Would you be my girlfriend?"
+                )
+            },
+            {"dialogue": "I care about you, but I need more time before making that commitment."},
+        ]
+    )
+    calls = []
+
+    def fake_llm(*_args, **_kwargs):
+        calls.append(1)
+        return json.dumps(next(responses))
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    payload = {"speaker": {}, "listener": {}, "message": message}
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] == (
+        "I care about you, but I need more time before making that commitment."
+    )
+
+
+def test_persistent_current_message_mirror_uses_distinct_fallback(monkeypatch) -> None:
+    message = (
+        "You make me happier than I ever expected, and I don't want to wonder "
+        "what this could be anymore. I want us to be together. Will you be my girlfriend?"
+    )
+    mirrored = {
+        "dialogue": (
+            "That's wonderful to hear! You make me happier than I ever expected, "
+            "and it makes you wonder what this could be anymore. You are the most "
+            "beautiful flower, Bernard. Would you be my girlfriend?"
+        )
+    }
+    calls = []
+
+    def fake_llm(*_args, **_kwargs):
+        calls.append(1)
+        return json.dumps(mirrored)
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    payload = {"speaker": {}, "listener": {}, "message": message}
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [],
+        {"summary": ""},
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] != mirrored["dialogue"]
+    assert ai_sims_server.response_grounding_issue(payload, response, context) == ""
 
 
 def test_local_social_classifier_distinguishes_common_player_interactions() -> None:
