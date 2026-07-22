@@ -55,6 +55,47 @@ def test_agent_state_snapshot_rejects_non_json_identity() -> None:
         )
 
 
+def test_agent_state_snapshot_accepts_common_need_status_and_native_scale() -> None:
+    snapshot = AgentStateSnapshot.from_mapping(
+        {
+            "schema_version": 1,
+            "adapter": "example-game",
+            "agent_id": "alice",
+            "needs": {
+                "energy": {
+                    "level": 0.4,
+                    "urgency": 0.6,
+                    "status": "low",
+                    "native": {"value": 40, "minimum": 0, "maximum": 100},
+                }
+            },
+        }
+    )
+
+    energy = snapshot.needs["energy"]
+    assert isinstance(energy, dict)
+    assert energy["status"] == "low"
+    assert energy["native"] == {"value": 40, "minimum": 0, "maximum": 100}
+
+
+def test_agent_state_snapshot_rejects_unknown_need_status() -> None:
+    with pytest.raises(ValueError, match="need status"):
+        AgentStateSnapshot.from_mapping(
+            {
+                "schema_version": 1,
+                "adapter": "test",
+                "agent_id": "alice",
+                "needs": {
+                    "energy": {
+                        "level": 0.5,
+                        "urgency": 0.5,
+                        "status": "orange",
+                    }
+                },
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "section,key,value",
     [

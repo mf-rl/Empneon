@@ -61,6 +61,13 @@ class AgentStateSnapshot:
             if isinstance(need, Mapping):
                 _bounded(need, "level", 0.0, 1.0)
                 _bounded(need, "urgency", 0.0, 1.0)
+                status = need.get("status")
+                if status is not None and status not in (
+                    "satisfied",
+                    "low",
+                    "critical",
+                ):
+                    raise ValueError("agent state need status is invalid")
         for effect in self.effects:
             if isinstance(effect, Mapping):
                 _bounded(effect, "intensity", 0.0, 1.0)

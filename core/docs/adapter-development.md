@@ -23,6 +23,11 @@ use `-1.0..1.0`; affect arousal/intensity, need level/urgency, and relationship 
 discarding them or adding them to Core. Core persists the latest snapshot for each agent; a newer
 observation replaces that stored snapshot.
 
+Each normalized need may include `status` as `satisfied`, `low`, or `critical`. The adapter owns
+the native thresholds and may preserve its source value and bounds under the need's `native`
+mapping. Core consumers use normalized `level`, `urgency`, and `status`; they do not infer severity
+from a game-specific number.
+
 ## Contract flow
 
 1. Translate an observed game occurrence into `WorldEvent`.
