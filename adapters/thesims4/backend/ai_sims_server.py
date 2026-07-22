@@ -1505,10 +1505,10 @@ def _dialogue_similarity(left, right):
         len(left), len(right)
     )
     blocks = [block.size for block in matcher.get_matching_blocks() if block.size]
-    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / max(
-        len(left), len(right)
-    )
-    if secondary_coverage >= 0.25:
+    longest_length = max(len(left), len(right))
+    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / longest_length
+    total_matching_coverage = sum(blocks) / longest_length
+    if secondary_coverage >= 0.25 and total_matching_coverage >= 0.55:
         return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
     return max(sequence_ratio, overlap_ratio)
 

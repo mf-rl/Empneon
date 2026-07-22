@@ -894,6 +894,22 @@ def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
         {"message": split_fact_message}, split_fact_reply, context
     ) == ""
 
+    higher_overlap_reply = ai_sims_server.normalize_response(
+        {
+            "dialogue": (
+                "Saturday evening at eight works for me. I'll meet you at the Blue Velvet "
+                "downtown, and your promotion deserves a celebration."
+            )
+        }
+    )
+    assert ai_sims_server._dialogue_similarity(
+        ai_sims_server._dialogue_words(split_fact_message, context),
+        ai_sims_server._dialogue_words(higher_overlap_reply["dialogue"], context),
+    ) < 0.72
+    assert ai_sims_server.response_grounding_issue(
+        {"message": split_fact_message}, higher_overlap_reply, context
+    ) == ""
+
 
 def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
     context = ai_sims_server.build_context(
