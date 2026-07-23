@@ -62,7 +62,7 @@ class LMStudioProvider:
             "output_tokens", usage.get("completion_tokens")
         )
         latency_ms = max(0, round((time.perf_counter() - started) * 1000))
-        for item in output:
+        for item in reversed(output):
             if not isinstance(item, dict):
                 continue
             if item.get("type") == "message" and str(item.get("content") or "").strip():

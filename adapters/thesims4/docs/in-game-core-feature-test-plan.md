@@ -117,12 +117,14 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-22): PARTIAL** — Automated coverage now classifies incoming and response
-dialogue independently as `friendly`, `funny`, `romance`, `mean`, or `mischief`; derives exactly
-one common native action; grounds the response in both actor states; and leaves friendship and
-romance to observed game results. It also covers held multi-turn queue ordering, post-display
-execution, zero native deltas, and cancellation. Live source-build evidence for all five exact
-native mappings is still required, so Test 5 is not passed.
+**Current status (2026-07-22): PARTIAL / MULTI-TURN NATIVE ACTION DEADLOCK** — Automated coverage
+classifies incoming and response dialogue independently as `friendly`, `funny`, `romance`, `mean`,
+or `mischief`; derives exactly one common native action; grounds the response in both actor states;
+and leaves friendship and romance to observed game results. A live romance response reached the
+exact mapped tuning, but the held Empneon Social and the queued native action waited on each other.
+The second message never reached the backend, the native action ended with
+`FinishingType.LIABILITY`, and cleanup called the Sims cancellation API with missing arguments.
+Fix and retest this lifecycle before running the remaining category rows.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
   start the source backend as documented in `setup.md`.

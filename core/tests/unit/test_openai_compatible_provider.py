@@ -241,3 +241,21 @@ def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning()
     assert result.prompt_tokens == 17
     assert result.completion_tokens == 4
     assert result.latency_ms >= 0
+
+
+def test_lmstudio_native_provider_returns_final_message() -> None:
+    chat = {
+        "output": [
+            {"type": "message", "content": "You are the most beautiful flower."},
+            {"type": "message", "content": "My name is Karmine Luna."},
+        ]
+    }
+
+    with patch("urllib.request.urlopen", return_value=Response(chat)):
+        result = asyncio.run(
+            LMStudioProvider("http://localhost:1234/api/v1", "karmine").generate(
+                GenerationRequest((Message("user", "What is your name?"),), 120)
+            )
+        )
+
+    assert result.content == "My name is Karmine Luna."

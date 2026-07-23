@@ -376,8 +376,7 @@ dialogue behavior and a positive native romance consequence in game.
   prompt grounding, diagnostics, and read-only behavior. Test 5 remains **PARTIAL** until the new
   source-built artifacts are installed and both attraction-source paths are observed in game; no
   live attraction value is claimed by automated tests.
-- Work is local on `main` and has not been pushed. The SQLite `-wal` and `-shm` sidecars remain local
-  runtime files and are not committed.
+- SQLite `-wal` and `-shm` sidecars are local runtime files and must not be committed.
 - The first post-push Monorepo CI run (`29891676140`) stopped at Ruff with five test-only style
   findings: three long assertions, one `.format` call, and one long callback line. The assertions
   and test behavior are unchanged; the exact CI Ruff command now passes locally.
@@ -389,6 +388,116 @@ dialogue behavior and a positive native romance consequence in game.
   tests; mypy passes `51` source files, the scenario regression passes, and all three packages
   build successfully. Replacement Monorepo CI run `29892097554` passed every step on commit
   `0625e19`.
+
+### July 22 late-session Test 5 handoff
+
+**Status:** PARTIAL / MULTI-TURN NATIVE ACTION DEADLOCK
+
+This retest used Bernard Jaeger as the active Sim and Karmine Luna as the roleplayed target. The
+backend ran from source with LM Studio on its native `/api/v1/chat` endpoint.
+
+**Persistent actor/session-memory implementation completed before this retest:**
+
+- Empneon now keeps one durable actor identity per stable Sim ID. Duplicate display names do not
+  merge actors, and changing a display name does not discard that Sim's stored identity or memory.
+- The lightweight local `HermesRuntime` wakes the roleplayed Sim for a request and returns it to a
+  dormant state afterward; `AgentManager` bounds simultaneously active actors without introducing
+  the external Hermes Agent framework.
+- Static profile/personality data and confirmed long-term memory live in Core SQLite rather than
+  being recreated as a complete transcript on every request. Dynamic Sims state such as mood,
+  needs, relationship, attraction, and current social category is refreshed per interaction.
+- Working conversation context is scoped by `conversation_id`. A new Empneon Social starts with a
+  clean short-term exchange window while confirmed pair memories remain available across later
+  socials and backend restarts.
+- Recall now selects confirmed, relevant memories for the exact speaker/listener pair. It does not
+  inject another actor's private memory, an unconfirmed generated reply, or a large generic memory
+  summary into every prompt.
+- Automated coverage verifies dormant wake/reload behavior, stable-ID isolation, duplicate-name
+  isolation, pair-specific memory, cross-session persistence, confirmation gating, and bounded
+  prompt context. The implementation landed in commits `7d3500a`, `2fd79de`, `a3c493d`,
+  `f8ba691`, and `b84155c`; completed actor-memory plans/specifications were then removed in
+  `264c15d`.
+
+**Final-message transport fix:**
+
+- Bernard sent `You are the most beautiful flower my eyes have seen. What's your name,
+  sweetheart?`.
+- LM Studio generated the grounded final answer `Oh, Bernard! You're so charming. Well, here's
+  Karmine Luna.` The existing validator gives that exact input/answer pair similarity `0.0`, no
+  grounding issue, and no role confusion, so the answer is not dialogue mirroring.
+- LM Studio's native response can contain more than one `output` item. Core's
+  `LMStudioProvider` returned the first non-empty message, while LM Studio displayed the final
+  message. Validation could therefore inspect an earlier draft and reject it even though the
+  visible final answer was valid.
+- Core now scans the response in reverse and returns the last non-empty `message`. Regression
+  coverage supplies an earlier mirrored message followed by `My name is Karmine Luna.` and
+  verifies that Core returns the latter.
+- Red/green evidence: the new focused regression originally failed with the earlier message and
+  passed after the one-line provider change. Fresh verification passed Core `193` tests, Sims 4
+  `166` tests, Ruff, mypy (`51` source files), and the Core package build.
+
+**Live evidence after restarting the backend:**
+
+- At `21:25:01`, the first request reached the backend. Karmine's displayed response was
+  `Oh, you're sweet! My name is Karmine. And thanks for noticing!`; the agent slept normally at
+  `21:25:33`.
+- The response was confirmed and stored with Karmine as speaker, Bernard as listener, and the
+  original message intact. This confirms that self-identification and final-message selection
+  worked for the first live turn.
+- Bernard submitted a second message in the same input window. The game trace records
+  `Empneon Social input keys=('message',) length=86`, but the backend agent log, cognition usage,
+  and LM Studio log contain no second request.
+- The first response selected `social.romance`; the exact loaded tuning
+  `mixer_social_ComplimentAppearance_targeted_romance_alwaysOn` was found and queued. This is the
+  first live evidence that the common romance category reaches its exact mapped tuning, but it is
+  not evidence of successful completion or a romance delta.
+
+**Deadlock root cause:**
+
+- When a displayed response has a non-`none` action, `finish_displayed_turn` stores the next text
+  as `session.next_message`. `continue_displayed_turn` then enters `running_native_action` and
+  intentionally delays the next `/chat` call until the native action reports completion.
+- For player dialogue, the payload correctly labels Karmine as response `speaker` and Bernard as
+  `listener`, but `execute_sims_action` reverses those IDs when no autonomy interaction is
+  supplied. The native romance is therefore actually initiated by Bernard even though the marker
+  misleadingly prints `Karmine Luna -> Bernard Jaeger`.
+- Bernard is still running the held Empneon Social super-interaction. The newly queued Bernard
+  action cannot complete while that holder waits for the action's completion callback, so the
+  second message remains in `next_message` and never reaches the backend.
+- The game eventually finished the native interaction with `FinishingType.LIABILITY`. Empneon
+  treated every non-natural finish as `native_failed`, displayed the raw finishing value as an
+  Empneon error, and closed the session instead of submitting the waiting message.
+
+**Secondary cancellation defect:**
+
+- Closing the failed session calls `native_interaction.cancel()` without arguments.
+- The live Sims interaction requires `finishing_type` and `cancel_reason_msg`, producing
+  `TypeError: cancel() missing 2 required positional arguments: 'finishing_type' and
+  'cancel_reason_msg'`.
+- This cleanup error is downstream of the queue deadlock. Suppressing it alone would still lose
+  the second message.
+
+**Resume point for the next session:**
+
+1. Keep Test 5 `PARTIAL`; do not advance to Test 6.
+2. Add a failing script-level regression for a held player session with a non-`none` response
+   action and a waiting second message.
+3. Correct the native response direction/lifecycle so the response Speaker performs the action
+   without waiting on the active Sim's held interaction. Verify relationship before/after values
+   use the same direction.
+4. Decide explicitly whether an ordinary native-action failure resumes a queued next message;
+   manual cancellation must still suppress late dialogue and consequences.
+5. Call the Sims cancellation API with its required arguments and never expose a raw
+   `FinishingType` as the complete user-facing error.
+6. Log the actual native actor/target IDs and the transition that dispatches `next_message`; the
+   current name marker reflects payload roles, not execution direction.
+7. Rebuild and reinstall the `.ts4script`, restart both game and backend, then repeat the romance
+   row with at least two messages in one window. Capture action completion, relationship deltas,
+   and cancellation behavior before continuing the remaining category matrix.
+
+Only the LM Studio final-message transport fix is implemented in this final checkpoint. The native
+action deadlock, failure-resume policy, cancellation signature, and misleading execution-direction
+log remain documented defects for the next session.
 
 ## Test 6: Private observations and beliefs
 
