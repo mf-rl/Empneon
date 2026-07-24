@@ -212,6 +212,57 @@ def test_configured_router_exposes_generation_result_without_breaking_generate(
     assert asyncio.run(router.generate("large", (Message("user", "hi"),))) == "hello"
 
 
+def test_router_preserves_schema_for_capable_provider(monkeypatch) -> None:
+    schema = {"type": "object", "properties": {"category": {"enum": ["calm"]}}}
+    requests = []
+
+    class Provider:
+        capabilities = ModelCapabilities(structured_output=True)
+
+        async def generate(self, request):
+            requests.append(request)
+            return GenerationResult('{"category":"calm"}')
+
+    router = ConfiguredProviderRouter(
+        "test",
+        {"test": {"endpoint": "http://localhost", "model": "stub"}},
+        {"large": {}},
+    )
+    monkeypatch.setattr(router, "provider_for", lambda _task: Provider())
+
+    asyncio.run(
+        router.generate_result(
+            "large", (Message("user", "respond"),), schema=schema
+        )
+    )
+
+    assert requests[0].schema is schema
+
+
+def test_router_rejects_schema_for_incapable_provider(monkeypatch) -> None:
+    class Provider:
+        capabilities = ModelCapabilities()
+
+        async def generate(self, _request):
+            raise AssertionError("unsupported structured request must not be sent")
+
+    router = ConfiguredProviderRouter(
+        "test",
+        {"test": {"endpoint": "http://localhost", "model": "stub"}},
+        {"large": {}},
+    )
+    monkeypatch.setattr(router, "provider_for", lambda _task: Provider())
+
+    with pytest.raises(ProviderError, match="structured output"):
+        asyncio.run(
+            router.generate_result(
+                "large",
+                (Message("user", "respond"),),
+                schema={"type": "object"},
+            )
+        )
+
+
 def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning() -> None:
     models = {"models": [{"key": "gemma", "loaded_instances": [{"id": "gemma-loaded"}]}]}
     chat = {
@@ -241,6 +292,63 @@ def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning()
     assert result.prompt_tokens == 17
     assert result.completion_tokens == 4
     assert result.latency_ms >= 0
+
+
+def test_lmstudio_provider_enforces_schema_through_chat_completions() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "enum": ["friendly", "romance"],
+            }
+        },
+        "required": ["category"],
+    }
+    models = {
+        "models": [{"key": "gemma", "loaded_instances": [{"id": "gemma-loaded"}]}]
+    }
+    completion = {
+        "choices": [{"message": {"content": '{"category":"friendly"}'}}],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+    }
+
+    with patch(
+        "urllib.request.urlopen", side_effect=[Response(models), Response(completion)]
+    ) as urlopen:
+        provider = LMStudioProvider(
+            "http://localhost:1234/api/v1", "local-model"
+        )
+        result = asyncio.run(
+            provider.generate(
+                GenerationRequest(
+                    (Message("system", "act"), Message("user", "hello")),
+                    120,
+                    0.4,
+                    schema,
+                )
+            )
+        )
+
+    request = urlopen.call_args_list[1].args[0]
+    assert provider.capabilities.structured_output is True
+    assert request.full_url == "http://localhost:1234/v1/chat/completions"
+    assert json.loads(request.data) == {
+        "model": "gemma-loaded",
+        "messages": [
+            {"role": "system", "content": "act"},
+            {"role": "user", "content": "hello"},
+        ],
+        "max_tokens": 120,
+        "temperature": 0.4,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "response", "schema": schema},
+        },
+    }
+    assert result.content == '{"category":"friendly"}'
+    assert result.prompt_tokens == 20
+    assert result.completion_tokens == 5
 
 
 def test_lmstudio_native_provider_returns_final_message() -> None:

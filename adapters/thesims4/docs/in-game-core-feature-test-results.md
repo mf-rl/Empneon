@@ -88,7 +88,10 @@ restarted both the game and backend before the final verification.
 
 ## Test 5: Directed relationships and confirmed consequences
 
-**Status:** PARTIAL / SINGLE-TURN FLOW, ROMANCE, AND WAITING ANIMATION LIVE-PASSED
+**Status:** PASS / FINAL LIVE RECALL, PERSISTENCE, CONSEQUENCE, AND UI FLOW VERIFIED
+
+Historical `PARTIAL` and `FAIL` statements below record the state at each retest. The final July 24
+closeout is authoritative for the current Test 5 result.
 
 **Retest evidence (2026-07-20):**
 
@@ -566,6 +569,252 @@ log remain documented defects for the next session.
   notification layout and floating friendship/romance headline symbols have not yet been reported
   as observed, so Test 5 remains partial.
 - Stronger `+++` feedback and major relationship milestones remain deferred.
+
+### July 24 fresh recalled-response retest
+
+**Status:** PARTIAL / ROMANCE FLOW, PERSISTENCE, AND VISUALS PASSED; OTHER CATEGORIES PENDING
+
+- Bernard asked Karmine, `Hey, baby. When are we going on a date?` in conversation
+  `babc66e3fc9c484cb4045ddafb9d59e5`.
+- Karmine answered, `Oh, you're sweet! We were thinking of tonight at 7pm. Does that sound good?`
+  This preserves the recalled date fact but does not copy the earlier stored response.
+- The agent session ran from `08:24:06` to `08:24:23`. Core recorded LM Studio/CLOD 3 usage with
+  `15,478 ms` latency for event `677eafe0-5107-480c-952f-724d882413b7`.
+- The game marker records the waiting animation building and completing, followed by the exact
+  displayed response. Earlier animation failures remain in the append-only marker, but the latest
+  sequence contains no new animation failure.
+- Dialogue delivery produced confirmed event
+  `958cece9-cf4b-4611-9eb7-b4adf0cfea86:confirmed`. Decision
+  `958cece9-cf4b-4611-9eb7-b4adf0cfea86` succeeded with
+  `relationship.romance_positive` and observed romance `+5`; both Sims received the confirmed
+  observation, Core trust is `0.51`, and no proposal remains pending.
+- The game marker then recorded `Empneon memory checkpoint saved`. After game/backend restart, the
+  earlier confirmed event and observations remained present, and the same directed relationship ID
+  retained strength `0.14` and trust `0.51`.
+- The post-restart actor snapshot reported native romance `0.29`, preserving the prior `0.24` plus
+  the confirmed `+5` outcome.
+- Bernard then asked, `Hey, princess. I just wanted to see if you remember what time is our date.
+  Can you tell me?` Karmine answered in fresh wording, `Oh, of course! It was tonight at seven
+  o'clock. You were going to make it sound good, and it really did!`
+- The new interaction appended confirmed event
+  `bf504e55-e479-49ae-bca4-dcc326393631:confirmed`; its decision succeeded with observed romance
+  `+8`, both Sims received the observation, and no proposal remains pending.
+- Persistence **PASSED**.
+- Player observation confirms that both main Sim A and secondary Sim B portraits appear and that
+  floating relationship icons display during the tested romance conversations.
+- Test 5 remains **PARTIAL** until a positive friendship outcome and a mean interaction verify
+  their category-specific consequences and floating feedback. Funny and mischief remain part of
+  the full documented matrix unless explicitly deferred.
+
+### July 24 friendly-introduction retest
+
+**Status:** PASS / RELATIONSHIP-NEUTRAL FRIENDLY BRANCH
+
+- Bernard introduced himself to Dennis Kim with `Hi, friend! How are you doing? My name is
+  Bernard. Very nice to meet you.`
+- Dennis replied, `It's great to meet you too, Bernard! You seem pretty laid-back. What's good
+  about meeting you?`
+- The LM Studio/CLOD 3 request completed in `55,329 ms`. The response was categorized `friendly`
+  with `playful` tone, `relationship_outcome=none`, and `animation=none`.
+- Decision `b2e6759a-0e1d-43db-8d24-274073635668` succeeded, dialogue delivery was recorded, and
+  both Sims received the confirmed observation. It produced no action consequences or applied
+  changes, and no proposal remains pending.
+- No floating icon was correct for this relationship-neutral result. This passes the friendly
+  `none` branch but does not test a positive friendship consequence or its floating feedback.
+
+### July 24 friendship-category normalization failure
+
+**Status:** FAIL / VALID MODEL RESPONSE REPLACED BY RELIABILITY FALLBACK
+
+- Bernard asked Dennis, `That's funny, man. You are wonderful. How about we gather together for
+  some beers?`
+- LM Studio returned valid JSON with dialogue `That's funny! You are wonderful too, Bernard. Beers
+  sound perfect right now!`, `response_category=friendship`, playful/friendly tone, and
+  `relationship_outcome=friendship_positive`.
+- The request allowed only `friendly` and `romance`. `normalize_response()` treats `friendship` as
+  an alias by classifying the dialogue; the word `funny` changed it to `funny`, which was not an
+  available category. Normalization raised `ValueError`.
+- The exception path passed the full JSON text to `fallback_response()`. Because that function
+  rejects brace-containing text, the valid dialogue was replaced with `I couldn't form a reliable
+  response. Please try again.`
+- Response rejection was disabled, so no grounding rule blocked this reply. Decision
+  `e34cbdef-1f85-43df-9302-b9d0850bf00e` confirmed only the generic fallback with no applied
+  changes.
+- Automated fix verified on July 24: Core now preserves the caller's game-agnostic schema, rejects
+  providers that silently lack structured-output support, and sends LM Studio schema requests
+  through `/v1/chat/completions`. The Sims adapter deterministically maps its explicit legacy
+  aliases (`friendship`, `hostile`, `romantic_compliment`, and `romantic_invitation`) while
+  unknown or unavailable categories remain rejected.
+- The exact failed beer-invitation response now retains its dialogue,
+  `response_category=friendly`, and `relationship_outcome=friendship_positive` in automated
+  coverage. The complete Core suite passes with `196` tests and the complete Sims adapter suite
+  passes with `207` tests; both changed Python boundaries compile.
+- Test 5 remains **PARTIAL**. Live in-game verification is pending backend/game restart; repeat the
+  positive friendship and mean rows.
+
+### July 24 latest save/reload recall and animation failure
+
+**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+
+- Same-session recall passed: Karmine remembered the confirmed date as tonight at 7 pm.
+- Save/reload data persistence passed. The database retained confirmed event
+  `f6924dff-63b3-4fbf-92b8-1305b1858168:confirmed` and its attributed fact,
+  `Tonight, 7pm, at my place.`, accessible to both actors.
+- Post-reload recall failed. The response was `It sounds good! When are we going on a date? Tell
+  you what time and day works best for you?`
+- The deterministic `when` cue correctly selected the persisted event, but its later lexical fact
+  filter removed the time fact because the question said `date` while the fact said `Tonight,
+  7pm`. Automated coverage now retains only time-bearing facts for an event already selected by
+  the existing `when` cue; pair scoping, privacy, confirmation gating, deduplication, and the
+  result limit remain unchanged.
+- The game also repeatedly logged EA's
+  `listen_animation_factory referenced before assignment` failure. The mapped mixer had no linked
+  social group after reload, leaving EA's listener factory uninitialized.
+- Automated coverage preserves the existing paired animation path when a linked group exists. If
+  it is absent, Empneon now uses the already-built initiator visual without calling EA's unsafe
+  paired wrapper, caches that mode, and writes one diagnostic. A visual-construction failure
+  disables later attempts for that waiting interaction and also writes only one diagnostic.
+- Complete verification passes: `207` Sims adapter tests, Python 3.12 backend compilation, Python
+  3.7 mod compilation, `196` Core tests, and a successful source build.
+- Live save/reload recall and waiting-animation verification remains pending installation and game
+  restart. The build was not installed while the game and backend were running.
+
+### July 24 supported-recall compliance failure
+
+**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+
+- With the repaired selector and installed animation build, Bernard asked Karmine,
+  `Hey, my sweet baby. When are we going on our date? Can you tell me?`
+- Karmine answered, `That sounds good! So, when are we going on our date?` The waiting
+  conversation animation built and completed normally; the earlier listener-factory exception did
+  not recur.
+- The new exchange became confirmed event
+  `9f4f6b0d-008e-4bd8-8f52-1eca1895b5a5:confirmed`; generation event
+  `f7e6ba64-b81e-414b-9ea9-14a3a368c337` used LM Studio with `12,272` prompt tokens,
+  `100` completion tokens, and `12,644 ms` latency.
+- Live-database reproduction confirmed that deterministic and semantic recall both selected
+  `f6924dff-63b3-4fbf-92b8-1305b1858168:confirmed` and retained Bernard's attributed fact,
+  `Tonight, 7pm, at my place.` The dialogue prompt therefore contained the correct evidence; the
+  model ignored it.
+- The validator recognized recall only when the question began with a limited cue, and its evidence
+  test required lexical overlap between `date` and the time fact. Broad response rejection was
+  disabled, so the schema-valid but factually inadequate answer was accepted after one call.
+- Automated coverage now recognizes actual `what`, `when`, `where`, and `who` interrogative clauses
+  after natural conversational prefixes. When selected attributed evidence answers the question,
+  ignoring or denying it triggers one corrected request containing the exact fact even while broad
+  response rejection remains disabled. A repeated failure or provider error uses the grounded fact
+  fallback.
+- Compatibility coverage confirms that incidental phrases such as `wonder what this could be` are
+  not treated as recall questions, unsupported questions may still admit uncertainty, ordinary
+  rejection-disabled dialogue remains a single call, and romantic invitations without structured
+  recall facts preserve their existing boundary response.
+- Complete verification passes: `211` Sims adapter tests, Python 3.12 backend compilation, Python
+  3.7 mod compilation, `196` Core tests, and a successful source build.
+- Live retest requires only restarting the source backend and asking the existing date question
+  again. The installed mod and current reloaded save already contain the required state.
+
+### July 24 factless semantic override failure
+
+**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+
+- Bernard asked Karmine, `My sweet baby, you remember our date, right? Can you tell me when is it
+  going to be?`
+- Karmine answered, `It's the 15th of the month, Bernard! You just wanted to check if you
+  remember. It was the 15th.` The response invented a date not present in confirmed memory.
+- The observed event was `49a92422-d215-4906-a249-f605be8af8da`; its confirmed interaction was
+  `31807605-93eb-4c3b-bf89-56cb70e67876:confirmed`. One LM Studio cognition request used `12,197`
+  prompt tokens, `117` completion tokens, and `19,015 ms` latency.
+- Reproducing selection against the memories that existed before that event showed that
+  deterministic recall returned confirmed event
+  `f6924dff-63b3-4fbf-92b8-1305b1858168:confirmed` with the attributed fact `Tonight, 7pm, at my
+  place. Does it sound good? I promise I'll make you feel in heaven.` The semantic selector instead
+  returned only two factless prior recall exchanges. Because any non-empty semantic result replaced
+  deterministic recall, the prompt received prior questions but no supported date fact; the
+  supported-recall validator therefore had no evidence to enforce.
+- The shared merge now keeps a deterministic result containing attributed facts when the semantic
+  result contains none. Grounded semantic selection still wins, and a factless semantic selection
+  remains usable when the deterministic result is also factless.
+- Test-driven verification first reproduced the exact failing branch. Focused semantic recall then
+  passed `6` tests; the complete Sims adapter suite passed `213` tests, the Core suite passed `196`
+  tests, both backend files compiled under Python 3.12, and the Sims artifacts built successfully.
+- Live retest requires only restarting the source backend and repeating the existing question. No
+  new invitation, save reload, or mod installation is required.
+
+### July 24 recalled-fact perspective and usage failure
+
+**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+
+- Bernard asked Karmine, `My sweet baby. When are we going on a date? I wante to confirm you
+  remember.`
+- Karmine answered, `Tonight, 7pm, at my place. Does it sound good? I promise I'll make you feel
+  in heaven.` The date was remembered, but the location belongs to Bernard; Karmine replayed
+  Bernard's first-person statement as her own.
+- The turn used conversation `54d00ffe8bcd417c8f866e8ae943d7bc`, observed event
+  `f7089e72-ea92-4d51-88a1-be19677b0ac9`, decision
+  `3d817e92-fac7-477e-b23a-d337d5f002dc`, and confirmed event
+  `3d817e92-fac7-477e-b23a-d337d5f002dc:confirmed`.
+- Original event `f6924dff-63b3-4fbf-92b8-1305b1858168:confirmed` correctly attributes the
+  statement to Bernard, and the initial model prompt labeled it `Bernard said`. Both dialogue
+  attempts failed the time-evidence validator, after which the deterministic fallback copied the
+  bare statement.
+- The supported-fact helper had flattened `actor_id` plus `statement` into a string. The retry
+  correction and fallback therefore lost the actor even though retrieval was correct. The
+  delivered fallback was subsequently archived as a second durable fact attributed to Karmine.
+- Supported facts now stay structured. Corrections identify the source actor, while terminal
+  fallback quotes the source relationship, such as
+  `You told me: "Tonight, 7pm, at my place."`, without language-specific pronoun rewriting.
+- A responder's answer to a recall-shaped message remains conversation history but is no longer
+  promoted to an authoritative fact. Retrieval applies the same rule to legacy events, so the
+  existing Karmine-attributed duplicate is ignored without changing or deleting database rows.
+  Player assertions retain their existing durable-fact eligibility.
+- LM Studio completed three calls for the failed turn: semantic selection plus two dialogue
+  attempts. Only the dialogue attempts appeared in Empneon usage because selection ran before the
+  generation collector. Completed selector results now use the same provider-neutral usage
+  pathway and record as CLOD 2 under the interaction request. Raw prompts and responses remain
+  unpersisted.
+- Test-driven verification passed `14` focused recall/usage tests, the complete `217`-test Sims
+  adapter suite, Python 3.12 backend compilation, the complete `196`-test Core suite, and the Sims
+  source build.
+- Live retest requires only restarting the source backend, repeating the same question, and
+  checking `empneon.usage`. No new invitation, save reload, or mod installation is required.
+
+### July 24 final grounded-recall verification and Test 5 closeout
+
+**Status:** PASS
+
+- The final verification reused the persisted date rather than creating another invitation.
+  Bernard asked Karmine, `My sexy baby. Do you remember our date? I can't wait to have you all for
+  me. Tell me when it is happening.`
+- Deterministic recall retained the original fact attributed to Bernard:
+  `Tonight, 7pm, at my place. Does it sound good? I promise I'll make you feel in heaven.`
+  Legacy responder-attributed duplicates remained stored for history but were excluded from
+  authoritative recall.
+- Semantic selection ran as CLOD 2. The first CLOD 3 dialogue answer failed the exact-time
+  constraint and was rejected. The corrected second model answer passed:
+  `That sounds good! It's happening tonight at 7pm at your place.`
+- The final wording is fresh, includes the most specific supported time, and expresses Bernard's
+  location correctly from Karmine's perspective. It is not the attributed fallback.
+- Usage event `8cb1c702-8e09-4a4f-b1d5-bf86cf726b28` records one CLOD 2 call and two CLOD 3 calls,
+  `25,614` prompt tokens, `228` completion tokens, and `38,016 ms` aggregate provider latency.
+  No timeout or provider exception occurred.
+- Decision delivery succeeded, the game marker recorded the waiting animation completing and the
+  exact displayed response, and confirmed interaction
+  `9393fb0f-2293-482d-9db4-77cd5d97394a:confirmed` persisted the exchange.
+- The confirmed recall event intentionally contains no new durable facts. Recall answers remain
+  conversation history and cannot overwrite the original actor-attributed evidence.
+- The immediately preceding `16:02` run demonstrates the safety path: both generated answers
+  failed the supported-time constraint, so Empneon returned
+  `You told me: "Tonight, 7pm, at my place..."`. All three provider calls completed in `89,088 ms`;
+  this was a grounded fallback, not lost persistence.
+- An earlier heavy-model attempt ran for approximately 90 seconds without a usage or confirmed
+  interaction record, consistent with an interrupted or timed-out request. A later heavy-model
+  interaction completed normally in `60,573 ms`. The final test used the regular test model and
+  completed normally.
+- Final automated verification after the last compatibility correction passed `224` Core tests
+  and `233` Sims adapter tests. Focused Ruff and mypy checks, backend byte-compilation,
+  `git diff --check`, and the Sims mod build also passed.
+- Test 5 is closed as **PASS**. Positive friendship, mean, funny, and mischief interactions remain
+  optional breadth coverage rather than blockers for this accepted flow.
 
 ## Test 6: Private observations and beliefs
 

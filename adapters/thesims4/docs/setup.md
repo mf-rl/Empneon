@@ -127,12 +127,14 @@ Relative database paths resolve from the backend process's working directory. Bo
 database paths are read-only migration sources. All current state is written to the single active
 `empneon_core_memory.sqlite3` database; legacy sources are never deleted automatically.
 
-With `response_rejection_enabled` set to `false`, Empneon displays the first structurally usable
-model response without grounding, copying, role-confusion, or response-category filtering.
-JSON/plain-text parsing and response normalization still run because the game adapter requires a
-stable response object. Set the value to `true` to restore rejection, correction retries, and the
-deterministic fallback. Restart the backend after changing this setting; the game does not need
-to restart.
+With `response_rejection_enabled` set to `false`, Empneon skips the optional broad copying,
+role-confusion, and conversational grounding filters. Supported factual recall remains
+deterministically constrained: answers must preserve selected attributed time and location
+evidence, receive one corrected model attempt when necessary, and fall back to an attributed
+quotation rather than inventing a fact. JSON/plain-text parsing and response normalization always
+run because the game adapter requires a stable response object. Set the value to `true` to enable
+the broader rejection rules as well. Restart the backend after changing this setting; the game
+does not need to restart.
 
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
@@ -156,10 +158,12 @@ The optional provider-independent speaker/listener and grounding guard is active
 
 The single-turn **Start conversation** / **Waiting for response** redesign and its waiting
 conversation animation passed live testing on 2026-07-23. The mild romance path also passed with
-observed game-side increases. Exact primary/secondary portrait layout and the native floating
-friendship, romance, or negative symbols still require explicit observation on the installed game
-build. Stronger `+++` feedback and relationship milestones such as best friends, first kisses, and
-proposals are deferred and must not be triggered by this implementation.
+observed game-side increases. On July 24, live testing confirmed the primary/secondary portrait
+layout and floating relationship icons for romance conversations. A relationship-neutral friendly
+introduction correctly displayed no icon. The waiting animation also completed after save/reload
+through its initiator-only visual fallback when no linked social group was available. Stronger
+`+++` feedback and relationship milestones such as best friends, first kisses, and proposals are
+deferred and must not be triggered by this implementation.
 
 Memory settings:
 

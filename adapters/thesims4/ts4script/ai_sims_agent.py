@@ -1660,6 +1660,8 @@ class _VisualOutcomeActions:
 
 
 def waiting_conversation_animation(interaction, sequence):
+    if getattr(interaction, "_empneon_animation_disabled", False):
+        return sequence
     try:
         from interactions.aop import AffordanceObjectPair
         from interactions.utils.outcome import build_outcome_actions
@@ -1685,9 +1687,32 @@ def waiting_conversation_animation(interaction, sequence):
             if callable(animation_ref):
                 mixer.build_outcome = lambda: element_utils.build_element(())
                 mixer.relationship_scoring = False
-                animation = mixer.build_basic_elements(
-                    build_outcome_actions(mixer, _VisualOutcomeActions(actions))
+                visual = build_outcome_actions(
+                    mixer, _VisualOutcomeActions(actions)
                 )
+                mode = getattr(interaction, "_empneon_animation_mode", None)
+                linked_group = getattr(
+                    getattr(mixer, "super_interaction", None),
+                    "social_group",
+                    None,
+                )
+                if mode == "initiator_only" or linked_group is None:
+                    interaction._empneon_animation_mode = "initiator_only"
+                    animation = visual
+                    if not getattr(
+                        interaction,
+                        "_empneon_animation_fallback_diagnostic",
+                        False,
+                    ):
+                        interaction._empneon_animation_fallback_diagnostic = True
+                        interaction._empneon_animation_diagnostic = True
+                        write_marker(
+                            "Waiting conversation animation using "
+                            "initiator-only fallback: linked social group "
+                            "unavailable"
+                        )
+                else:
+                    animation = mixer.build_basic_elements(visual)
                 if not getattr(interaction, "_empneon_animation_diagnostic", False):
                     interaction._empneon_animation_diagnostic = True
                     write_marker(
@@ -1713,6 +1738,7 @@ def waiting_conversation_animation(interaction, sequence):
             )
         return sequence
     except Exception:
+        interaction._empneon_animation_disabled = True
         write_marker("Waiting conversation animation failed:\n" + traceback.format_exc())
         return sequence
 
@@ -2684,8 +2710,10 @@ def empneon_goals(_connection=None):
 
 @command("empneon.usage")
 def empneon_usage(_connection=None):
-    data = active_diagnostic("/diagnostics/usage", _connection)
-    if data is None:
+    try:
+        data = query_json("/diagnostics/usage", {})
+    except Exception as exc:
+        out(_connection, "Empneon diagnostic error: {}".format(exc))
         return
     actual = data.get("actual") or {}
     out(

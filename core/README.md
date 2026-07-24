@@ -8,6 +8,8 @@ AI reasoning within explicit performance and cost limits.
 
 - Persistent agent identity and structured state
 - Epistemic social memory: agents can remember who said what and distinguish belief from fact
+- Provider- and game-independent recall constraints for question slots, normalized time evidence,
+  and attributed location ownership
 - Cognitive level of detail (CLOD) with deterministic degradation under resource pressure
 - Typed contracts for observations, decisions, state changes, and action results
 - Adapter boundaries for different games and AI providers
@@ -23,7 +25,9 @@ game <-> game adapter <-> Empneon Core <-> AI provider <-> model
 ## Status
 
 Empneon is under active development and has not reached a stable 1.0 API. The core contracts
-are exercised by separate reference integrations for The Sims 4 and Godot.
+are exercised by separate reference integrations for The Sims 4 and Godot. Configured providers
+declare structured-output capability explicitly; schema-bearing requests are rejected when a
+provider cannot enforce them instead of silently dropping the schema.
 
 ## Development
 

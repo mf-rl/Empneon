@@ -34,6 +34,11 @@ from empneon.core.contracts import (
 )
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import Event
+from empneon.core.memory.recall import (
+    analyze_recall_query,
+    fact_supports_query,
+    validate_recall_response,
+)
 from empneon.core.identity.relationships import Relationship, RelationshipStore
 from empneon.core.identity.store import AgentStore
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
@@ -993,6 +998,7 @@ def normalize_response(raw, available_categories=None):
     )
     legacy_categories = {
         "friendly": "friendly",
+        "friendship": "friendly",
         "romantic_compliment": "romance",
         "romantic_invitation": "romance",
         "hostile": "mean",
@@ -1000,14 +1006,12 @@ def normalize_response(raw, available_categories=None):
         "neutral": "friendly",
     }
     legacy_kind = str(raw.get("player_interaction_kind") or "")
-    category = str(
+    raw_category = str(
         raw.get("response_category")
-        or legacy_categories.get(legacy_kind)
         or legacy_kind
         or "friendly"
     )
-    if category == "friendship":
-        category = classify_social_category(raw.get("dialogue"))
+    category = legacy_categories.get(raw_category, raw_category)
     if category not in categories:
         raise ValueError("response_category is invalid or unavailable")
     tone_tags = raw.get("tone_tags") or []
@@ -1377,6 +1381,11 @@ def semantic_recalled_memories(query, candidates, fallback):
             "semantic memory selection failed; using deterministic recall"
         )
         return fallback
+    if (
+        any(item.get("facts") for item in fallback)
+        and not any(item.get("facts") for item in selected)
+    ):
+        return fallback
     return selected or fallback
 
 
@@ -1504,8 +1513,14 @@ def _recalled_memory_text(context):
     lines = []
     for memory in list(context.get("recalled_memories") or [])[-3:]:
         if memory.get("explicit"):
-            lines.append(_exchange_text([memory], context, limit=1, max_chars=3000))
-            continue
+            asker_id = (
+                context.get("listener_id")
+                if memory.get("speaker_id") == context.get("speaker_id")
+                else context.get("speaker_id")
+            )
+            message = str(memory.get("message") or "").strip()
+            if message:
+                lines.append("{} said: {}".format(names.get(asker_id, asker_id), message))
         for fact in memory.get("facts") or []:
             actor_id = str(fact.get("actor_id") or "")
             statement = str(fact.get("statement") or "").strip()
@@ -1612,6 +1627,10 @@ Grounding rules:
   -1 is strong aversion, 0 is neutral, and 1 is strong attraction.
 - Attraction may shape warmth, hesitation, boundaries, or romantic openness, but
   it does not imply consent or require flirtation and never overrides identity, mood, memory, history, or the message.
+- A close or romantic relationship and compatible traits may inspire a fresh, natural term of
+  endearment, but never require one.
+- Do not use a term of endearment for neutral or hostile relationships, rejected romance, or when
+  identity or context makes it inappropriate.
 - Use gendered relationship terms only when supported by supplied identity.
 - Do not guess gender or age when identity is unknown.
 - A fact about shared history is supported only when it appears in Recalled long-term history or
@@ -1942,11 +1961,10 @@ def response_grounding_issue(payload, response, context):
     )
     if listener_name and asks_listener_name:
         return "do not ask for the known Listener's name"
-    asks_recalled_fact = "?" in message and (
-        message.startswith(("where ", "when ", "who ", "what did "))
-        or "remember" in message
-        or "did i say" in message
-    )
+    supported_recall_issue = _supported_recall_issue(payload, response, context)
+    if supported_recall_issue:
+        return supported_recall_issue
+    asks_recalled_fact = analyze_recall_query(message).explicit
     has_evidence = _memory_supports_question(message, context)
     uncertainty = (
         "don't know",
@@ -1965,7 +1983,137 @@ def response_grounding_issue(payload, response, context):
     return ""
 
 
+def _supported_recall_facts(message, context):
+    query = analyze_recall_query(str(message or ""))
+    if not query.explicit:
+        return []
+    facts = [
+        {
+            "actor_id": str(fact.get("actor_id") or ""),
+            "statement": str(fact.get("statement") or "").strip(),
+        }
+        for memory in context.get("recalled_memories") or []
+        for fact in memory.get("facts") or []
+        if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
+    ]
+    supporting = [
+        fact for fact in facts if fact_supports_query(fact, query)
+    ]
+    if supporting or query.requested_slots:
+        return supporting
+    question_terms = set(_dialogue_words(message, context))
+    return [
+        fact
+        for fact in facts
+        if question_terms
+        & set(_dialogue_words(fact["statement"], context))
+    ]
+
+
+def _attributed_fact_text(fact, context):
+    actor_id = str(fact.get("actor_id") or "")
+    names = {
+        context.get("speaker_id"): context["speaker"].get("name")
+        or "Unknown actor",
+        context.get("listener_id"): context["listener"].get("name")
+        or "Unknown actor",
+    }
+    actor = names.get(actor_id, actor_id or "Unknown actor")
+    return "{} said: {}".format(actor, fact["statement"])
+
+
+def _recalled_fact_dialogue(fact, context):
+    actor_id = str(fact.get("actor_id") or "")
+    statement = fact["statement"]
+    if actor_id == context.get("listener_id"):
+        return 'You told me: "{}"'.format(statement)
+    if actor_id == context.get("speaker_id"):
+        return 'I remember saying: "{}"'.format(statement)
+    names = {
+        context.get("speaker_id"): context["speaker"].get("name") or "",
+        context.get("listener_id"): context["listener"].get("name") or "",
+    }
+    actor = names.get(actor_id, actor_id)
+    if actor:
+        return '{} said: "{}"'.format(actor, statement)
+    return 'I remember this: "{}"'.format(statement)
+
+
+def _supported_recall_issue(payload, response, context):
+    message = str(payload.get("message") or "")
+    query = analyze_recall_query(message)
+    facts = _supported_recall_facts(message, context)
+    if not facts:
+        return ""
+    statements = [fact["statement"] for fact in facts]
+    dialogue = str(response.get("dialogue") or "")
+    lowered = dialogue.casefold()
+    if any(
+        phrase in lowered
+        for phrase in (
+            "don't know",
+            "do not know",
+            "not sure",
+            "don't remember",
+            "do not remember",
+            "what are you talking",
+        )
+    ):
+        return "use the supporting memory instead of denying it"
+    issue = validate_recall_response(
+        query,
+        facts,
+        dialogue,
+        str(context.get("speaker_id") or ""),
+        str(context.get("listener_id") or ""),
+    )
+    if issue:
+        return issue
+    if "time" in query.requested_slots:
+        return ""
+    question_terms = set(_dialogue_words(message, context))
+    ignored = {
+        "about",
+        "can",
+        "did",
+        "does",
+        "good",
+        "going",
+        "know",
+        "remember",
+        "said",
+        "say",
+        "sound",
+        "sounds",
+        "tell",
+        "that",
+        "the",
+        "this",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+        "would",
+        "you",
+    }
+    answer_terms = set().union(
+        *(
+            set(_dialogue_words(statement, context))
+            - question_terms
+            - ignored
+            for statement in statements
+        )
+    )
+    if answer_terms and answer_terms & set(_dialogue_words(dialogue, context)):
+        return ""
+    return "answer the recall question with the selected attributed fact"
+
+
 def _memory_supports_question(message, context):
+    if _supported_recall_facts(message, context):
+        return True
     ignored = {
         "where",
         "when",
@@ -1991,6 +2139,7 @@ def _memory_supports_question(message, context):
 def reasoning_fallback_response(payload, context):
     message = str(payload.get("message") or "").lower()
     interaction_kind = classify_player_interaction(message)
+    supported_facts = _supported_recall_facts(message, context)
     incoming_category = str(
         payload.get("incoming_category") or classify_social_category(message)
     )
@@ -2001,7 +2150,13 @@ def reasoning_fallback_response(payload, context):
         "funny": ("funny", "light"),
         "friendly": ("friendly", "neutral"),
     }.get(incoming_category, ("friendly", "neutral"))
-    if interaction_kind == "romantic_invitation":
+    if "?" in message and supported_facts:
+        dialogue = _recalled_fact_dialogue(supported_facts[0], context)
+        emotion = "confident"
+        intent = "recall"
+        animation = "friendly_chat"
+        trust_delta = 0
+    elif interaction_kind == "romantic_invitation":
         dialogue = "No, I would rather stay friends."
         emotion = "awkward"
         intent = "set_boundary"
@@ -2131,40 +2286,64 @@ class HermesRuntime:
         if configured_categories is None:
             categories = SOCIAL_CATEGORIES
         prompt = build_chat_prompt(payload, context)
+        supported_facts = _supported_recall_facts(
+            payload.get("message"), context
+        )
         for attempt in range(2):
-            content = llm_chat(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                schema=dialogue_schema(categories),
-                schema_name="sims_dialogue",
-                task="large",
-            )
+            try:
+                content = llm_chat(
+                    [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    schema=dialogue_schema(categories),
+                    schema_name="sims_dialogue",
+                    task="large",
+                )
+            except (ProviderError, OSError):
+                if supported_facts:
+                    return reasoning_fallback_response(payload, context)
+                raise
             try:
                 response = normalize_response(
                     extract_json(content), categories
                 )
             except (ValueError, json.JSONDecodeError):
                 response = fallback_response(content, categories)
-            if not RESPONSE_REJECTION_ENABLED:
+            recall_issue = _supported_recall_issue(payload, response, context)
+            if not RESPONSE_REJECTION_ENABLED and not recall_issue:
                 return response
-            issue = response_grounding_issue(payload, response, context)
-            category_issue = response_category_issue(response)
-            if not response_has_role_confusion(response, context) and not issue:
-                if not category_issue:
-                    return response
+            if RESPONSE_REJECTION_ENABLED:
+                issue = response_grounding_issue(payload, response, context)
+                category_issue = response_category_issue(response)
+                role_confusion = response_has_role_confusion(response, context)
+            else:
+                issue = recall_issue
+                category_issue = ""
+                role_confusion = False
+            if not role_confusion and not issue and not category_issue:
+                return response
             PROVIDER_LOG.warning(
                 "model response failed grounding (%s); retrying=%s",
                 issue or category_issue or "speaker/listener confusion",
                 attempt == 0,
             )
-            prompt += (
-                "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
-                "If using a name, use the Listener's name, '{}'."
-            ).format(context["speaker"]["name"], context["listener"]["name"])
+            if RESPONSE_REJECTION_ENABLED:
+                prompt += (
+                    "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
+                    "If using a name, use the Listener's name, '{}'."
+                ).format(context["speaker"]["name"], context["listener"]["name"])
             if issue:
                 prompt += "\nCorrection: {}.".format(issue)
+            if recall_issue:
+                prompt += (
+                    "\nCorrection: Answer the recall question using this "
+                    "attributed evidence: "
+                    + " | ".join(
+                        _attributed_fact_text(fact, context)
+                        for fact in supported_facts
+                    )
+                )
             if category_issue:
                 prompt += (
                     "\nCorrection: The response_category must describe the Speaker's own "
@@ -2246,11 +2425,16 @@ def chat(payload):
             conversation = empneon_state.recent_conversations(
                 conn, speaker_id, listener_id, conversation_id, limit=6
             )
-        recalled = semantic_recalled_memories(
-            query,
-            candidates,
-            deterministic_recalled,
-        )
+        GENERATION_CONTEXT.attempts = []
+        try:
+            recalled = semantic_recalled_memories(
+                query,
+                candidates,
+                deterministic_recalled,
+            )
+        finally:
+            generations = list(GENERATION_CONTEXT.attempts)
+            GENERATION_CONTEXT.attempts = None
         model_config = task_model_config("large")
         context = build_context(
             payload,
@@ -2291,7 +2475,6 @@ def chat(payload):
             max_context_tokens=int(model_config.get("context_tokens") or 4096),
             deadline_ms=int(model_config.get("latency_ms") or 3000),
         )
-        generations = []
         selected = {"clod": 1, "task": "core-rules"}
 
         def resolver(task):
@@ -2359,7 +2542,11 @@ def chat(payload):
                         str(config["name"]),
                         str(config["model"]),
                         generation,
-                        int(selected["clod"]),
+                        {
+                            "small": 2,
+                            "large": 3,
+                            "deep": 4,
+                        }.get(task, int(selected["clod"])),
                     )
             else:
                 usage.record(
@@ -2796,6 +2983,13 @@ class Handler(BaseHTTPRequestHandler):
                         "thesims4.migration"
                     )
                 ]
+            self.send_json(200, body)
+            return
+        if path == "/diagnostics/usage" and not str(
+            query.get("sim_id", [""])[0]
+        ).strip():
+            with open_db(CORE_DB_PATH) as conn:
+                body = UsageStore(conn).telemetry()
             self.send_json(200, body)
             return
         name = "decision_id" if path == "/diagnostics/replay" else "sim_id"

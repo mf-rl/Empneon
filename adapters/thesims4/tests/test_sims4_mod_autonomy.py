@@ -380,6 +380,38 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     ):
         assert hasattr(agent, probe)
 
+    usage_output = []
+    monkeypatch.setattr(
+        agent,
+        "active_diagnostic",
+        lambda *_args: {
+            "requests": 0,
+            "by_clod": {},
+            "actual": {},
+        },
+    )
+    monkeypatch.setattr(
+        agent,
+        "query_json",
+        lambda path, params: {
+            "requests": 2,
+            "by_clod": {"2": 1, "3": 1},
+            "actual": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "latency_ms": 300,
+            },
+        },
+    )
+    monkeypatch.setattr(agent, "out", lambda _connection, text: usage_output.append(text))
+
+    agent.empneon_usage()
+
+    assert usage_output == [
+        "Usage: requests=2 CLOD={'2': 1, '3': 1} "
+        "prompt=100 completion=20 latency=300ms"
+    ]
+
     primitive_values = ("RawModBuff", 73, False, None)
     primitive_items = [
         agent.native_game_item(value, "moodlet") for value in primitive_values
@@ -969,6 +1001,50 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         assert animation_owner is not waiting
         assert animation_owner.affordance is conversation_affordance
         assert animation_owner.super_interaction is waiting
+        missing_group_mixer = FakeMappedInteraction(
+            conversation_affordance,
+            SimpleNamespace(social_group=None),
+        )
+        unsafe_calls = []
+
+        def unsafe_basic_elements(_sequence):
+            unsafe_calls.append(True)
+            raise UnboundLocalError(
+                "local variable 'listen_animation_factory' "
+                "referenced before assignment"
+            )
+
+        missing_group_mixer.build_basic_elements = unsafe_basic_elements
+        missing_group_waiting = SimpleNamespace(
+            _empneon_waiting_mixer=missing_group_mixer,
+        )
+        marker_count = len(selected)
+        expected_fallback = (
+            ("visual-outcome", "conversation-animation"),
+            "next-tick",
+        )
+        assert (
+            agent.waiting_conversation_animation(
+                missing_group_waiting, "next-tick"
+            )
+            == expected_fallback
+        )
+        assert (
+            agent.waiting_conversation_animation(
+                missing_group_waiting, "next-tick"
+            )
+            == expected_fallback
+        )
+        assert unsafe_calls == []
+        assert (
+            missing_group_waiting._empneon_animation_mode
+            == "initiator_only"
+        )
+        assert len(selected) == marker_count + 1
+        assert selected[-1].startswith(
+            "Waiting conversation animation using initiator-only fallback:"
+        )
+        animation_call_count = len(animation_calls)
         linked_waiting = agent.EmpneonWaitingInteraction(
             initiated=False,
             empneon_session_id=session.id,
@@ -977,7 +1053,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         linked_waiting.target = actor
         linked_runner = linked_waiting._run_interaction_gen("timeline")
         assert next(linked_runner) == "next-tick"
-        assert animation_calls == [(animation_owner, None)]
+        assert len(animation_calls) == animation_call_count
         assert len(queued_waiting) == 1
         assert len(mapped_aops) == mapped_aop_count + 1
         assert animation_owner not in executed
@@ -1037,8 +1113,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         )
         marker_count = len(selected)
         assert agent.waiting_conversation_animation(waiting, "next-tick") == "next-tick"
+        assert agent.waiting_conversation_animation(waiting, "next-tick") == "next-tick"
         assert len(selected) == marker_count + 1
         assert selected[-1].startswith("Waiting conversation animation failed:")
+        assert waiting._empneon_animation_disabled is True
 
     runtime_actor = SimpleNamespace(
         sim_info=SimpleNamespace(sim_id="animation-runtime", full_name="Alice")

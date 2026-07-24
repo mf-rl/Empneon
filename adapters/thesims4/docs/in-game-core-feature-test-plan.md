@@ -117,16 +117,28 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-23): PARTIAL / CORE FLOW AND WAITING ANIMATION LIVE-PASSED** — The two
-queue phases use separate tuning resources: **Start conversation** ends after input submission and
-**Waiting for response** is queued before provider work starts. The waiting task is a custom social
-super interaction using the native chat group. Its initiating side builds the visual portion of a
-friendly conversation outcome while disabling loot, continuations, events, cancellation, extras,
-and relationship scoring. Live testing confirms that the task ends when the answer arrives and a
-conversation animation now plays; the chosen EA animation occasionally makes Sim B look bored,
-which is accepted as a cosmetic limitation for this phase. Automated coverage verifies that the
-waiting visual path adds no relationship or gameplay outcome. Exact dual-portrait layout and
-floating relationship symbols remain open live checks.
+**Current status (2026-07-24): PASS** — The single-turn queue, cancelable waiting phase,
+conversation animation, directed confirmed consequences, save/reload persistence, grounded recall,
+portrait layout, and romance feedback all passed live testing. The final post-reload date question
+retrieved Bernard's attributed `Tonight, 7pm, at my place` fact. Empneon rejected an incomplete
+first model answer, accepted a fresh second answer—`It's happening tonight at 7pm at your
+place`—and recorded successful delivery without promoting the recalled wording into a new
+authoritative fact.
+
+The implemented safeguards are game- and provider-independent where they belong in Core:
+structured-output capability is explicit, LM Studio receives the supplied JSON Schema, semantic
+selection cannot replace grounded deterministic recall with factless replies, requested time
+values are normalized and checked for completeness, and attributed location ownership survives
+prompting, retry, and fallback. The Sims adapter retains only its game-specific category aliases,
+relationship effects, UI bridge, and animation fallback. Provider usage now includes semantic
+selection and dialogue attempts; `empneon.usage` requests global telemetry while the HTTP
+diagnostic can still be filtered by actor.
+
+Live coverage includes positive romance, a relationship-neutral friendly introduction, correct
+two-portrait ordering, floating romance icons, continuous persistence, save/reload recall, and the
+initiator-only waiting visual when EA provides no linked social group. Positive friendship, mean,
+funny, and mischief rows remain useful breadth testing, but are no longer blockers for the accepted
+Test 5 flow.
 
 Warm, playful, or romantic reception in the `romance` response category now receives the existing
 mild `romance_positive` outcome when the model returns `none`, provided the response is not

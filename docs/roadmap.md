@@ -11,30 +11,31 @@ feature promise.
 - Persistent identity, relationships, emotions, goals, voice, episodic memory, observations,
   beliefs, provenance, contradictions, and revisions
 - Provider-independent request/result contracts
-- Native LM Studio and OpenAI-compatible providers selected by Core configuration
+- Native LM Studio and OpenAI-compatible providers selected by Core configuration, with explicit
+  structured-output capability enforcement and LM Studio JSON Schema transport
 - Deterministic CLOD 1 fallback, bounded scheduling, resource admission, and usage telemetry
 - SocietyBench scenarios, raw benchmark artifacts, and regression fixtures
 - Versioned SQLite migrations and Core-owned adapter memory documents
 - Save-aware The Sims 4 memory checkpoints and one-time legacy memory import
 - Single-turn The Sims 4 player dialogue with cancelable waiting, cosmetic conversation animation,
   and bounded game-observed relationship outcomes
-- Bounded, pair-scoped semantic memory selection with deterministic fallback; live date-plan recall
-  succeeds across paraphrasing
+- Bounded, pair-scoped semantic memory selection with deterministic fallback and shared recall
+  constraints; live date-plan recall succeeds across paraphrasing and save/reload while preserving
+  exact time and attributed location ownership in fresh wording
+- Provider-neutral usage accounting for semantic selection and dialogue generation, with global or
+  actor-filtered diagnostics
 
 ## Next gates
 
-- Treat recalled exchanges only as evidence when composing dialogue so a correct memory is answered
-  naturally instead of replaying the earlier model response verbatim.
 - Repeat the semantic-memory live matrix with non-date plans, preferences, promises, identities,
   conflicts, and locations.
-- Verify the exact two-portrait notification layout and native floating relationship symbols for
-  each mild Sims outcome; a more consistently neutral waiting animation is optional polish.
+- Expand live social-category coverage beyond the passed romance and relationship-neutral
+  friendship branches; a more consistently neutral waiting animation is optional polish.
 
 ### Core integration
 
 - Route The Sims 4 model-backed cognition through `decide_dynamic` after route estimates are
   measured on the baseline hardware.
-- Persist actual provider token and latency results from the configured router in `UsageStore`.
 - Replace remaining adapter metadata documents with typed Core concepts only when a second game
   demonstrates a shared concept.
 

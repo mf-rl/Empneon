@@ -55,9 +55,11 @@ py -3.12 -m pip install -e ..\..\core -e .
    [setup guide](docs/setup.md).
 
    Confirmed pair history is selected through a bounded semantic-memory request, with deterministic
-   recall as fallback. A live paraphrased date question retrieved the correct `Tonight at 7 pm at
-   your place` plan. The current open defect is answer synthesis: the model repeated the earlier
-   acceptance response verbatim instead of answering the new question in fresh wording.
+   recall as fallback. Shared Core constraints keep attributed facts ahead of newer factless
+   replies and validate requested time and location evidence. Live save/reload testing retrieved
+   the correct `Tonight at 7 pm at your place` plan and delivered it in fresh wording. If both
+   corrected model attempts remain unsupported, the adapter returns an attributed quotation
+   instead of inventing or reversing the fact.
 
    The existing diagnostic commands remain available through the cheat console:
 

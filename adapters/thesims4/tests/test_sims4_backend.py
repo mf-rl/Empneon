@@ -403,20 +403,91 @@ def test_semantic_recall_falls_back_for_empty_selection(monkeypatch) -> None:
     assert recalled == fallback
 
 
+def test_semantic_recall_keeps_grounded_fallback_over_factless_selection(
+    monkeypatch,
+) -> None:
+    grounded = [
+        {
+            "event_id": "date-plan",
+            "message": "Tonight, 7pm, at my place.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": "Tonight, 7pm, at my place.",
+                }
+            ],
+        }
+    ]
+    factless = [
+        {
+            "event_id": "prior-question",
+            "message": "When is our date?",
+            "dialogue": "It was the 15th.",
+            "facts": [],
+            "explicit": True,
+        }
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "select_recalled_memories",
+        lambda _query, _candidates: factless,
+    )
+
+    recalled = ai_sims_server.semantic_recalled_memories(
+        "Can you tell me when is our date?",
+        factless + grounded,
+        grounded,
+    )
+
+    assert recalled == grounded
+
+
+def test_semantic_recall_keeps_factless_selection_without_grounded_fallback(
+    monkeypatch,
+) -> None:
+    fallback = [
+        {"event_id": "literal", "message": "Old wording.", "facts": []}
+    ]
+    selected = [
+        {
+            "event_id": "semantic",
+            "message": "Meaning-matched wording.",
+            "facts": [],
+            "explicit": True,
+        }
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "select_recalled_memories",
+        lambda _query, _candidates: selected,
+    )
+
+    recalled = ai_sims_server.semantic_recalled_memories(
+        "What did we discuss?",
+        selected,
+        fallback,
+    )
+
+    assert recalled == selected
+
+
 @pytest.mark.parametrize(
-    ("query", "selected_id", "supported_text", "unsupported_text"),
+    ("query", "selected_id", "supported_text", "unsupported_text", "old_reply"),
     [
         (
-            "Can you tell the day and time we're going on a date?",
+            "Hey, baby. When are we going on a date?",
             "date-plan",
             "Tonight, 7pm, at my place.",
             "Next Saturday at the museum.",
+            "That sounds perfect! Tonight at 7 pm at your place is lovely. "
+            "You have such a charming way of making things feel like heaven.",
         ),
         (
             "Any idea where I put the thing that opens the garden?",
             "garden-key",
             "The garden key is beneath the blue bench.",
             "The garden key is in the kitchen.",
+            "I will remember that.",
         ),
     ],
 )
@@ -426,6 +497,7 @@ def test_semantic_recall_exposes_only_selected_support(
     selected_id,
     supported_text,
     unsupported_text,
+    old_reply,
 ) -> None:
     candidates = [
         {
@@ -433,7 +505,10 @@ def test_semantic_recall_exposes_only_selected_support(
             "speaker_id": "karmine",
             "listener_id": "bernard",
             "message": "Tonight, 7pm, at my place.",
-            "dialogue": "That sounds perfect.",
+            "dialogue": (
+                "That sounds perfect! Tonight at 7 pm at your place is lovely. "
+                "You have such a charming way of making things feel like heaven."
+            ),
             "facts": [
                 {
                     "actor_id": "bernard",
@@ -508,6 +583,7 @@ def test_semantic_recall_exposes_only_selected_support(
 
     assert supported_text in prompt
     assert unsupported_text not in prompt
+    assert old_reply not in prompt
 
 
 @pytest.mark.parametrize(
@@ -636,6 +712,12 @@ def test_when_question_prefers_grounded_time_fact_over_unsupported_replies(
             "Next Saturday at the museum.",
             [],
         ),
+        (
+            "unsupported-three",
+            "Do you remember our date?",
+            "Of course I remember it.",
+            [],
+        ),
     )
     with open_db(database) as conn:
         for happened_at, (event_id, message, dialogue, facts) in enumerate(
@@ -677,6 +759,12 @@ def test_when_question_prefers_grounded_time_fact_over_unsupported_replies(
             "bernard",
             "Hey, baby. When are we going on a date?",
         )
+        what_time_recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn,
+            "karmine",
+            "bernard",
+            "I'm happy you remember. What time are we having our date?",
+        )
 
     assert [item["message"] for item in recalled] == [
         "Tonight, 7pm, at my place."
@@ -686,6 +774,137 @@ def test_when_question_prefers_grounded_time_fact_over_unsupported_replies(
     ]
     assert [item["message"] for item in conversational_recalled] == [
         "Tonight, 7pm, at my place."
+    ]
+    assert [item["message"] for item in what_time_recalled] == [
+        "Tonight, 7pm, at my place."
+    ]
+    expected_fact = [
+        {
+            "actor_id": "bernard",
+            "statement": "Tonight, 7pm, at my place.",
+        }
+    ]
+    assert recalled[0]["facts"] == expected_fact
+    assert compound_recalled[0]["facts"] == expected_fact
+    assert conversational_recalled[0]["facts"] == expected_fact
+    assert what_time_recalled[0]["facts"] == expected_fact
+
+
+def test_recall_ignores_responder_fact_derived_from_prior_recall(
+    tmp_path,
+) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    original = {
+        "kind": "confirmed_interaction",
+        "conversation_id": "date-plan",
+        "speaker_id": "karmine",
+        "listener_id": "bernard",
+        "message": "Tonight, 7pm, at my place.",
+        "dialogue": "That sounds perfect.",
+        "facts": [
+            {
+                "actor_id": "bernard",
+                "statement": "Tonight, 7pm, at my place.",
+            }
+        ],
+    }
+    derivative = {
+        "kind": "confirmed_interaction",
+        "conversation_id": "date-recall",
+        "speaker_id": "karmine",
+        "listener_id": "bernard",
+        "message": "When is our date?",
+        "dialogue": "Tonight, 7pm, at my place.",
+        "facts": [
+            {
+                "actor_id": "karmine",
+                "statement": "Tonight, 7pm, at my place.",
+            }
+        ],
+    }
+    with open_db(database) as conn:
+        for event_id, happened_at, payload in (
+            ("original", 1, original),
+            ("derivative", 2, derivative),
+        ):
+            ai_sims_server.empneon_state.record_observed_event(
+                conn,
+                Event(
+                    json.dumps(payload),
+                    ["karmine", "bernard"],
+                    happened_at=happened_at,
+                    id=event_id,
+                ),
+                {
+                    "karmine": payload["dialogue"],
+                    "bernard": payload["message"],
+                },
+            )
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "When is our date?"
+        )
+        candidates = ai_sims_server.empneon_state.recall_candidates(
+            conn, "karmine", "bernard", "When is our date?"
+        )
+
+    recalled_facts = [
+        fact for memory in recalled for fact in memory["facts"]
+    ]
+    candidate_facts = [
+        fact for memory in candidates for fact in memory["facts"]
+    ]
+    expected = {
+        "actor_id": "bernard",
+        "statement": "Tonight, 7pm, at my place.",
+    }
+    assert expected in recalled_facts
+    assert expected in candidate_facts
+    assert all(fact["actor_id"] != "karmine" for fact in recalled_facts)
+    assert all(fact["actor_id"] != "karmine" for fact in candidate_facts)
+    assert any(
+        memory["event_id"] == "derivative" for memory in candidates
+    )
+
+
+def test_non_question_remembrance_keeps_responder_fact(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    payload = {
+        "kind": "confirmed_interaction",
+        "conversation_id": "remembering",
+        "speaker_id": "karmine",
+        "listener_id": "bernard",
+        "message": "I remember our old date.",
+        "dialogue": "I prefer red roses.",
+        "facts": [
+            {
+                "actor_id": "karmine",
+                "statement": "I prefer red roses.",
+            }
+        ],
+    }
+    with open_db(database) as conn:
+        ai_sims_server.empneon_state.record_observed_event(
+            conn,
+            Event(
+                json.dumps(payload),
+                ["karmine", "bernard"],
+                happened_at=1,
+                id="remembering",
+            ),
+            {
+                "karmine": payload["dialogue"],
+                "bernard": payload["message"],
+            },
+        )
+        candidates = ai_sims_server.empneon_state.recall_candidates(
+            conn, "karmine", "bernard", "What flowers do you prefer?"
+        )
+
+    assert candidates[0]["facts"] == [
+        {
+            "actor_id": "karmine",
+            "statement": "I prefer red roses.",
+        }
     ]
 
 
@@ -758,6 +977,54 @@ def test_displayed_dialogue_archives_attributed_durable_facts(
     with open_db(database) as conn:
         source_event = EpisodicMemoryStore(conn).get(archived["source_event_id"])
     assert source_event is not None
+
+
+def test_displayed_recall_does_not_archive_responder_fact(
+    tmp_path, monkeypatch
+) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    response = _social_provider_response(
+        "Tonight, 7pm, at my place. Does it sound good? "
+        "I promise I'll make you feel in heaven.",
+        "friendly",
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(response),
+    )
+    proposal = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "recall-facts",
+            "message": "What was it? I promise our date is tonight.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": ["friendly"],
+        }
+    )
+
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": proposal["decision_id"], "status": "displayed"}
+    )
+
+    with open_db(database) as conn:
+        confirmed = [
+            json.loads(item.description)
+            for item in EpisodicMemoryStore(conn).get_for_agent("karmine")
+            if json.loads(item.description).get("kind")
+            == "confirmed_interaction"
+        ]
+
+    assert confirmed[0]["facts"] == [
+        {
+            "actor_id": "bernard",
+            "statement": "What was it? I promise our date is tonight.",
+        }
+    ]
 
 
 def test_backend_port_is_exclusive() -> None:
@@ -1183,7 +1450,282 @@ def test_disabled_response_rejection_accepts_first_normalized_response(
     assert response["dialogue"] == provider_response["dialogue"]
 
 
-def test_disabled_response_rejection_accepts_friendship_category_alias(
+def _supported_date_recall_context():
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": (
+            "Hey, my sweet baby. When are we going on our date? "
+            "Can you tell me?"
+        ),
+        "available_response_categories": ["friendly", "romance"],
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "speaker_id": "karmine",
+                "listener_id": "bernard",
+                "message": "Tonight, 7pm, at my place.",
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "Tonight, 7pm, at my place.",
+                    }
+                ],
+                "explicit": True,
+            }
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+    return payload, context
+
+
+@pytest.mark.parametrize(
+    ("dialogue", "expected_issue"),
+    [
+        (
+            "Oh, of course! It's tonight at 7pm, right at my place.",
+            "preserve the recalled location owner and speaker perspective",
+        ),
+        ("Tonight at 7pm, at your place.", ""),
+        ("Tonight at 7pm, at Bernard's place.", ""),
+        ('You told me: "Tonight, 7pm, at my place."', ""),
+        ("Tonight at 7pm.", ""),
+    ],
+)
+def test_supported_recall_preserves_listener_owned_location_perspective(
+    dialogue, expected_issue
+) -> None:
+    payload, context = _supported_date_recall_context()
+
+    issue = ai_sims_server._supported_recall_issue(
+        payload,
+        {"dialogue": dialogue},
+        context,
+    )
+
+    assert issue == expected_issue
+
+
+@pytest.mark.parametrize(
+    ("dialogue", "expected_issue"),
+    [
+        ("Tonight at 7pm, at my place.", ""),
+        (
+            "Tonight at 7pm, at your place.",
+            "preserve the recalled location owner and speaker perspective",
+        ),
+        ('I remember saying: "Tonight, 7pm, at my place."', ""),
+    ],
+)
+def test_supported_recall_preserves_speaker_owned_location_perspective(
+    dialogue, expected_issue
+) -> None:
+    payload, context = _supported_date_recall_context()
+    context["recalled_memories"][0]["facts"][0]["actor_id"] = "karmine"
+
+    issue = ai_sims_server._supported_recall_issue(
+        payload,
+        {"dialogue": dialogue},
+        context,
+    )
+
+    assert issue == expected_issue
+
+
+@pytest.mark.parametrize(
+    ("dialogue", "expected_issue"),
+    [
+        (
+            "That sounds good! Tonight at your place.",
+            "answer with the supported recalled time without inventing another schedule",
+        ),
+        (
+            "The first Saturday at 10 AM.",
+            "answer with the supported recalled time without inventing another schedule",
+        ),
+        ("Tonight at 7pm, at your place.", ""),
+        ("At 7:00 PM.", ""),
+    ],
+)
+def test_what_time_recall_requires_authoritative_specific_time(
+    dialogue, expected_issue
+) -> None:
+    payload, context = _supported_date_recall_context()
+    payload["message"] = (
+        "I'm happy you remember. What time are we having our date?"
+    )
+
+    assert (
+        ai_sims_server._supported_recall_issue(
+            payload, {"dialogue": dialogue}, context
+        )
+        == expected_issue
+    )
+
+
+def test_invented_time_uses_attributed_fallback(monkeypatch) -> None:
+    invented = _social_provider_response(
+        "Oh, of course! It's the first Saturday at 10 AM.",
+        "romance",
+    )
+    calls = []
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(invented),
+    )
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload, context = _supported_date_recall_context()
+    payload["message"] = (
+        "I'm happy you remember. What time are we having our date?"
+    )
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] == (
+        'You told me: "Tonight, 7pm, at my place."'
+    )
+
+
+def test_supported_recall_uses_attributed_fallback_after_location_inversion(
+    monkeypatch,
+) -> None:
+    inverted = _social_provider_response(
+        "Oh, of course! It's tonight at 7pm, right at my place.",
+        "romance",
+    )
+    calls = []
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(inverted),
+    )
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload, context = _supported_date_recall_context()
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] == (
+        'You told me: "Tonight, 7pm, at my place."'
+    )
+
+
+def test_supported_recall_retries_ignored_fact_when_rejection_is_disabled(
+    monkeypatch,
+) -> None:
+    ignored = "That sounds good! So, when are we going on our date?"
+    corrected = "Tonight at 7 pm, at your place. I'm looking forward to it."
+    responses = iter(
+        (
+            _social_provider_response(ignored, "romance"),
+            _social_provider_response(corrected, "romance"),
+        )
+    )
+    calls = []
+
+    def fake_llm(messages, **_kwargs):
+        calls.append(messages)
+        return json.dumps(next(responses))
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", fake_llm)
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload, context = _supported_date_recall_context()
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    correction = calls[1][1]["content"]
+    assert len(calls) == 2
+    assert response["dialogue"] == corrected
+    assert (
+        "attributed evidence: Bernard said: Tonight, 7pm, at my place."
+        in correction
+    )
+
+
+def test_supported_recall_uses_fact_after_failed_retry(monkeypatch) -> None:
+    ignored = _social_provider_response(
+        "That sounds good! So, when are we going on our date?",
+        "romance",
+    )
+    calls = []
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(ignored),
+    )
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload, context = _supported_date_recall_context()
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert len(calls) == 2
+    assert response["dialogue"] == (
+        'You told me: "Tonight, 7pm, at my place."'
+    )
+    assert response["intent"] == "recall"
+
+
+def test_supported_recall_uses_fact_when_provider_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ai_sims_server.ProviderError("offline")
+        ),
+    )
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload, context = _supported_date_recall_context()
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["dialogue"] == (
+        'You told me: "Tonight, 7pm, at my place."'
+    )
+    assert response["intent"] == "recall"
+
+
+def test_supported_recall_does_not_force_unsupported_question(monkeypatch) -> None:
+    calls = []
+    uncertainty = _social_provider_response(
+        "I don't remember that.",
+        "friendly",
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(uncertainty),
+    )
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Hey, do you remember where I left the unknown item?",
+        "available_response_categories": ["friendly"],
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert calls == [1]
+    assert response["dialogue"] == "I don't remember that."
+
+
+def test_friendship_category_alias_does_not_reclassify_dialogue(
     monkeypatch,
 ) -> None:
     dialogue = (
@@ -1225,7 +1767,62 @@ def test_disabled_response_rejection_accepts_friendship_category_alias(
     response = ai_sims_server.HERMES.dialogue(payload, context)
 
     assert response["dialogue"] == dialogue
-    assert response["response_category"] == "mean"
+    assert response["response_category"] == "friendly"
+
+
+def test_friendship_category_alias_preserves_valid_live_response() -> None:
+    dialogue = (
+        "That's funny! You are wonderful too, Bernard. "
+        "Beers sound perfect right now!"
+    )
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": dialogue,
+            "expressed_emotion": "playful",
+            "intent": "accept_playfully",
+            "response_category": "friendship",
+            "tone_tags": ["playful", "friendly"],
+            "trust_delta": 1,
+            "relationship_outcome": "friendship_positive",
+        },
+        ["friendly", "romance"],
+    )
+
+    assert response["dialogue"] == dialogue
+    assert response["response_category"] == "friendly"
+    assert response["relationship_outcome"] == "friendship_positive"
+
+
+@pytest.mark.parametrize(
+    ("alias", "expected"),
+    [
+        ("hostile", "mean"),
+        ("romantic_compliment", "romance"),
+        ("romantic_invitation", "romance"),
+    ],
+)
+def test_response_category_normalizes_known_legacy_aliases(
+    alias: str, expected: str
+) -> None:
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": "A valid response.",
+            "response_category": alias,
+            "relationship_outcome": "none",
+        },
+        [expected],
+    )
+
+    assert response["response_category"] == expected
+
+
+@pytest.mark.parametrize("category", ["angry", "seductive", "social"])
+def test_response_category_rejects_unknown_aliases(category: str) -> None:
+    with pytest.raises(ValueError, match="invalid or unavailable"):
+        ai_sims_server.normalize_response(
+            {"dialogue": "A response.", "response_category": category},
+            list(ai_sims_server.SOCIAL_CATEGORIES),
+        )
 
 
 def test_actor_prompt_separates_recalled_history_from_current_session() -> None:
@@ -1265,10 +1862,13 @@ def test_actor_prompt_separates_recalled_history_from_current_session() -> None:
         {"message": "When and why did we agree to meet?"}, context
     )
 
-    assert "Robin: Let's meet for pizza tomorrow at 7 PM." in prompt
-    assert "Travis: Pizza sounds good, let's plan it." in prompt
+    assert "Robin said: Let's meet for pizza tomorrow at 7 PM." in prompt
+    assert "Pizza sounds good, let's plan it." not in prompt
     assert "Robin: How has your day been?" in prompt
     assert "Travis: Busy, but good." in prompt
+    normalized_prompt = " ".join(prompt.split())
+    assert "may inspire a fresh, natural term of endearment" in normalized_prompt
+    assert "but never require one" in normalized_prompt
     assert "Recalled long-term history:" in prompt
     assert "Current Empneon Social:" in prompt
     assert "Memory summary:" not in prompt
@@ -2868,6 +3468,102 @@ def test_provider_output_parsing_uses_first_json_and_never_exposes_malformed_dat
     assert plain_text["relationship_outcome"] == "friendship_negative"
 
 
+def test_player_dialogue_records_selector_and_generation_usage(
+    tmp_path, monkeypatch
+) -> None:
+    dialogue = _social_provider_response(
+        "Tonight at 7 pm, at your place. I'm looking forward to it.",
+        "romance",
+    )
+
+    class Provider:
+        capabilities = ModelCapabilities(structured_output=True, local=True)
+
+    class Router:
+        def config_for(self, task):
+            return {
+                "name": "test",
+                "model": "stub-" + task,
+                "max_tokens": 300,
+                "context_tokens": 4096,
+                "latency_ms": 1000,
+                "ram_mb": 64,
+                "vram_mb": 0,
+            }
+
+        def provider_for(self, _task):
+            return Provider()
+
+        async def generate_result(
+            self, task, _messages, *, schema=None, temperature=None
+        ):
+            del task, temperature
+            if schema == ai_sims_server.MEMORY_SELECTOR_SCHEMA:
+                return GenerationResult(
+                    json.dumps({"event_ids": ["m1"]}), 5, 2, 7
+                )
+            return GenerationResult(json.dumps(dialogue), 20, 8, 30)
+
+    database = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", database)
+    with open_db(database) as conn:
+        payload = {
+            "kind": "confirmed_interaction",
+            "conversation_id": "original",
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "Tonight, 7pm, at my place.",
+            "dialogue": "That sounds perfect.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": "Tonight, 7pm, at my place.",
+                }
+            ],
+        }
+        ai_sims_server.empneon_state.record_observed_event(
+            conn,
+            Event(
+                json.dumps(payload),
+                ["karmine", "bernard"],
+                happened_at=1,
+                id="date-plan",
+            ),
+            {
+                "karmine": payload["dialogue"],
+                "bernard": payload["message"],
+            },
+        )
+
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "usage-recall",
+            "message": "When is our date?",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": ["friendly", "romance"],
+        }
+    )
+
+    with open_db(database) as conn:
+        telemetry = UsageStore(conn).telemetry("karmine")
+
+    assert result["dialogue"] == dialogue["dialogue"]
+    assert telemetry["attempts"] == 2
+    assert telemetry["requests"] == 1
+    assert telemetry["by_provider"] == {"test": 2}
+    assert telemetry["by_clod"] == {"2": 1, "3": 1}
+    assert telemetry["actual"] == {
+        "prompt_tokens": 25,
+        "completion_tokens": 10,
+        "latency_ms": 37,
+    }
+    assert "Tonight at 7 pm" not in json.dumps(telemetry)
+
+
 def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     tmp_path, monkeypatch
 ) -> None:
@@ -3948,6 +4644,53 @@ def test_diagnostics_sim_returns_canonical_state_without_secrets(
     assert status == 200
     assert body["agent"]["name"] == "Bella"
     assert "api_key" not in json.dumps(body).casefold()
+
+
+def test_usage_diagnostics_without_sim_id_returns_global_telemetry(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", str(tmp_path / "memory.db"))
+    monkeypatch.setattr(
+        ai_sims_server.UsageStore,
+        "telemetry",
+        lambda _store, agent_id=None: {"agent_id": agent_id, "requests": 2},
+    )
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/diagnostics/usage"
+    responses = []
+    monkeypatch.setattr(
+        handler, "send_json", lambda status, body: responses.append((status, body))
+    )
+
+    handler.do_GET()
+
+    assert responses == [(200, {"agent_id": None, "requests": 2})]
+
+
+def test_usage_diagnostics_with_sim_id_remains_actor_filtered(
+    tmp_path, monkeypatch
+) -> None:
+    database = str(tmp_path / "memory.db")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", database)
+    with open_db(database) as conn:
+        ai_sims_server.empneon_state.sync_sim(
+            conn, {"id": "karmine", "name": "Karmine"}
+        )
+    monkeypatch.setattr(
+        ai_sims_server.UsageStore,
+        "telemetry",
+        lambda _store, agent_id=None: {"agent_id": agent_id, "requests": 1},
+    )
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/diagnostics/usage?sim_id=karmine"
+    responses = []
+    monkeypatch.setattr(
+        handler, "send_json", lambda status, body: responses.append((status, body))
+    )
+
+    handler.do_GET()
+
+    assert responses == [(200, {"agent_id": "karmine", "requests": 1})]
 
 
 def test_diagnostics_require_identifiers_and_report_missing_records(

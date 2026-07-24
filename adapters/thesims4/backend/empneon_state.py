@@ -32,6 +32,10 @@ from empneon.core.memory.episodic import (
     Observation,
     ObservationStore,
 )
+from empneon.core.memory.recall import (
+    analyze_recall_query,
+    fact_supports_query,
+)
 from empneon.core.memory.vector import VectorMemoryStore
 from empneon.core.contracts import ActionResult
 from empneon.core.runtime import ActionProposal
@@ -547,18 +551,6 @@ _DURABLE_FACT_CUE = re.compile(
     r"my\s+[a-z][a-z -]{0,30}\s+is|we met|we are|we're)\b",
     re.IGNORECASE,
 )
-_RECALL_CUE = re.compile(
-    r"\b(?:remember|recall|(?:what|where|who) (?:did|is|was)|"
-    r"when(?: and what time)? (?:did|is|was)|first time|last time)\b",
-    re.IGNORECASE,
-)
-_TIME_FACT_CUE = re.compile(
-    r"\b(?:today|tonight|tomorrow|yesterday|monday|tuesday|wednesday|thursday|"
-    r"friday|saturday|sunday|(?:this|next|last)\s+(?:morning|afternoon|evening|"
-    r"night|week|weekend)|\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)|"
-    r"[a-z]+\s+o'clock)\b",
-    re.IGNORECASE,
-)
 _RECALL_STOPWORDS = frozenset(
     "about again been conversation did does first from have interaction just know "
     "last like remember said tell that the them then they this time was were what "
@@ -575,6 +567,26 @@ def _durable_fact(actor_id: str, text: str) -> dict[str, str] | None:
     ):
         return None
     return {"actor_id": str(actor_id), "statement": statement}
+
+
+def _is_recall_question(text: str) -> bool:
+    return analyze_recall_query(text).explicit
+
+
+def _authoritative_facts(
+    data: dict[str, object],
+) -> list[dict[str, object]]:
+    speaker_id = str(data.get("speaker_id") or "")
+    recall_answer = _is_recall_question(str(data.get("message") or ""))
+    return [
+        fact
+        for fact in data.get("facts") or []
+        if isinstance(fact, dict)
+        and not (
+            recall_answer
+            and str(fact.get("actor_id") or "") == speaker_id
+        )
+    ]
 
 
 def _recall_terms(text: str) -> set[str]:
@@ -601,6 +613,7 @@ def recall_candidates(
 ) -> list[dict[str, object]]:
     pair = {str(actor_id), str(other_id)}
     terms = _recall_terms(query)
+    recall_query = analyze_recall_query(query)
     ranked = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
         data = _event_data(event.description)
@@ -612,8 +625,11 @@ def recall_candidates(
         }
         if participants != pair:
             continue
-        facts = [
-            fact for fact in data.get("facts") or [] if isinstance(fact, dict)
+        facts = _authoritative_facts(data)
+        supporting_facts = [
+            fact
+            for fact in facts
+            if fact_supports_query(fact, recall_query)
         ]
         searchable = " ".join(
             (
@@ -633,15 +649,19 @@ def recall_candidates(
         }
         ranked.append(
             (
+                bool(supporting_facts),
                 bool(terms & _recall_terms(searchable)),
                 bool(facts),
                 event.happened_at,
                 candidate,
             )
         )
-    ranked.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    ranked.sort(
+        key=lambda item: (item[0], item[1], item[2], item[3]),
+        reverse=True,
+    )
     selected = []
-    for _overlap, _has_facts, _created_at, candidate in ranked:
+    for _supports, _overlap, _has_facts, _created_at, candidate in ranked:
         trial = json.dumps(
             selected + [candidate], ensure_ascii=True, sort_keys=True
         )
@@ -659,14 +679,8 @@ def recalled_memories(
 ) -> list[dict[str, object]]:
     pair = {str(actor_id), str(other_id)}
     terms = _recall_terms(query)
-    query_text = str(query)
-    explicit = bool(
-        _RECALL_CUE.search(query_text)
-        or (
-            "?" in query_text
-            and re.search(r"\b(?:what|when|where|who)\b", query_text, re.IGNORECASE)
-        )
-    )
+    recall_query = analyze_recall_query(query)
+    explicit = recall_query.explicit
     matches = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
         data = _event_data(event.description)
@@ -678,14 +692,13 @@ def recalled_memories(
         }
         if participants != pair:
             continue
-        raw_facts = data.get("facts") or []
-        facts = [fact for fact in raw_facts if isinstance(fact, dict)]
-        fact_text = " ".join(str(fact.get("statement") or "") for fact in facts)
-        answers_when = bool(
-            explicit
-            and re.search(r"\bwhen\b", str(query), re.IGNORECASE)
-            and _TIME_FACT_CUE.search(fact_text)
-        )
+        facts = _authoritative_facts(data)
+        supporting_facts = [
+            fact
+            for fact in facts
+            if fact_supports_query(fact, recall_query)
+        ]
+        answers_requested = bool(supporting_facts)
         searchable = " ".join(
             [str(data.get("message") or ""), str(data.get("dialogue") or "")]
             if explicit
@@ -694,7 +707,7 @@ def recalled_memories(
         overlap = terms & _recall_terms(searchable)
         if explicit and not terms:
             overlap = {"history"}
-        if not overlap and not answers_when:
+        if not overlap and not answers_requested:
             continue
         selected = dict(data)
         selected["event_id"] = event.id
@@ -703,9 +716,12 @@ def recalled_memories(
         selected["facts"] = [
             fact
             for fact in facts
-            if terms & _recall_terms(str(fact.get("statement") or ""))
+            if fact in supporting_facts
+            or terms & _recall_terms(str(fact.get("statement") or ""))
         ]
-        matches.append((len(overlap), event.happened_at, selected, answers_when))
+        matches.append(
+            (len(overlap), event.happened_at, selected, answers_requested)
+        )
     if any(item[3] for item in matches):
         matches = [item for item in matches if item[3]]
     if re.search(r"\bfirst time\b", str(query), re.IGNORECASE):
@@ -743,11 +759,16 @@ def record_delivered_experience(
     source = _event_data(source_event.description) if source_event is not None else {}
     message = str(source.get("message") or "").strip()
     dialogue = str(values.get("dialogue") or "").strip()
+    dialogue_fact = (
+        None
+        if _is_recall_question(message)
+        else _durable_fact(proposal.decision.actor_id, dialogue)
+    )
     facts = [
         fact
         for fact in (
             _durable_fact(proposal.decision.target_id or "", message),
-            _durable_fact(proposal.decision.actor_id, dialogue),
+            dialogue_fact,
         )
         if fact is not None
     ]

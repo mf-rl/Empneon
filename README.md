@@ -102,8 +102,9 @@ empneon-regress core/scenarios/clod1-regressions.json
 
 Core selects providers from runtime configuration. The included implementations are:
 
-- `LMStudioProvider`, which discovers a loaded local model and uses LM Studio's native
-  `/api/v1/chat` endpoint;
+- `LMStudioProvider`, which discovers a loaded local model, uses LM Studio's native
+  `/api/v1/chat` endpoint for unconstrained generation, and sends JSON Schema requests through
+  the structured-output `/v1/chat/completions` endpoint;
 - `OpenAICompatibleProvider`, used by Ollama, llama.cpp-compatible servers, OpenAI,
   OpenRouter, and other compatible endpoints;
 - custom implementations of the `LLMProvider` protocol.
@@ -161,9 +162,11 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
 - Player-triggered Sims dialogue is a cancelable single-turn transaction with separate routing and
   waiting queue phases, portrait notifications, cosmetic waiting animation, and bounded observed
   friendship or romance consequences.
-- The Sims 4 bridge selects relevant, pair-scoped confirmed memories through a bounded local-model
-  request with deterministic fallback. Live testing recalled a paraphrased date plan correctly;
-  fresh response wording remains open because the model repeated the stored answer verbatim.
+- The Sims 4 bridge selects relevant, pair-scoped confirmed memories through a bounded model
+  request with deterministic fallback. Shared Core recall constraints prioritize authoritative
+  attributed facts, normalize equivalent time expressions, preserve location ownership, reject
+  unsupported schedules, and allow fresh response wording. Live save/reload testing recalled a
+  date as `tonight at 7pm at your place` in a new grounded response.
 - Epistemic memory scenarios cover observations, belief provenance, contradiction, revision,
   and deterministic trust-decayed propagation.
 - The differentiated adaptive benchmark reduced provider calls on one synthetic workload while

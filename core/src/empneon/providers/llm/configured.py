@@ -4,7 +4,13 @@ import os
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
-from empneon.providers.llm.base import GenerationRequest, GenerationResult, LLMProvider, Message
+from empneon.providers.llm.base import (
+    GenerationRequest,
+    GenerationResult,
+    LLMProvider,
+    Message,
+    ProviderError,
+)
 from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 
@@ -91,7 +97,10 @@ class ConfiguredProviderRouter:
         schema: dict[str, object] | None = None,
         temperature: float | None = None,
     ) -> GenerationResult:
+        provider = self.provider_for(task)
+        if schema is not None and not provider.capabilities.structured_output:
+            raise ProviderError("provider does not support structured output")
         request = self.generation_request(
             task, messages, schema=schema, temperature=temperature
         )
-        return await self.provider_for(task).generate(request)
+        return await provider.generate(request)

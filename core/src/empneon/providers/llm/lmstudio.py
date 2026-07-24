@@ -22,7 +22,7 @@ class LMStudioProvider:
 
     @property
     def capabilities(self) -> ModelCapabilities:
-        return ModelCapabilities(local=True)
+        return ModelCapabilities(structured_output=True, local=True)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
         try:
@@ -38,6 +38,8 @@ class LMStudioProvider:
         return True
 
     def _generate(self, request: GenerationRequest) -> GenerationResult:
+        if request.schema is not None:
+            return self._generate_structured(request)
         prompt = "\n\n".join(
             f"{message.role.upper()}:\n{message.content}" for message in request.messages
         )
@@ -74,6 +76,46 @@ class LMStudioProvider:
                 )
         raise ValueError("LM Studio returned empty content")
 
+    def _generate_structured(self, request: GenerationRequest) -> GenerationResult:
+        started = time.perf_counter()
+        data = self._request(
+            "/chat/completions",
+            {
+                "model": self._model_id(),
+                "messages": [
+                    {"role": message.role, "content": message.content}
+                    for message in request.messages
+                ],
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "response", "schema": request.schema},
+                },
+            },
+            native=False,
+        )
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("LM Studio returned no structured choices")
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            raise ValueError("LM Studio returned an invalid structured choice")
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise ValueError("LM Studio returned an invalid structured message")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("LM Studio returned empty structured content")
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        return GenerationResult(
+            content=str(content),
+            prompt_tokens=usage.get("prompt_tokens"),
+            completion_tokens=usage.get("completion_tokens"),
+            latency_ms=max(0, round((time.perf_counter() - started) * 1000)),
+        )
+
     def _model_id(self) -> str:
         if self.model != "local-model":
             return self.model
@@ -90,13 +132,18 @@ class LMStudioProvider:
         return self.model
 
     def _request(
-        self, path: str, body: dict[str, object] | None = None
+        self,
+        path: str,
+        body: dict[str, object] | None = None,
+        *,
+        native: bool = True,
     ) -> dict[str, object]:
         root = self.base_url.rstrip("/")
         if root.endswith("/api/v1"):
             root = root[: -len("/api/v1")]
+        prefix = "/api/v1" if native else "/v1"
         request = urllib.request.Request(
-            f"{root}/api/v1{path}",
+            f"{root}{prefix}{path}",
             data=json.dumps(body).encode() if body is not None else None,
             headers={"Content-Type": "application/json"},
             method="POST" if body is not None else "GET",
