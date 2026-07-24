@@ -1,11 +1,8 @@
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
-import pytest
-
 import empneon_godot.bridge as bridge_module
-from empneon_godot import GodotBridge
-from empneon_thesims4 import Sims4Adapter
+import pytest
 from empneon.core.clod import resolve_clod1
 from empneon.core.contracts import (
     AgentStateSnapshot,
@@ -14,6 +11,8 @@ from empneon.core.contracts import (
     StateDelta,
     WorldEvent,
 )
+from empneon_godot import GodotBridge
+from empneon_thesims4 import Sims4Adapter
 
 
 @dataclass(frozen=True)

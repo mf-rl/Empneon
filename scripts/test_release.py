@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import sys
 from pathlib import Path
 from zipfile import ZipFile
@@ -8,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import release  # noqa: E402
+release = importlib.import_module("release")
 
 
 def _write(path: Path, content: str = "runtime") -> None:

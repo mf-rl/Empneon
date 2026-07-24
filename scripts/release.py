@@ -6,9 +6,10 @@ import argparse
 import hashlib
 import re
 import shutil
-import tomllib
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
+
+import tomllib
 
 COMPONENTS = {
     "core": (Path("core"), "empneon", "empneon"),

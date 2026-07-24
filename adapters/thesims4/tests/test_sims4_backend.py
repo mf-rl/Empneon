@@ -185,7 +185,7 @@ def test_recall_candidates_have_a_fixed_serialized_budget(tmp_path) -> None:
         for index in range(100):
             _record_confirmed_interaction(
                 conn,
-                "memory-{}".format(index),
+                f"memory-{index}",
                 "karmine",
                 "bernard",
                 "Memory {} {}".format(index, "detail " * 30),
