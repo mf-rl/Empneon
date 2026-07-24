@@ -89,6 +89,427 @@ def test_recent_conversations_are_confirmed_and_session_scoped(tmp_path) -> None
     assert all(turn["conversation_id"] == "social-17" for turn in turns)
 
 
+def _record_confirmed_interaction(
+    conn,
+    event_id,
+    speaker_id,
+    listener_id,
+    message,
+    dialogue,
+    facts,
+    happened_at,
+):
+    ai_sims_server.empneon_state.record_observed_event(
+        conn,
+        Event(
+            json.dumps(
+                {
+                    "kind": "confirmed_interaction",
+                    "conversation_id": event_id,
+                    "speaker_id": speaker_id,
+                    "listener_id": listener_id,
+                    "message": message,
+                    "dialogue": dialogue,
+                    "facts": facts,
+                }
+            ),
+            [speaker_id, listener_id],
+            happened_at=happened_at,
+            id=event_id,
+        ),
+        {speaker_id: message, listener_id: message},
+    )
+
+
+def test_recall_candidates_are_pair_scoped_and_prioritized(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    with open_db(database) as conn:
+        _record_confirmed_interaction(
+            conn,
+            "old-match",
+            "karmine",
+            "bernard",
+            "The garden key is beneath the blue bench.",
+            "I will remember that.",
+            [
+                {
+                    "actor_id": "bernard",
+                    "statement": "The garden key is beneath the blue bench.",
+                }
+            ],
+            happened_at=1,
+        )
+        _record_confirmed_interaction(
+            conn,
+            "other-pair",
+            "karmine",
+            "agnes",
+            "The garden key is in the kitchen.",
+            "Understood.",
+            [
+                {
+                    "actor_id": "agnes",
+                    "statement": "The garden key is in the kitchen.",
+                }
+            ],
+            happened_at=2,
+        )
+        _record_confirmed_interaction(
+            conn,
+            "recent-fact",
+            "karmine",
+            "bernard",
+            "I prefer red roses.",
+            "That is thoughtful.",
+            [{"actor_id": "bernard", "statement": "I prefer red roses."}],
+            happened_at=3,
+        )
+
+        candidates = ai_sims_server.empneon_state.recall_candidates(
+            conn,
+            "karmine",
+            "bernard",
+            "Where is the garden key?",
+        )
+
+    assert candidates[0]["event_id"] == "old-match"
+    assert {item["event_id"] for item in candidates} == {
+        "old-match",
+        "recent-fact",
+    }
+
+
+def test_recall_candidates_have_a_fixed_serialized_budget(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    with open_db(database) as conn:
+        for index in range(100):
+            _record_confirmed_interaction(
+                conn,
+                "memory-{}".format(index),
+                "karmine",
+                "bernard",
+                "Memory {} {}".format(index, "detail " * 30),
+                "I will remember that.",
+                [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "Memory {} {}".format(
+                            index, "detail " * 30
+                        ),
+                    }
+                ],
+                happened_at=index + 1,
+            )
+
+        candidates = ai_sims_server.empneon_state.recall_candidates(
+            conn,
+            "karmine",
+            "bernard",
+            "What do you remember?",
+            max_chars=6000,
+        )
+
+    encoded = json.dumps(candidates, ensure_ascii=True, sort_keys=True)
+    assert len(encoded) <= 6000
+    assert candidates
+
+
+def _semantic_memory_candidates():
+    return [
+        {
+            "event_id": "date-plan",
+            "created_at": 1,
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "Tonight, 7pm, at my place.",
+            "dialogue": "That sounds perfect.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": "Tonight, 7pm, at my place.",
+                }
+            ],
+        },
+        {
+            "event_id": "roses",
+            "created_at": 2,
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "I prefer red roses.",
+            "dialogue": "I will remember.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": "I prefer red roses.",
+                }
+            ],
+        },
+    ]
+
+
+def test_semantic_selector_returns_only_selected_candidate_memories(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(
+            {"event_ids": ["m1"]}
+        ),
+    )
+
+    selected = ai_sims_server.select_recalled_memories(
+        "Can you tell the day and time we're going on a date?",
+        _semantic_memory_candidates(),
+    )
+
+    assert [item["event_id"] for item in selected] == ["date-plan"]
+    assert selected[0]["explicit"] is True
+
+
+def test_semantic_selector_uses_a_compact_exact_response_protocol(
+    monkeypatch,
+) -> None:
+    captured = {}
+
+    def generate(messages, **kwargs):
+        captured["messages"] = messages
+        captured["kwargs"] = kwargs
+        return json.dumps({"event_ids": []})
+
+    monkeypatch.setattr(ai_sims_server, "llm_chat", generate)
+
+    ai_sims_server.select_recalled_memories(
+        "Can you tell me our plan?",
+        _semantic_memory_candidates(),
+    )
+
+    system = captured["messages"][0]["content"]
+    prompt = captured["messages"][1]["content"]
+    assert 'Return exactly {"event_ids":["<memory_id>"]}' in system
+    assert "MEMORY m1" in prompt
+    assert "FACTS:" in prompt
+    assert "PLAYER:" in prompt
+    assert "SIM:" in prompt
+    assert prompt.rstrip().endswith(
+        'Return exactly {"event_ids":[]} when no memory is relevant.'
+    )
+    assert captured["kwargs"]["temperature"] == 0
+    assert captured["kwargs"]["task"] == "small"
+
+
+@pytest.mark.parametrize(
+    "provider_output",
+    [
+        "not json",
+        json.dumps({}),
+        json.dumps({"event_ids": "m1"}),
+        json.dumps({"event_ids": ["m1", "m1"]}),
+        json.dumps({"event_ids": ["unknown"]}),
+        json.dumps({"event_ids": ["a", "b", "c", "d"]}),
+    ],
+)
+def test_semantic_selector_rejects_invalid_results(
+    monkeypatch,
+    provider_output,
+) -> None:
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: provider_output,
+    )
+
+    selected = ai_sims_server.select_recalled_memories(
+        "What do you remember?",
+        _semantic_memory_candidates(),
+    )
+
+    assert selected == []
+
+
+def test_semantic_selector_drops_no_fact_recall_answers_when_facts_exist(
+    monkeypatch,
+) -> None:
+    candidates = [
+        _semantic_memory_candidates()[0],
+        {
+            "event_id": "unsupported-date",
+            "created_at": 3,
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "When is our date?",
+            "dialogue": "Next Saturday at the museum.",
+            "facts": [],
+        },
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(
+            {"event_ids": ["m1", "m2"]}
+        ),
+    )
+
+    selected = ai_sims_server.select_recalled_memories(
+        "Can you tell the day and time of our date?",
+        candidates,
+    )
+
+    assert [item["event_id"] for item in selected] == ["date-plan"]
+
+
+def test_semantic_recall_falls_back_when_selector_provider_fails(
+    monkeypatch,
+) -> None:
+    fallback = [
+        {"event_id": "fallback", "message": "I prefer roses.", "facts": []}
+    ]
+    candidates = [
+        {"event_id": "candidate", "message": "Tonight at seven.", "facts": []}
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "select_recalled_memories",
+        lambda _query, _candidates: (_ for _ in ()).throw(
+            ai_sims_server.ProviderError("selector failed")
+        ),
+    )
+
+    recalled = ai_sims_server.semantic_recalled_memories(
+        "What did I prefer?",
+        candidates,
+        fallback,
+    )
+
+    assert recalled == fallback
+
+
+def test_semantic_recall_falls_back_for_empty_selection(monkeypatch) -> None:
+    fallback = [
+        {"event_id": "fallback", "message": "I prefer roses.", "facts": []}
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "select_recalled_memories",
+        lambda _query, _candidates: [],
+    )
+
+    recalled = ai_sims_server.semantic_recalled_memories(
+        "What did I prefer?",
+        _semantic_memory_candidates(),
+        fallback,
+    )
+
+    assert recalled == fallback
+
+
+@pytest.mark.parametrize(
+    ("query", "selected_id", "supported_text", "unsupported_text"),
+    [
+        (
+            "Can you tell the day and time we're going on a date?",
+            "date-plan",
+            "Tonight, 7pm, at my place.",
+            "Next Saturday at the museum.",
+        ),
+        (
+            "Any idea where I put the thing that opens the garden?",
+            "garden-key",
+            "The garden key is beneath the blue bench.",
+            "The garden key is in the kitchen.",
+        ),
+    ],
+)
+def test_semantic_recall_exposes_only_selected_support(
+    monkeypatch,
+    query,
+    selected_id,
+    supported_text,
+    unsupported_text,
+) -> None:
+    candidates = [
+        {
+            "event_id": "date-plan",
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "Tonight, 7pm, at my place.",
+            "dialogue": "That sounds perfect.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": "Tonight, 7pm, at my place.",
+                }
+            ],
+        },
+        {
+            "event_id": "unsupported-date",
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "When is our date?",
+            "dialogue": "Next Saturday at the museum.",
+            "facts": [],
+        },
+        {
+            "event_id": "garden-key",
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "The garden key is beneath the blue bench.",
+            "dialogue": "I will remember that.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": "The garden key is beneath the blue bench.",
+                }
+            ],
+        },
+        {
+            "event_id": "unsupported-key",
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "Where is the garden key?",
+            "dialogue": "The garden key is in the kitchen.",
+            "facts": [],
+        },
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "select_recalled_memories",
+        lambda _query, items: [
+            dict(
+                next(
+                    item
+                    for item in items
+                    if item["event_id"] == selected_id
+                ),
+                explicit=True,
+            )
+        ],
+    )
+    selected = ai_sims_server.semantic_recalled_memories(
+        query,
+        candidates,
+        [],
+    )
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": query},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        selected,
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+
+    prompt = ai_sims_server.build_chat_prompt({"message": query}, context)
+
+    assert supported_text in prompt
+    assert unsupported_text not in prompt
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
@@ -174,6 +595,98 @@ def test_recalled_memories_are_topic_and_pair_scoped(tmp_path) -> None:
     assert promise[0]["message"] == "I promise I will call tomorrow."
     assert compliment == []
     assert wrong_pair == []
+
+
+def test_when_question_prefers_grounded_time_fact_over_unsupported_replies(
+    tmp_path,
+) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    memories = (
+        (
+            "invitation",
+            "Would you like to go on a date with me?",
+            "A date sounds lovely.",
+            [
+                {
+                    "actor_id": "bernard",
+                    "statement": "Would you like to go on a date with me?",
+                }
+            ],
+        ),
+        (
+            "schedule",
+            "Tonight, 7pm, at my place.",
+            "That sounds perfect!",
+            [
+                {
+                    "actor_id": "bernard",
+                    "statement": "Tonight, 7pm, at my place.",
+                }
+            ],
+        ),
+        (
+            "unsupported-one",
+            "When and what time is our date?",
+            "Next Saturday at the museum.",
+            [],
+        ),
+        (
+            "unsupported-two",
+            "When is our date?",
+            "Next Saturday at the museum.",
+            [],
+        ),
+    )
+    with open_db(database) as conn:
+        for happened_at, (event_id, message, dialogue, facts) in enumerate(
+            memories, start=1
+        ):
+            ai_sims_server.empneon_state.record_observed_event(
+                conn,
+                Event(
+                    json.dumps(
+                        {
+                            "kind": "confirmed_interaction",
+                            "conversation_id": event_id,
+                            "speaker_id": "karmine",
+                            "listener_id": "bernard",
+                            "message": message,
+                            "dialogue": dialogue,
+                            "facts": facts,
+                        }
+                    ),
+                    ["karmine", "bernard"],
+                    happened_at=happened_at,
+                    id=event_id,
+                ),
+                {"karmine": message, "bernard": message},
+            )
+
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "When is our date?"
+        )
+        compound_recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn,
+            "karmine",
+            "bernard",
+            "When and what time is our date, sweetheart?",
+        )
+        conversational_recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn,
+            "karmine",
+            "bernard",
+            "Hey, baby. When are we going on a date?",
+        )
+
+    assert [item["message"] for item in recalled] == [
+        "Tonight, 7pm, at my place."
+    ]
+    assert [item["message"] for item in compound_recalled] == [
+        "Tonight, 7pm, at my place."
+    ]
+    assert [item["message"] for item in conversational_recalled] == [
+        "Tonight, 7pm, at my place."
+    ]
 
 
 def test_recalled_memories_deduplicate_facts_and_cap_results(tmp_path) -> None:
@@ -668,6 +1181,51 @@ def test_disabled_response_rejection_accepts_first_normalized_response(
 
     assert calls == ["called"]
     assert response["dialogue"] == provider_response["dialogue"]
+
+
+def test_disabled_response_rejection_accepts_friendship_category_alias(
+    monkeypatch,
+) -> None:
+    dialogue = (
+        "Well, what's with the clown comparison? "
+        "You always were an idiot, Bernard."
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(
+            {
+                "dialogue": dialogue,
+                "expressed_emotion": "playful",
+                "intent": "accept_playfully",
+                "response_category": "friendship",
+                "tone_tags": ["playful", "teasing"],
+                "trust_delta": 1,
+                "relationship_outcome": "friendship_positive",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "RESPONSE_REJECTION_ENABLED",
+        False,
+        raising=False,
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "You look like a clown. What a loser you are.",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Ian"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="ian", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["dialogue"] == dialogue
+    assert response["response_category"] == "mean"
 
 
 def test_actor_prompt_separates_recalled_history_from_current_session() -> None:

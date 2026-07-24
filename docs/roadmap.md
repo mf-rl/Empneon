@@ -18,9 +18,15 @@ feature promise.
 - Save-aware The Sims 4 memory checkpoints and one-time legacy memory import
 - Single-turn The Sims 4 player dialogue with cancelable waiting, cosmetic conversation animation,
   and bounded game-observed relationship outcomes
+- Bounded, pair-scoped semantic memory selection with deterministic fallback; live date-plan recall
+  succeeds across paraphrasing
 
 ## Next gates
 
+- Treat recalled exchanges only as evidence when composing dialogue so a correct memory is answered
+  naturally instead of replaying the earlier model response verbatim.
+- Repeat the semantic-memory live matrix with non-date plans, preferences, promises, identities,
+  conflicts, and locations.
 - Verify the exact two-portrait notification layout and native floating relationship symbols for
   each mild Sims outcome; a more consistently neutral waiting animation is optional polish.
 

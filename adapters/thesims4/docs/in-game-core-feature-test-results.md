@@ -633,3 +633,31 @@ retrieval/grounding relevance defect.
 
 **Final result:** Persistence and answer privacy pass. Paraphrased local vector retrieval fails and
 requires a fix.
+
+### July 23 semantic-memory selector and date retest
+
+**Status:** PARTIAL / CORRECT MEMORY SELECTED, VERBATIM RESPONSE REPLAY REMAINS
+
+- The backend now builds a bounded, pair-scoped candidate set from confirmed interactions and asks
+  the configured small local model to select up to three relevant request-local IDs. Returned IDs
+  are validated locally and deterministic recall remains the fallback for unavailable, malformed,
+  empty, duplicate, excessive, or unknown selections.
+- Candidate history is capped at 6,000 serialized characters. Attributed facts take precedence over
+  unsupported earlier recall answers, and database access is closed before model inference.
+- Recall cues now cover natural variants including `When and what time...` and `Hey, baby. When
+  are we going on a date?`. Automated coverage also includes pair privacy, long histories, a
+  non-date garden-key paraphrase, selector failure, and invalid model output.
+- The response normalizer also preserves valid model dialogue mislabeled with the unsupported
+  `friendship` category by classifying the dialogue into an available Sims category. This prevents
+  the earlier insulting Ian/Bernard response from being replaced by the generic reliability
+  fallback.
+- A direct LM Studio check selected only the confirmed `Tonight, 7pm, at my place` agreement. The
+  complete Sims 4 adapter suite passed all 200 tests before the live retest.
+
+**Live result:** Sim B correctly remembered the date after Sim A asked `Hey, baby. When are we
+going on a date?`, but returned the exact earlier response: `That sounds perfect! Tonight at 7 pm
+at your place is lovely. You have such a charming way of making things feel like heaven.`
+
+**Next task:** Keep the selected memory as grounding evidence while requiring the main dialogue
+generation to answer the current question naturally. Verify that it preserves the date fact without
+copying the stored response, then repeat the live matrix with non-date memory scenarios.

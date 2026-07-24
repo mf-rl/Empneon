@@ -216,14 +216,19 @@ recall dialogue contradicts stored memory.
 - Persistence: save/reload and repeat both questions.
 - Cleanup: delete the disposable database after the plan if the unique fact should not remain.
 
-## 7. Local vector retrieval
+## 7. Semantic memory retrieval
 
-**Current status (2026-07-20): PARTIAL** — Exact recall, privacy, and persistence pass;
-paraphrased retrieval fails.
+**Current status (2026-07-23): PARTIAL / PARAPHRASED DATE RETRIEVAL PASSED, RESPONSE REPLAY
+FAILED** — The bounded semantic selector retrieved the correct confirmed date plan for `Hey, baby.
+When are we going on a date?` after the Sims returned to one another. The generated answer repeated
+the earlier acceptance dialogue verbatim instead of using the recalled fact as evidence for a
+fresh answer. Non-date semantic recall remains to be live-tested.
 
 - Prerequisite: complete section 6 and add several unrelated confirmed conversations.
 - Action: ask B, "Where is the garden code item?" without repeating the exact original sentence.
 - Expected game result: B retrieves the topically related garden memory.
+- Response-quality check: the answer must state the recalled fact in wording appropriate to the
+  current question, not replay an earlier response verbatim.
 - Expected diagnostic result: B's accessible memories contain the original event; C still cannot
   retrieve it. This verifies retrieval plus observation-based privacy filtering.
 - Persistence: restart backend and repeat the paraphrased question.

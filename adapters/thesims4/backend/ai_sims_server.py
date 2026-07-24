@@ -286,6 +286,19 @@ DIALOGUE_SCHEMA = {
     ],
 }
 
+MEMORY_SELECTOR_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "event_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": 3,
+        }
+    },
+    "required": ["event_ids"],
+}
+
 
 def available_actions(value):
     return tuple(
@@ -993,6 +1006,8 @@ def normalize_response(raw, available_categories=None):
         or legacy_kind
         or "friendly"
     )
+    if category == "friendship":
+        category = classify_social_category(raw.get("dialogue"))
     if category not in categories:
         raise ValueError("response_category is invalid or unavailable")
     tone_tags = raw.get("tone_tags") or []
@@ -1272,6 +1287,97 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
     if isinstance(attempts, list):
         attempts.append((task, router.config_for(task), result))
     return result.content
+
+
+def select_recalled_memories(query, candidates):
+    blocks = []
+    aliased = [
+        ("m{}".format(index), candidate)
+        for index, candidate in enumerate(candidates, start=1)
+    ]
+    for memory_id, candidate in aliased:
+        facts = " | ".join(
+            "{}: {}".format(
+                fact.get("actor_id") or "unknown",
+                fact.get("statement") or "",
+            )
+            for fact in candidate.get("facts") or []
+            if isinstance(fact, dict)
+        )
+        blocks.append(
+            "MEMORY {event_id}\nFACTS: {facts}\nPLAYER: {message}\nSIM: {dialogue}".format(
+                event_id=memory_id,
+                facts=facts or "none",
+                message=candidate.get("message") or "",
+                dialogue=candidate.get("dialogue") or "",
+            )
+        )
+    prompt = """Current message:
+{query}
+
+Candidate memories:
+{candidates}
+
+Select zero to three event_ids that provide evidence relevant to the current message.
+Match meaning, not exact wording.
+Prefer attributed facts for plans, preferences, promises, identity, locations, and past events.
+Use full exchanges only when the player asks what was said or how an interaction occurred.
+A previous answer to a memory question without supporting facts is not authoritative evidence.
+Related conversation that does not contain the requested answer is not evidence.
+Return exactly {{"event_ids":[]}} when no memory is relevant.
+""".format(
+        query=str(query),
+        candidates="\n\n".join(blocks),
+    )
+    content = llm_chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Select relevant Sims memories. "
+                    'Return exactly {"event_ids":["<memory_id>"]} with up to three '
+                    "candidate IDs, or an empty event_ids list. No prose."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0,
+        schema=MEMORY_SELECTOR_SCHEMA,
+        schema_name="sims_memory_selector",
+        task="small",
+    )
+    try:
+        raw = extract_json(content)
+    except (ValueError, json.JSONDecodeError):
+        return []
+    event_ids = raw.get("event_ids")
+    if not isinstance(event_ids, list) or len(event_ids) > 3:
+        return []
+    if any(not isinstance(event_id, str) for event_id in event_ids):
+        return []
+    if len(set(event_ids)) != len(event_ids):
+        return []
+    by_id = dict(aliased)
+    if any(event_id not in by_id for event_id in event_ids):
+        return []
+    selected = [by_id[event_id] for event_id in event_ids]
+    grounded = [item for item in selected if item.get("facts")]
+    if grounded:
+        selected = grounded
+    return [dict(item, explicit=True) for item in selected]
+
+
+def semantic_recalled_memories(query, candidates, fallback):
+    if not candidates:
+        return fallback
+    try:
+        selected = select_recalled_memories(query, candidates)
+    except (ProviderError, ValueError, json.JSONDecodeError, OSError):
+        PROVIDER_LOG.warning(
+            "semantic memory selection failed; using deterministic recall"
+        )
+        return fallback
+    return selected or fallback
 
 
 def cognition_routes(resolvers):
@@ -2122,17 +2228,29 @@ def chat(payload):
         if emotions.get("current_mood") in ("neutral", "unknown") and speaker.get("current_mood"):
             emotions = save_emotion(speaker_id, default_emotion(speaker.get("current_mood")))
         relationship = relationship_with_payload(speaker_id, listener_id, payload.get("relationship") or {})
+        query = str(payload.get("message") or "")
         with open_db(CORE_DB_PATH) as conn:
-            recalled = empneon_state.recalled_memories(
+            deterministic_recalled = empneon_state.recalled_memories(
                 conn,
                 speaker_id,
                 listener_id,
-                payload.get("message") or "",
+                query,
                 limit=3,
+            )
+            candidates = empneon_state.recall_candidates(
+                conn,
+                speaker_id,
+                listener_id,
+                query,
             )
             conversation = empneon_state.recent_conversations(
                 conn, speaker_id, listener_id, conversation_id, limit=6
             )
+        recalled = semantic_recalled_memories(
+            query,
+            candidates,
+            deterministic_recalled,
+        )
         model_config = task_model_config("large")
         context = build_context(
             payload,

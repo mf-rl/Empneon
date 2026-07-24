@@ -548,7 +548,15 @@ _DURABLE_FACT_CUE = re.compile(
     re.IGNORECASE,
 )
 _RECALL_CUE = re.compile(
-    r"\b(?:remember|recall|(?:what|when|where|who) (?:did|is|was)|first time|last time)\b",
+    r"\b(?:remember|recall|(?:what|where|who) (?:did|is|was)|"
+    r"when(?: and what time)? (?:did|is|was)|first time|last time)\b",
+    re.IGNORECASE,
+)
+_TIME_FACT_CUE = re.compile(
+    r"\b(?:today|tonight|tomorrow|yesterday|monday|tuesday|wednesday|thursday|"
+    r"friday|saturday|sunday|(?:this|next|last)\s+(?:morning|afternoon|evening|"
+    r"night|week|weekend)|\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)|"
+    r"[a-z]+\s+o'clock)\b",
     re.IGNORECASE,
 )
 _RECALL_STOPWORDS = frozenset(
@@ -584,6 +592,64 @@ def _recall_terms(text: str) -> set[str]:
     return terms
 
 
+def recall_candidates(
+    conn: sqlite3.Connection,
+    actor_id: str,
+    other_id: str,
+    query: str,
+    max_chars: int = 6000,
+) -> list[dict[str, object]]:
+    pair = {str(actor_id), str(other_id)}
+    terms = _recall_terms(query)
+    ranked = []
+    for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
+        data = _event_data(event.description)
+        if data.get("kind") != "confirmed_interaction":
+            continue
+        participants = {
+            str(data.get("speaker_id") or ""),
+            str(data.get("listener_id") or ""),
+        }
+        if participants != pair:
+            continue
+        facts = [
+            fact for fact in data.get("facts") or [] if isinstance(fact, dict)
+        ]
+        searchable = " ".join(
+            (
+                str(data.get("message") or ""),
+                str(data.get("dialogue") or ""),
+                *(str(fact.get("statement") or "") for fact in facts),
+            )
+        )
+        candidate = {
+            "event_id": event.id,
+            "created_at": event.happened_at,
+            "speaker_id": str(data.get("speaker_id") or ""),
+            "listener_id": str(data.get("listener_id") or ""),
+            "message": str(data.get("message") or ""),
+            "dialogue": str(data.get("dialogue") or ""),
+            "facts": facts,
+        }
+        ranked.append(
+            (
+                bool(terms & _recall_terms(searchable)),
+                bool(facts),
+                event.happened_at,
+                candidate,
+            )
+        )
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    selected = []
+    for _overlap, _has_facts, _created_at, candidate in ranked:
+        trial = json.dumps(
+            selected + [candidate], ensure_ascii=True, sort_keys=True
+        )
+        if len(trial) <= max(2, int(max_chars)):
+            selected.append(candidate)
+    return selected
+
+
 def recalled_memories(
     conn: sqlite3.Connection,
     actor_id: str,
@@ -593,7 +659,14 @@ def recalled_memories(
 ) -> list[dict[str, object]]:
     pair = {str(actor_id), str(other_id)}
     terms = _recall_terms(query)
-    explicit = bool(_RECALL_CUE.search(str(query)))
+    query_text = str(query)
+    explicit = bool(
+        _RECALL_CUE.search(query_text)
+        or (
+            "?" in query_text
+            and re.search(r"\b(?:what|when|where|who)\b", query_text, re.IGNORECASE)
+        )
+    )
     matches = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
         data = _event_data(event.description)
@@ -607,6 +680,12 @@ def recalled_memories(
             continue
         raw_facts = data.get("facts") or []
         facts = [fact for fact in raw_facts if isinstance(fact, dict)]
+        fact_text = " ".join(str(fact.get("statement") or "") for fact in facts)
+        answers_when = bool(
+            explicit
+            and re.search(r"\bwhen\b", str(query), re.IGNORECASE)
+            and _TIME_FACT_CUE.search(fact_text)
+        )
         searchable = " ".join(
             [str(data.get("message") or ""), str(data.get("dialogue") or "")]
             if explicit
@@ -615,7 +694,7 @@ def recalled_memories(
         overlap = terms & _recall_terms(searchable)
         if explicit and not terms:
             overlap = {"history"}
-        if not overlap:
+        if not overlap and not answers_when:
             continue
         selected = dict(data)
         selected["event_id"] = event.id
@@ -626,7 +705,9 @@ def recalled_memories(
             for fact in facts
             if terms & _recall_terms(str(fact.get("statement") or ""))
         ]
-        matches.append((len(overlap), event.happened_at, selected))
+        matches.append((len(overlap), event.happened_at, selected, answers_when))
+    if any(item[3] for item in matches):
+        matches = [item for item in matches if item[3]]
     if re.search(r"\bfirst time\b", str(query), re.IGNORECASE):
         matches.sort(key=lambda item: item[1])
     elif re.search(r"\blast time\b", str(query), re.IGNORECASE):
@@ -635,7 +716,7 @@ def recalled_memories(
         matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
     recalled = []
     seen_facts = set()
-    for _score, _created_at, memory in matches:
+    for _score, _created_at, memory, _answers_when in matches:
         unique_facts = []
         for fact in memory["facts"]:
             key = (

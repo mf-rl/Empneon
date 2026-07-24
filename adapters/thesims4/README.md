@@ -54,6 +54,11 @@ py -3.12 -m pip install -e ..\..\core -e .
    feedback, and save/reload continuity are documented in the
    [setup guide](docs/setup.md).
 
+   Confirmed pair history is selected through a bounded semantic-memory request, with deterministic
+   recall as fallback. A live paraphrased date question retrieved the correct `Tonight at 7 pm at
+   your place` plan. The current open defect is answer synthesis: the model repeated the earlier
+   acceptance response verbatim instead of answering the new question in fresh wording.
+
    The existing diagnostic commands remain available through the cheat console:
 
 ```text
