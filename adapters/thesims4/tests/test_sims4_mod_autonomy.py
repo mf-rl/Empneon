@@ -45,14 +45,30 @@ def test_build_and_installer_use_empneon_artifact_names() -> None:
 def test_tuning_package_uses_interaction_resource_type() -> None:
     written = []
     target = SimpleNamespace(write_bytes=written.append)
-    build_mod.build_tuning_package(build_mod.TUNING_SOURCE, target)
+    build_mod.build_tuning_package(build_mod.TUNING_RESOURCES, target)
     package = written[0]
     count, index_offset, index_size = struct.unpack_from("<III", package, 36)
-    index_flags, resource_type = struct.unpack_from("<II", package, index_offset)
+    index_flags = struct.unpack_from("<I", package, index_offset)[0]
+    resource_types = [
+        struct.unpack_from("<I", package, index_offset + 4 + offset)[0]
+        for offset in (0, 32)
+    ]
 
     assert package[:4] == b"DBPF"
-    assert (count, index_size, index_flags) == (1, 36, 0)
-    assert resource_type == 0xE882D22F
+    assert (count, index_size, index_flags) == (2, 68, 0)
+    assert resource_types == [0xE882D22F, 0xE882D22F]
+
+
+def test_waiting_tuning_uses_native_social_group_without_loot() -> None:
+    tuning = (
+        Path(__file__).parents[1] / "tuning" / "empneon_waiting_interaction.xml"
+    ).read_text(encoding="utf-8")
+
+    assert '<T n="_social_group_type">16390</T>' in tuning
+    assert '<T n="factory">11326</T>' in tuning
+    assert tuning.count('<T n="factory">11570</T>') == 2
+    assert '<T n="relationship_scoring">False</T>' in tuning
+    assert '<V t="loot">' not in tuning
 
 
 def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> None:
@@ -68,6 +84,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     game_services.service_manager = SimpleNamespace(allow_shutdown=True)
     game_services.stop_services = lambda: None
     services = ModuleType("services")
+    distributor = ModuleType("distributor")
+    shared_messages = ModuleType("distributor.shared_messages")
+    shared_messages.IconInfoData = lambda **kwargs: SimpleNamespace(**kwargs)
     persistence_service = ModuleType("services.persistence_service")
 
     class FakePersistenceService:
@@ -86,6 +105,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     interactions.ParticipantType = SimpleNamespace(Actor="actor")
     element_utils = ModuleType("element_utils")
     element_utils.sleep_until_next_tick_element = lambda: "next-tick"
+    element_utils.build_element = lambda elements: tuple(elements)
 
     def run_child(_timeline, element):
         yield element
@@ -94,6 +114,49 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     interactions_base = ModuleType("interactions.base")
     super_interaction = ModuleType("interactions.base.super_interaction")
     super_interaction.SuperInteraction = type("SuperInteraction", (), {})
+    interactions_social = ModuleType("interactions.social")
+    interactions_utils = ModuleType("interactions.utils")
+    outcome_utils = ModuleType("interactions.utils.outcome")
+    visual_outcomes = []
+
+    def build_outcome_actions(interaction, actions):
+        visual_outcomes.append(actions)
+        return (
+            "visual-outcome",
+            actions.animation_ref(interaction, setup_asm_override=None),
+        )
+
+    outcome_utils.build_outcome_actions = build_outcome_actions
+    social_super_interaction = ModuleType(
+        "interactions.social.social_super_interaction"
+    )
+
+    class FakeSocialSuperInteraction(super_interaction.SuperInteraction):
+        def __init__(
+            self,
+            *args,
+            initiated=True,
+            social_group=None,
+            source_social_si=None,
+            **kwargs,
+        ):
+            self.initiated = initiated
+            self._social_group = social_group or SimpleNamespace(
+                on_social_super_interaction_run=lambda: None
+            )
+            self.source_social_si = source_social_si
+            self._saved_participants = {}
+
+        @property
+        def social_group(self):
+            return self._social_group
+
+        def get_source_social_kwargs(self):
+            return {"saved_participants": self._saved_participants}
+
+    social_super_interaction.SocialSuperInteraction = FakeSocialSuperInteraction
+    interactions.social = interactions_social
+    interactions_social.social_super_interaction = social_super_interaction
     constraints = ModuleType("interactions.constraints")
     constraints.Anywhere = lambda: SimpleNamespace(kind="anywhere")
     constraints.Circle = lambda center, radius, routing_surface=None: SimpleNamespace(
@@ -101,6 +164,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     )
     aop_module = ModuleType("interactions.aop")
     context_module = ModuleType("interactions.context")
+    interaction_finisher = ModuleType("interactions.interaction_finisher")
+    interaction_finisher.FinishingType = SimpleNamespace(NATURAL="natural")
 
     class FakeInteractionContext:
         SOURCE_SCRIPT_WITH_USER_INTENT = "script_with_user_intent"
@@ -120,11 +185,24 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
 
     class FakeMappedInteraction:
-        def __init__(self, affordance):
+        def __init__(self, affordance, super_interaction=None):
             self.affordance = affordance
+            self.super_interaction = super_interaction
+            self.outcome = getattr(affordance, "outcome", None)
+            self.relationship_scoring = True
             self.finishing_type = ""
             self.finishing_callback = None
             self.canceled = False
+            self.basic_elements = []
+            self.built_outcomes = []
+
+        def build_outcome(self):
+            return ("native-outcome", self.outcome)
+
+        def build_basic_elements(self, sequence):
+            self.built_outcomes.append(self.build_outcome())
+            self.basic_elements.append(sequence)
+            return ("native-social-elements", sequence)
 
         def register_on_finishing_callback(self, callback):
             self.finishing_callback = callback
@@ -147,7 +225,12 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         def interaction_factory(self, _context):
             if self.super_affordance in failed_factories:
                 raise TypeError("get_name() got multiple values for argument 'target'")
-            return SimpleNamespace(interaction=FakeMappedInteraction(self.affordance))
+            return SimpleNamespace(
+                interaction=FakeMappedInteraction(
+                    self.affordance,
+                    self.super_interaction,
+                )
+            )
 
         @staticmethod
         def execute_interaction(interaction):
@@ -245,13 +328,20 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "alarms": alarms,
         "clock": clock,
         "game_services": game_services,
+        "distributor": distributor,
+        "distributor.shared_messages": shared_messages,
         "interactions": interactions,
         "element_utils": element_utils,
         "interactions.base": interactions_base,
         "interactions.base.super_interaction": super_interaction,
+        "interactions.social": interactions_social,
+        "interactions.social.social_super_interaction": social_super_interaction,
+        "interactions.utils": interactions_utils,
+        "interactions.utils.outcome": outcome_utils,
         "interactions.constraints": constraints,
         "interactions.aop": aop_module,
         "interactions.context": context_module,
+        "interactions.interaction_finisher": interaction_finisher,
         "interactions.priority": priority_module,
         "services": services,
         "services.persistence_service": persistence_service,
@@ -606,6 +696,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert agent.attraction_payload(source_info, target_info) is None
 
     relationship_queries = []
+    local_relationship_queries = []
     relationship_output = []
     with monkeypatch.context() as command_patch:
         command_patch.setattr(
@@ -622,23 +713,42 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         )
         command_patch.setattr(
             agent,
+            "relationship_payload",
+            lambda source, target: local_relationship_queries.append(
+                (source, target)
+            )
+            or {
+                "friendship": 7,
+                "romance": 12,
+                "attraction": 2 / 3,
+                "native": {
+                    "attraction": {
+                        "source": "wickedwhims",
+                        "value": 2,
+                        "label": "HIGH",
+                    }
+                },
+            },
+        )
+        command_patch.setattr(
+            agent,
             "query_json",
             lambda path, query: relationship_queries.append((path, query))
             or {
                 "relationship": {
                     "direction": {"source_id": "cam-id", "target_id": "bella"},
                     "native": {
-                        "friendship": 7,
-                        "romance": 12,
+                        "friendship": 99,
+                        "romance": 99,
                         "attraction": {
-                            "normalized": 2 / 3,
-                            "source": "wickedwhims",
-                            "value": 2,
-                            "label": "HIGH",
+                            "normalized": -1,
+                            "source": "stale",
+                            "value": -100,
+                            "label": "STALE",
                         },
                     },
                     "empneon": {"trust": 51},
-                }
+                },
             },
         )
         command_patch.setattr(
@@ -649,6 +759,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         agent.ai_relationship("Cam", "Sadya")
     assert relationship_queries == [
         ("/relationship", {"sim_id": "cam-id", "target_id": "bella"})
+    ]
+    assert local_relationship_queries == [
+        (SimpleNamespace(sim_id="cam-id", full_name="Cam Sadya"), rich_info)
     ]
     assert relationship_output == [
         "relationship Cam Sadya -> Bella: Sims friendship 7, Sims romance 12, "
@@ -692,10 +805,14 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     agent.prepare_game_session()
     assert agent._GAME_SESSION_ID != session_id
 
-    pie_affordance = type("EmpneonSocialTuning", (), {})
+    pie_affordance = agent.EmpneonSocialInteraction
+    waiting_affordance = agent.EmpneonWaitingInteraction
+    assert issubclass(waiting_affordance, FakeSocialSuperInteraction)
     services.affordance_manager = lambda: SimpleNamespace(
         get=lambda tuning_id: pie_affordance
         if tuning_id == agent.EMPNEON_SOCIAL_INTERACTION_ID
+        else waiting_affordance
+        if tuning_id == agent.EMPNEON_WAITING_INTERACTION_ID
         else None
     )
     pie_sim = sim_module.Sim()
@@ -713,20 +830,49 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "submit_empneon_chat",
         lambda session, message: submitted.append((session, message)),
     )
-    pie_interaction = agent.EmpneonSocialInteraction()
-    pie_interaction.sim = SimpleNamespace(
+    queued_waiting = []
+    actor = SimpleNamespace(
         sim_info=SimpleNamespace(sim_id="alice", full_name="Alice")
     )
+
+    def push_super_affordance(affordance, target, context):
+        waiting = affordance()
+        waiting.sim = actor
+        waiting.target = target
+        waiting.context = context
+        waiting.affordance = affordance
+        waiting.outcome = "neutral-waiting-outcome"
+        waiting.listen_animation_calls = []
+
+        def listen_animation(animation_interaction, sequence):
+            waiting.listen_animation_calls.append((animation_interaction, sequence))
+            return ("listener-animation", sequence)
+
+        waiting.listen_animation = listen_animation
+        queued_waiting.append(
+            (affordance, target, context, waiting, waiting.get_name())
+        )
+        return SimpleNamespace(interaction=waiting)
+
+    actor.push_super_affordance = push_super_affordance
+    pie_interaction = agent.EmpneonSocialInteraction()
+    pie_interaction.sim = actor
     pie_interaction.target = SimpleNamespace(
-        sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
+        sim_info=SimpleNamespace(sim_id="bob", full_name="Bob"),
+        animation_interaction="listener-animation-interaction",
     )
     runner = pie_interaction._run_interaction_gen("timeline")
-    assert next(runner) == "next-tick"
+    try:
+        next(runner)
+    except StopIteration as finished:
+        assert finished.value is True
+    else:
+        raise AssertionError("Start conversation stayed in the queue")
     session = agent._CONVERSATION_SESSIONS["alice"]
     assert session.phase == "input"
     assert selected == ["Empneon Social selected: Alice -> Bob"]
     assert agent.EmpneonSocialInteraction.get_name(None, None) == "Empneon Social"
-    assert pie_interaction.get_name() == "Empneon Social"
+    assert pie_interaction.get_name() == "Start conversation"
     route_target = SimpleNamespace(position="position", routing_surface="surface")
     route_constraint = next(
         agent.EmpneonSocialInteraction._constraint_gen(
@@ -754,9 +900,87 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     dialog.text_input_responses = {"message": "  Remember our promise?  "}
     dialog.listener(dialog)
     assert session.phase == "waiting_for_backend"
+    submitted_notification = notifications[-1]
+    assert submitted_notification.owner is actor
+    assert submitted_notification.kwargs["text"]() == "Remember our promise?"
+    assert submitted_notification.show_kwargs["icon_override"].obj_instance is actor
+    assert (
+        submitted_notification.show_kwargs["secondary_icon_override"].obj_instance
+        is pie_interaction.target
+    )
+    assert len(queued_waiting) == 1
+    waiting = queued_waiting[0][3]
+    assert queued_waiting[0][4] == "Waiting for response"
+    assert waiting.get_source_social_kwargs()["empneon_session_id"] == session.id
     assert submitted == [(session, "Remember our promise?")]
-    assert next(runner) == "next-tick"
+    animation_calls = []
+
+    def conversation_animation(interaction, setup_asm_override=None):
+        animation_calls.append((interaction, setup_asm_override))
+        return "conversation-animation"
+
+    conversation_affordance = SimpleNamespace(
+        outcome=SimpleNamespace(
+            _fallback_outcomes=(
+                SimpleNamespace(
+                    outcome=SimpleNamespace(animation_ref=conversation_animation)
+                ),
+            ),
+            decide=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("full native social outcome must not run")
+            ),
+        )
+    )
+    waiting_cancellations = []
+    waiting.cancel = lambda finishing_type, cancel_reason_msg=None: (
+        waiting_cancellations.append((finishing_type, cancel_reason_msg))
+    )
+    mapped_aop_count = len(mapped_aops)
     with monkeypatch.context() as acknowledgement_patch:
+        acknowledgement_patch.setattr(
+            agent,
+            "find_action_affordance",
+            lambda action: conversation_affordance
+            if action == "friendly_chat"
+            else None,
+        )
+        waiting_runner = waiting._run_interaction_gen("timeline")
+        assert next(waiting_runner) == (
+            (
+                "native-social-elements",
+                ("visual-outcome", "conversation-animation"),
+            ),
+            "next-tick",
+        )
+        animation_owner = animation_calls[0][0]
+        assert animation_calls == [(animation_owner, None)]
+        assert animation_owner.basic_elements == [
+            ("visual-outcome", "conversation-animation")
+        ]
+        assert animation_owner.outcome is conversation_affordance.outcome
+        assert animation_owner.built_outcomes == [()]
+        assert animation_owner.relationship_scoring is False
+        assert len(visual_outcomes) == 1
+        assert visual_outcomes[0].loot_list == ()
+        assert visual_outcomes[0].add_target_affordance_loot is False
+        assert visual_outcomes[0].continuation is None
+        assert visual_outcomes[0].events_to_send == ()
+        assert waiting.listen_animation_calls == []
+        assert animation_owner is not waiting
+        assert animation_owner.affordance is conversation_affordance
+        assert animation_owner.super_interaction is waiting
+        linked_waiting = agent.EmpneonWaitingInteraction(
+            initiated=False,
+            empneon_session_id=session.id,
+        )
+        linked_waiting.sim = pie_interaction.target
+        linked_waiting.target = actor
+        linked_runner = linked_waiting._run_interaction_gen("timeline")
+        assert next(linked_runner) == "next-tick"
+        assert animation_calls == [(animation_owner, None)]
+        assert len(queued_waiting) == 1
+        assert len(mapped_aops) == mapped_aop_count + 1
+        assert animation_owner not in executed
         acknowledgement_patch.setattr(
             agent,
             "report_dialogue_delivery",
@@ -773,156 +997,196 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             },
             None,
         )
+        assert waiting_cancellations == [
+            ("natural", "Empneon response received")
+        ]
+        assert notifications[-1].owner is pie_interaction.target
+        assert notifications[-1].kwargs["text"]() == "I remember."
+        try:
+            next(waiting_runner)
+        except StopIteration as finished:
+            assert finished.value is True
+        else:
+            raise AssertionError("Waiting for response stayed queued after the response")
+        try:
+            next(linked_runner)
+        except StopIteration as finished:
+            assert finished.value is True
+        else:
+            raise AssertionError("Linked waiting social stayed queued after the response")
     agent.process_autonomy_responses(None)
-    assert session.phase == "showing_response"
-    response_dialog = dialogs[-1]
-    response_dialog.accepted = False
-    response_dialog.listener(response_dialog)
+    assert session.closed is True
+    assert "alice" not in agent._CONVERSATION_SESSIONS
+
+    def fail_animation(_interaction, setup_asm_override=None):
+        raise RuntimeError("animation unavailable")
+
+    with monkeypatch.context() as animation_failure_patch:
+        animation_failure_patch.setattr(
+            agent,
+            "find_action_affordance",
+            lambda _action: SimpleNamespace(
+                outcome=SimpleNamespace(
+                    _fallback_outcomes=(
+                        SimpleNamespace(
+                            outcome=SimpleNamespace(animation_ref=fail_animation)
+                        ),
+                    )
+                )
+            ),
+        )
+        marker_count = len(selected)
+        assert agent.waiting_conversation_animation(waiting, "next-tick") == "next-tick"
+        assert len(selected) == marker_count + 1
+        assert selected[-1].startswith("Waiting conversation animation failed:")
+
+    runtime_actor = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="animation-runtime", full_name="Alice")
+    )
+    runtime_target = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="animation-target", full_name="Bob")
+    )
+    runtime_session = agent.EmpneonConversationSession(
+        pie_interaction, runtime_actor, runtime_target
+    )
+    runtime_session.turn_id = 1
+    runtime_session.phase = "waiting_for_backend"
+    agent._CONVERSATION_SESSIONS["animation-runtime"] = runtime_session
+    runtime_interaction = agent.EmpneonWaitingInteraction()
+    runtime_interaction.sim = runtime_actor
+    runtime_interaction.target = runtime_target
+    runtime_interaction.context = SimpleNamespace(sim=runtime_actor)
+    runtime_interaction.affordance = agent.EmpneonWaitingInteraction
+    runtime_interaction._empneon_session_id = runtime_session.id
+
+    def runtime_run_child(_timeline, element):
+        if isinstance(element, tuple):
+            raise RuntimeError("animation timeline failed")
+        yield element
+
+    with monkeypatch.context() as animation_runtime_patch:
+        animation_runtime_patch.setattr(
+            agent, "find_action_affordance", lambda _action: conversation_affordance
+        )
+        animation_runtime_patch.setattr(
+            agent.element_utils, "run_child", runtime_run_child
+        )
+        runtime_runner = runtime_interaction._run_interaction_gen("timeline")
+        assert next(runtime_runner) == "next-tick"
+        assert runtime_session.closed is False
+        runtime_runner.close()
+    assert runtime_session.closed is True
+    assert runtime_session.canceled is True
+
+    def fail_waiting_cancel(*_args, **_kwargs):
+        raise RuntimeError("waiting interaction already finished")
+
+    cancel_failure_session = agent.EmpneonConversationSession(
+        SimpleNamespace(cancel=fail_waiting_cancel), actor, pie_interaction.target
+    )
+    cancel_failure_session.turn_id = 1
+    cancel_failure_session.phase = "showing_response"
+    marker_count = len(selected)
+    assert agent.show_empneon_chat_result(
+        cancel_failure_session,
+        {"dialogue": "The answer still displays.", "suggested_action": "none"},
+        None,
+    )
+    assert cancel_failure_session.response_received is True
+    assert len(selected) == marker_count + 2
+    assert selected[marker_count].startswith(
+        "Waiting interaction completion failed:"
+    )
+
+    canceled_actor = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="queue-cancel", full_name="Alice")
+    )
+    canceled_target = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
+    )
+    canceled_session = agent.EmpneonConversationSession(
+        pie_interaction, canceled_actor, canceled_target
+    )
+    canceled_session.turn_id = 1
+    canceled_session.phase = "waiting_for_backend"
+    agent._CONVERSATION_SESSIONS["queue-cancel"] = canceled_session
+    canceled_interaction = agent.EmpneonWaitingInteraction()
+    canceled_interaction.sim = canceled_actor
+    canceled_interaction.target = canceled_target
+    canceled_interaction._empneon_session_id = canceled_session.id
+    canceled_runner = canceled_interaction._run_interaction_gen("timeline")
+    assert next(canceled_runner) == "next-tick"
+    canceled_runner.close()
+    assert canceled_session.closed is True
+    assert canceled_session.canceled is True
+    assert "queue-cancel" not in agent._CONVERSATION_SESSIONS
+
+    unavailable_actor = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="queue-unavailable", full_name="Alice")
+    )
+    unavailable_session = agent.EmpneonConversationSession(
+        pie_interaction, unavailable_actor, None
+    )
+    unavailable_session.turn_id = 1
+    unavailable_session.phase = "waiting_for_backend"
+    agent._CONVERSATION_SESSIONS["queue-unavailable"] = unavailable_session
+    unavailable_interaction = agent.EmpneonWaitingInteraction()
+    unavailable_interaction._empneon_session_id = unavailable_session.id
+    unavailable_runner = unavailable_interaction._run_interaction_gen("timeline")
     try:
-        next(runner)
+        next(unavailable_runner)
     except StopIteration as finished:
         assert finished.value is True
     else:
-        raise AssertionError("closed session kept the interaction alive")
-    assert "alice" not in agent._CONVERSATION_SESSIONS
+        raise AssertionError("Unavailable participant kept waiting interaction alive")
+    assert unavailable_session.closed is True
+    assert unavailable_session.canceled is True
+    assert "queue-unavailable" not in agent._CONVERSATION_SESSIONS
 
-    for canceled_by in ("queue_cancel", "actor_missing", "target_missing"):
-        canceled_interaction = agent.EmpneonSocialInteraction()
-        canceled_interaction.sim = SimpleNamespace(
-            sim_info=SimpleNamespace(sim_id=canceled_by, full_name="Alice")
-        )
-        canceled_interaction.target = SimpleNamespace(
-            sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
-        )
-        canceled_runner = canceled_interaction._run_interaction_gen("timeline")
-        assert next(canceled_runner) == "next-tick"
-        canceled_session = agent._CONVERSATION_SESSIONS[canceled_by]
-        canceled_session.turn_id = 1
-        if canceled_by == "queue_cancel":
-            canceled_runner.close()
-        elif canceled_by == "actor_missing":
-            canceled_session.actor = None
-        else:
-            canceled_session.target = None
-        if canceled_by != "queue_cancel":
-            try:
-                next(canceled_runner)
-            except StopIteration:
-                pass
-            else:
-                raise AssertionError("missing participant kept the session alive")
-        dialog_count = len(dialogs)
-        agent._ACTION_RESULT_OUTBOX[:] = []
-        agent._ACTION_RESULT_RESPONSES[:] = []
-        late_reports = []
-        with monkeypatch.context() as late_patch:
-            late_patch.setattr(
-                agent,
-                "post_json",
-                lambda path, payload, timeout=None: late_reports.append((path, payload)),
-            )
-            late_patch.setattr(
-                agent.threading,
-                "Thread",
-                lambda target: SimpleNamespace(daemon=False, start=target),
-            )
-            agent._CHAT_RESPONSES.append(
-                (
-                    canceled_session.id,
-                    1,
-                    {
-                        "decision_id": "late-decision",
-                        "suggested_action": "friendly_chat",
-                    },
-                    None,
-                )
-            )
-            agent.process_autonomy_responses(None)
-            for _attempt in range(10):
-                if late_reports:
-                    break
-                agent.process_autonomy_responses(None)
-        assert len(dialogs) == dialog_count
-        assert late_reports == [
-            (
-                "/action-result",
-                {
-                    "decision_id": "late-decision",
-                    "action": "friendly_chat",
-                    "status": "failed",
-                    "reason": "Empneon Social canceled",
-                    "changes": [],
-                },
-            )
-        ], agent._ACTION_RESULT_OUTBOX
-
-    displayed_cancel_interaction = agent.EmpneonSocialInteraction()
-    displayed_cancel_interaction.sim = SimpleNamespace(
-        sim_info=SimpleNamespace(sim_id="displayed-cancel", full_name="Alice")
-    )
-    displayed_cancel_interaction.target = SimpleNamespace(
-        sim_info=SimpleNamespace(sim_id="bob", full_name="Bob")
-    )
-    displayed_cancel_runner = displayed_cancel_interaction._run_interaction_gen(
-        "timeline"
-    )
-    assert next(displayed_cancel_runner) == "next-tick"
-    displayed_cancel_session = agent._CONVERSATION_SESSIONS["displayed-cancel"]
-    displayed_cancel_session.turn_id = 1
-    displayed_cancel_session.phase = "waiting_for_backend"
-    with monkeypatch.context() as displayed_cancel_patch:
-        displayed_cancel_patch.setattr(
-            agent, "report_dialogue_delivery", lambda *_args, **_kwargs: None
-        )
-        displayed_cancel_session.accept_backend_result(
-            1,
-            {
-                "decision_id": "displayed-cancel-decision",
-                "dialogue": "Wait for me.",
-                "suggested_action": "friendly_chat",
-            },
-            None,
-        )
-    assert displayed_cancel_session.phase == "showing_response"
-    cancel_dialog_count = len(dialogs)
-    displayed_cancel_reports = []
-    with monkeypatch.context() as displayed_cancel_patch:
-        displayed_cancel_patch.setattr(
+    dialog_count = len(dialogs)
+    agent._ACTION_RESULT_OUTBOX[:] = []
+    agent._ACTION_RESULT_RESPONSES[:] = []
+    late_reports = []
+    with monkeypatch.context() as late_patch:
+        late_patch.setattr(
             agent,
             "post_json",
-            lambda path, payload, timeout=None: displayed_cancel_reports.append(
-                (path, payload)
-            )
-            or payload,
+            lambda path, payload, timeout=None: late_reports.append((path, payload)),
         )
-        displayed_cancel_patch.setattr(
+        late_patch.setattr(
             agent.threading,
             "Thread",
             lambda target: SimpleNamespace(daemon=False, start=target),
         )
-        displayed_cancel_runner.close()
-        agent._SESSION_EVENTS.append(
+        agent._CHAT_RESPONSES.append(
             (
-                displayed_cancel_session.id,
+                canceled_session.id,
                 1,
-                "dialogue_displayed",
+                {
+                    "decision_id": "late-decision",
+                    "suggested_action": "friendly_chat",
+                },
                 None,
             )
         )
         agent.process_autonomy_responses(None)
-    assert len(dialogs) == cancel_dialog_count
-    assert displayed_cancel_reports == [
+        for _attempt in range(10):
+            if late_reports:
+                break
+            agent.process_autonomy_responses(None)
+    assert len(dialogs) == dialog_count
+    assert late_reports == [
         (
             "/action-result",
             {
-                "decision_id": "displayed-cancel-decision",
+                "decision_id": "late-decision",
                 "action": "friendly_chat",
                 "status": "failed",
                 "reason": "Empneon Social canceled",
                 "changes": [],
             },
         )
-    ]
+    ], agent._ACTION_RESULT_OUTBOX
 
     notification_count = len(notifications)
     delivery_reports = []
@@ -967,16 +1231,18 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             },
             None,
         )
-    chat_dialog = dialogs[-1]
-    assert chat_dialog.kwargs["title"]() == "Bob says:"
-    assert "Alice: Remember our promise?" in chat_dialog.kwargs["text"]()
-    assert "Bob: I remember." in chat_dialog.kwargs["text"]()
-    assert "Category: friendly" in chat_dialog.kwargs["text"]()
-    assert "Tone: warm" in chat_dialog.kwargs["text"]()
-    assert "Empneon trust +2" in chat_dialog.kwargs["text"]()
-    assert hasattr(chat_dialog.kwargs["text_inputs"], "message")
-    assert chat_dialog.show_kwargs == {}
-    assert len(notifications) == notification_count
+    response_notification = notifications[-1]
+    assert response_notification.owner is pie_interaction.target
+    assert response_notification.kwargs["title"]() == "Bob"
+    assert response_notification.kwargs["text"]() == "I remember."
+    assert response_notification.show_kwargs["icon_override"].obj_instance is (
+        pie_interaction.target
+    )
+    assert (
+        response_notification.show_kwargs["secondary_icon_override"].obj_instance
+        is pie_interaction.sim
+    )
+    assert len(notifications) == notification_count + 1
     assert delivery_reports == [
         (
             "/dialogue-result",
@@ -984,10 +1250,14 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             10,
         )
     ]
+    assert agent.show_empneon_notification(
+        pie_interaction.sim, "Empneon error", "Provider unavailable"
+    )
+    assert "secondary_icon_override" not in notifications[-1].show_kwargs
     missing_actor_session = agent.EmpneonConversationSession(
         pie_interaction, None, pie_interaction.target
     )
-    assert agent.show_empneon_message_dialog(missing_actor_session, "not shown") is False
+    assert agent.show_empneon_message_dialog(missing_actor_session) is False
     assert delivery_reports == [
         (
             "/dialogue-result",
@@ -995,11 +1265,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             10,
         )
     ]
-    chat_dialog.accepted = True
-    chat_dialog.text_input_responses = {"message": "Do you?"}
-    display_session.dialogue_acknowledged = True
-    chat_dialog.listener(chat_dialog)
-    assert submitted[-1] == (display_session, "Do you?")
+    agent.process_autonomy_responses(None)
+    assert display_session.closed is True
 
     sim_chat = type("native_NPC_social", (), {})
     target = type(
@@ -1216,12 +1483,13 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn"
     ]
 
+    action_aop_start = len(mapped_aops)
     agent.process_autonomy_responses(None)
 
-    assert len(mapped_aops) == 1
-    assert mapped_aops[0].affordance is mixer
-    assert mapped_aops[0].target is target
-    assert mapped_aops[0].push_super_on_prepare is True
+    assert len(mapped_aops) == action_aop_start + 1
+    assert mapped_aops[action_aop_start].affordance is mixer
+    assert mapped_aops[action_aop_start].target is target
+    assert mapped_aops[action_aop_start].push_super_on_prepare is True
     assert len(executed) == 1
     assert executed[0] is not interaction
     assert executed[0].affordance is mixer
@@ -1262,7 +1530,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         {"decision_id": "decision-2", "suggested_action": "apologize"},
         interaction,
     )
-    assert mapped_aops[1].affordance is apologize
+    assert mapped_aops[action_aop_start + 1].affordance is apologize
     assert len(payloads) == 2
 
     executed[1].finishing_type = "FinishingType.DISPLACED"
@@ -1285,7 +1553,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     )
     player_data = {
         "decision_id": "decision-3",
-        "animation": "friendly_chat",
+        "animation": "none",
         "dialogue": "How is your day?",
         "emotion": "happy",
         "intent": "greet",
@@ -1325,12 +1593,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert len(payloads) == 3
     assert agent._SESSION_EVENTS == []
     assert agent._AUTONOMY_RESPONSES == []
-    second_turn_dialog = dialogs[-1]
-    second_turn_dialog.accepted = True
-    second_turn_dialog.text_input_responses = {"message": "And tomorrow?"}
-    second_turn_dialog.listener(second_turn_dialog)
     assert player_session.phase == "showing_response"
-    assert len(mapped_aops) == 2
+    assert len(mapped_aops) == action_aop_start + 2
 
     delayed_workers.pop(0)()
     assert payloads[3] == (
@@ -1338,65 +1602,46 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         {"decision_id": "decision-3", "status": "displayed"},
     )
     assert agent._AUTONOMY_RESPONSES == []
-    assert len(mapped_aops) == 2
+    assert len(mapped_aops) == action_aop_start + 2
     monkeypatch.setattr(
         agent.threading,
         "Thread",
         lambda target: SimpleNamespace(daemon=False, start=target),
     )
     agent.process_autonomy_responses(None)
-    assert player_session.phase == "running_native_action"
-    assert player_session.pending_decision == ("decision-3", "friendly_chat")
-    assert len(mapped_aops) == 3
-    assert mapped_aops[2].affordance is mixer
-    assert mapped_aops[2].push_super_on_prepare is True
-    assert executed[2].affordance is mixer
-    assert relationship_bits == {("mortimer", has_met)}
-
-    worker_dialog_count = len(dialogs)
-    executed[2].finishing_type = "FinishingType.NATURAL"
-    executed[2].finishing_callback(executed[2])
-    pump_outbox()
-    assert payloads[4][0] == "/action-result"
-    assert payloads[4][1]["decision_id"] == "decision-3"
-    assert payloads[4][1]["status"] == "succeeded"
-    assert len(dialogs) == worker_dialog_count
-    original_after_native_action = player_session.after_native_action
-
-    def after_native_action(turn_id):
-        callback_order.append("native_finished")
-        return original_after_native_action(turn_id)
-
-    player_session.after_native_action = after_native_action
-    monkeypatch.setattr(
-        agent,
-        "submit_empneon_chat",
-        lambda _session, _message: callback_order.append("second_submitted"),
-    )
-    agent.process_autonomy_responses(None)
-    assert player_session.turn_id == 2
-    assert player_session.phase == "waiting_for_backend"
-    assert callback_order == [
-        "displayed",
-        "native_result_posted",
-        "native_finished",
-        "second_submitted",
-    ]
+    assert player_session.closed is True
+    assert len(mapped_aops) == action_aop_start + 2
+    assert callback_order == ["displayed"]
 
     romance_reports = []
+    headline_calls = []
+    romance_track.headline = SimpleNamespace(
+        send_headline_message=lambda sim_info, value: headline_calls.append(
+            (sim_info, value)
+        )
+    )
+    romance_scores = {romance_track: 2}
+    response_tracker = SimpleNamespace(
+        get_relationship_score=lambda _target, track: romance_scores[track],
+        add_relationship_score=lambda _target, amount, track: romance_scores.__setitem__(
+            track, romance_scores[track] + amount
+        ),
+    )
     with monkeypatch.context() as romance_patch:
         romance_patch.setattr(
             agent,
             "post_json",
             lambda path, body, timeout=None: romance_reports.append((path, body)) or body,
         )
-        romance_patch.setattr(
-            agent,
-            "relationship_payload",
-            lambda _source, _target: {"friendship": 0, "romance": 7},
-        )
+        romance_patch.setattr(agent, "find_relationship_track", lambda _name: romance_track)
         romance_session = agent.EmpneonConversationSession(
-            pie_interaction, pie_interaction.sim, pie_interaction.target
+            pie_interaction,
+            SimpleNamespace(sim_info=SimpleNamespace(sim_id="alice")),
+            SimpleNamespace(
+                sim_info=SimpleNamespace(
+                    sim_id="bob", relationship_tracker=response_tracker
+                )
+            ),
         )
         romance_session.turn_id = 1
         romance_session.phase = "showing_response"
@@ -1404,49 +1649,93 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         romance_session.response_choice_ready = True
         romance_session.response_data = {
             "decision_id": "decision-social-romance",
-            "suggested_action": "social.romance",
-            "_empneon_payload": dict(
-                player_payload,
-                relationship={"friendship": 0, "romance": 0},
-            ),
+            "suggested_action": "relationship.romance_positive",
         }
         agent._CONVERSATION_SESSIONS["social-romance"] = romance_session
-        interaction._aop.super_affordance.all_affordances_gen = classmethod(
-            lambda _cls, **_kwargs: iter(
-                (mixer, apologize, funny, mean, mischief)
-            )
-        )
+        action_count = len(mapped_aops)
 
-        assert agent.continue_displayed_turn(romance_session) is True
-        assert romance_session.phase == "running_native_action"
-        assert mapped_aops[-1].affordance is romance
-        romance_session.native_interaction.finishing_type = "FinishingType.NATURAL"
-        romance_session.native_interaction.finishing_callback(
-            romance_session.native_interaction
+        assert agent.complete_delivered_turn(romance_session) is True
+        assert romance_session.phase == "confirming_relationship"
+        assert romance_scores[romance_track] == 7
+        assert headline_calls == [
+            (romance_session.target.sim_info, 5),
+            (romance_session.actor.sim_info, 5),
+        ]
+        assert len(mapped_aops) == action_count
+        assert agent.complete_delivered_turn(romance_session) is False
+        assert romance_scores[romance_track] == 7
+        headline_calls.clear()
+        agent.show_relationship_headlines(
+            romance_track,
+            romance_session.target.sim_info,
+            romance_session.actor.sim_info,
+            0,
+        )
+        assert headline_calls == []
+
+        def fail_headline(_sim_info, _value):
+            raise RuntimeError("headline unavailable")
+
+        romance_track.headline = SimpleNamespace(
+            send_headline_message=fail_headline
+        )
+        visual_scores = {romance_track: 10}
+        visual_session = agent.EmpneonConversationSession(
+            pie_interaction,
+            SimpleNamespace(sim_info=SimpleNamespace(sim_id="visual-actor")),
+            SimpleNamespace(
+                sim_info=SimpleNamespace(
+                    sim_id="visual-target",
+                    relationship_tracker=SimpleNamespace(
+                        get_relationship_score=lambda _target, track: visual_scores[
+                            track
+                        ],
+                        add_relationship_score=lambda _target, amount, track: (
+                            visual_scores.__setitem__(
+                                track, visual_scores[track] + amount
+                            )
+                        ),
+                    ),
+                )
+            ),
+        )
+        marker_count = len(selected)
+        changes, error = agent.apply_relationship_outcome(
+            visual_session, "relationship.romance_positive"
+        )
+        assert error is None
+        assert changes == [
+            {
+                "path": "relationship.romance",
+                "operation": "increment",
+                "value": 5,
+            }
+        ]
+        assert len(selected) == marker_count + 2
+        assert all(
+            marker.startswith("Relationship headline failed:")
+            for marker in selected[marker_count:]
         )
         pump_outbox()
+        agent.process_autonomy_responses(None)
 
     assert romance_reports[-1] == (
         "/action-result",
         {
             "decision_id": "decision-social-romance",
-            "action": "social.romance",
+            "action": "relationship.romance_positive",
             "status": "succeeded",
-            "reason": None,
-            "changes": [
-                {
-                    "path": "relationship.romance",
-                    "operation": "increment",
-                    "value": 7,
-                }
-            ],
+                "reason": None,
+                "changes": [
+                    {
+                        "path": "relationship.romance",
+                        "operation": "increment",
+                        "value": 5,
+                    }
+                ],
         },
     )
-    interaction._aop.super_affordance.all_affordances_gen = classmethod(
-        lambda _cls, **_kwargs: iter(
-            (mixer, apologize, funny, romance, mean, mischief)
-        )
-    )
+    assert romance_session.closed is True
 
     zero_reports = []
     with monkeypatch.context() as zero_patch:
@@ -1518,7 +1807,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         native_interaction.finishing_type = "FinishingType.NATURAL"
         native_interaction.finishing_callback(native_interaction)
         pump_outbox()
-    assert native_interaction.canceled is True
+    assert native_interaction.canceled is False
     assert cancellation_reports == [
         (
             "/action-result",
@@ -1543,15 +1832,6 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     )
     agent._CONVERSATION_SESSIONS["ack-failure"] = acknowledgement_failure_session
     action_count = len(mapped_aops)
-    agent.finish_displayed_turn(
-        acknowledgement_failure_session,
-        {
-            "decision_id": "decision-ack-failure",
-            "suggested_action": "friendly_chat",
-            "_empneon_payload": player_payload,
-        },
-        "Never submit",
-    )
     monkeypatch.setattr(
         agent,
         "post_json",
@@ -1608,10 +1888,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             lambda session, message: lost_ack_submitted.append((session, message)),
         )
         agent.process_autonomy_responses(None)
-    assert lost_ack_session.closed is False
+    assert lost_ack_session.closed is True
     assert lost_ack_session.canceled is False
-    assert lost_ack_session.phase == "waiting_for_backend"
-    assert lost_ack_submitted == [(lost_ack_session, "Continue after retry")]
+    assert lost_ack_session.phase == "closed"
+    assert lost_ack_submitted == []
 
     retry_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
@@ -1620,10 +1900,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     retry_session.phase = "waiting_for_backend"
     dialog_count = len(dialogs)
     retry_session.accept_backend_result(1, None, "provider unavailable")
-    assert retry_session.closed is False
-    assert retry_session.phase == "input"
-    assert len(dialogs) == dialog_count + 1
-    assert dialogs[-1].kwargs["title"]() == "Empneon Social with Bob"
+    assert retry_session.closed is True
+    assert retry_session.phase == "closed"
+    assert len(dialogs) == dialog_count
 
     failed_post_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target
@@ -1661,7 +1940,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     monkeypatch.setattr(agent, "post_json", lambda _path, body, timeout=None: body)
     pump_outbox()
     agent.process_autonomy_responses(None)
-    assert failed_post_session.phase == "waiting_for_backend"
+    assert failed_post_session.closed is True
 
     close_session = agent.EmpneonConversationSession(
         pie_interaction, pie_interaction.sim, pie_interaction.target

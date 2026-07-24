@@ -16,8 +16,13 @@ feature promise.
 - SocietyBench scenarios, raw benchmark artifacts, and regression fixtures
 - Versioned SQLite migrations and Core-owned adapter memory documents
 - Save-aware The Sims 4 memory checkpoints and one-time legacy memory import
+- Single-turn The Sims 4 player dialogue with cancelable waiting, cosmetic conversation animation,
+  and bounded game-observed relationship outcomes
 
 ## Next gates
+
+- Verify the exact two-portrait notification layout and native floating relationship symbols for
+  each mild Sims outcome; a more consistently neutral waiting animation is optional polish.
 
 ### Core integration
 

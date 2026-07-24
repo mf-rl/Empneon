@@ -88,7 +88,7 @@ restarted both the game and backend before the final verification.
 
 ## Test 5: Directed relationships and confirmed consequences
 
-**Status:** PARTIAL / AUTOMATED REMEDIATION AWAITING IN-GAME RETEST
+**Status:** PARTIAL / SINGLE-TURN FLOW, ROMANCE, AND WAITING ANIMATION LIVE-PASSED
 
 **Retest evidence (2026-07-20):**
 
@@ -498,6 +498,74 @@ backend ran from source with LM Studio on its native `/api/v1/chat` endpoint.
 Only the LM Studio final-message transport fix is implemented in this final checkpoint. The native
 action deadlock, failure-resume policy, cancellation signature, and misleading execution-direction
 log remain documented defects for the next session.
+
+### July 23 single-turn Test 5 retest
+
+**Status:** PARTIAL / ROMANCE APPLIED, LIVE DIAGNOSTIC WAS STALE
+
+- Three Karmine replies were categorized as `romance` with `playful` and `warm` tone.
+- The first two model-proposed `romance_positive` outcomes were reduced to `none` before the
+  low-grade fallback because validation returned early when their dialogue lacked the explicit
+  reciprocation phrase. Coverage now verifies that approved warm romantic reception survives that
+  path.
+- The third reply, `That's sweet of you! A date sounds perfect. You're very sweet too!`, produced
+  `relationship.romance_positive`. The mod observed and confirmed a native romance delta of `+6`;
+  this is the authoritative game-side result.
+- The subsequent `ai.relationship Karmine Luna` output still showed romance `0` because the command
+  displayed the backend's pre-action native snapshot. The command now reads current friendship,
+  romance, and attraction from the live Sims relationship tracker while retaining Empneon trust
+  from the backend.
+- The first-turn friendship increase from `0` to `14` was not an Empneon consequence: its action
+  record contained no applied changes.
+
+### July 23 romance validation and visual source-build handoff
+
+**Status:** HISTORICAL / RELATIONSHIP FLOW PASSED, VISUAL RETEST THEN PENDING
+
+- A later four-turn live run increased Sims romance `0 -> 8 -> 16 -> 21 -> 26`. Friendship remained
+  `14`, while WickedWhims attraction increased independently from `+0.33` (`MEDIUM`) to `+0.67`
+  (`HIGH`). This confirms the mild Empneon romance outcomes now affect the live romance track and
+  that `ai.relationship` reports the current game-side values.
+- That run still showed no waiting conversation animation or floating relationship icons because
+  those visual paths were not yet implemented in the installed source build.
+- The following source build initially reused only the EA friendly-chat `animation_ref` inside **Waiting for
+  response**, interrupts the waiting interaction when the answer is displayed, supplies primary
+  and secondary Sim portraits to both dialogue notifications, and sends the selected relationship
+  track's tuned headline to both Sims after a nonzero observed delta.
+- Automated coverage verifies portrait order, animation-only execution, response interruption,
+  unavailable-participant cancellation, two-Sim headline dispatch, zero-delta suppression, and
+  visual-only failure handling. In-game portrait layout, animation appearance, and exact floating
+  symbols are not yet claimed.
+- Live testing found that the first animation build only made the Sims face and watch each other.
+  Diagnostics showed the friendly animation completed against the waiting interaction's idle ASM.
+  Giving a non-queued friendly social mixer ownership still produced only staring. Passing the
+  animation through the mixer's full `build_basic_elements` wrapper produced visible conversation
+  but also changed friendship because that wrapper inserted the friendly mixer's tuned outcome.
+  Keeping only its listener-animation layer reverted to staring. Restoring the full wrapper while
+  replacing `build_outcome()` with an empty element also produced only staring, showing that the
+  visible speech gestures are assembled inside the native outcome builder rather than by its raw
+  `animation_ref`.
+- The final build uses that native visual assembly but neutralizes its loot, continuations, events,
+  cancellation, extras, and relationship scoring. Its conversation animation was subsequently
+  live-confirmed in the final retest below.
+- Stronger `+++` feedback and milestone effects remain deferred follow-up work.
+
+### July 23 final waiting-animation retest
+
+**Status:** PARTIAL / WAITING ANIMATION PASSED, REMAINING VISUAL DETAILS OPEN
+
+- The installed source build now plays a visible conversation animation while **Waiting for
+  response** is in the queue. The Sims no longer remain silent and motionless.
+- Sim B occasionally uses a bored-looking gesture. This is an EA-tuned cosmetic variation and is
+  accepted for the current phase; selecting a more consistently neutral animation is deferred.
+- The implementation builds the friendly outcome's visual sequence but replaces its normal outcome
+  element and disables relationship scoring. Loot, continuations, events, cancellation, extras,
+  and parameterized autonomy are removed from the visual action data.
+- The full Sims adapter suite passes with 183 tests, and the Python 3.7 mod build succeeds.
+- The single-turn queue lifecycle and mild romance effects are live-confirmed. Exact two-portrait
+  notification layout and floating friendship/romance headline symbols have not yet been reported
+  as observed, so Test 5 remains partial.
+- Stronger `+++` feedback and major relationship milestones remain deferred.
 
 ## Test 6: Private observations and beliefs
 

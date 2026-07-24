@@ -74,9 +74,14 @@ handoff so the next manual run cannot connect to a stale process.
    ```
 
 4. Restart The Sims 4 and load a household. Clicking another Sim exposes the
-   **Empneon Social** pie-menu entry. It opens a native message field, submits the message to
-   Empneon, and reopens the native dialog with the conversation transcript and generated reply.
-   Progress and errors remain notifications. Autonomous Empneon decisions now queue their mapped
+   **Empneon Social** pie-menu entry. **Start conversation** routes to the target and opens one
+   native message field. Sending removes that task, shows the player's message as a portrait
+   notification, and queues the cancelable **Waiting for response** task. The target's answer is a
+   portrait notification and ends the transaction; select Empneon Social again for another turn.
+   While waiting, both Sims play a cosmetic EA conversation animation. Sim B may occasionally use
+   a bored-looking gesture; this is a known visual limitation and does not select a mean interaction.
+   A delivered answer may apply one mild (`5` point) friendship or romance outcome directly
+   through the native relationship tracker. Autonomous Empneon decisions still queue their mapped
    base-game social through the game's native interaction context.
 5. Run `aiping` in the cheat console for backend diagnostics, then use
    `aichat Bella Goth | Hello` for the existing model-backed interaction. With a lot active,
@@ -109,6 +114,7 @@ JSON file. Environment variables override the loaded file.
 | `database`, `AI_SIM_DB` | Former adapter database imported once for compatibility | `ai_sims_memory.sqlite3` |
 | `core_database` | Former Core database adopted once for compatibility | `empneon_core.sqlite3` |
 | `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `false` |
+| `response_rejection_enabled` | Reject and retry grounded, copied, role-confused, or contradictory model replies | `false` |
 | `active_agent_limit` | Concurrent reference-adapter sessions and Core admissions | `1` |
 | `agent_wake_timeout_seconds` | Wait for an agent-session slot | `60` |
 | `provider`, `AI_SIM_PROVIDER` | Default provider entry | `lmstudio` |
@@ -120,6 +126,13 @@ JSON file. Environment variables override the loaded file.
 Relative database paths resolve from the backend process's working directory. Both former
 database paths are read-only migration sources. All current state is written to the single active
 `empneon_core_memory.sqlite3` database; legacy sources are never deleted automatically.
+
+With `response_rejection_enabled` set to `false`, Empneon displays the first structurally usable
+model response without grounding, copying, role-confusion, or response-category filtering.
+JSON/plain-text parsing and response normalization still run because the game adapter requires a
+stable response object. Set the value to `true` to restore rejection, correction retries, and the
+deterministic fallback. Restart the backend after changing this setting; the game does not need
+to restart.
 
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
@@ -137,8 +150,16 @@ the active Sim's queue, routes to the target, and opens its input after arrival.
 About Day** completed with a native `+5` friendship consequence confirmed to Core. Canceling the
 queued interaction before arrival opened no input and created no backend request or action
 proposal. After save/reload, a fresh conversation recalled the retained pizza plan at 7 PM the
-next day. The provider-independent speaker/listener guard and raw recent-conversation context keep
-the reply addressed and grounded when switching providers. Stage 6.5 is complete.
+next day. The raw recent-conversation context and prompt guide replies when switching providers.
+The optional provider-independent speaker/listener and grounding guard is active only when
+`response_rejection_enabled` is `true`. Stage 6.5 is complete.
+
+The single-turn **Start conversation** / **Waiting for response** redesign and its waiting
+conversation animation passed live testing on 2026-07-23. The mild romance path also passed with
+observed game-side increases. Exact primary/secondary portrait layout and the native floating
+friendship, romance, or negative symbols still require explicit observation on the installed game
+build. Stronger `+++` feedback and relationship milestones such as best friends, first kisses, and
+proposals are deferred and must not be triggered by this implementation.
 
 Memory settings:
 
@@ -158,9 +179,11 @@ or restarting the game, begins another session and discards changes after the la
 Traveling between lots remains part of the current session. Core cognition and memory records
 share the checkpoint and roll back together.
 
-Dialogue normally uses two to four natural sentences shaped by the Sim's personality, emotion,
-and relationship. Factual recall is grounded only in player-provided facts and retained memory;
-when evidence is absent, the Sim should admit not knowing rather than invent an answer.
+The model is instructed to use two to four natural sentences shaped by the Sim's personality,
+emotion, and relationship. It is also instructed to ground factual recall in player-provided facts
+and retained memory and to admit when evidence is absent. Enable `response_rejection_enabled` only
+when deterministic enforcement and correction retries are preferred over accepting every model
+reply.
 
 Live validation on 2026-07-16 confirmed that an unsaved codeword was removed after returning to
 the Main Menu, a normal save retained `PERSIST-GREEN-963` for Nanami Ito after reload, scratch-slot

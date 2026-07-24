@@ -158,6 +158,9 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
 
 - Core contracts are exercised by two materially different adapters.
 - The Sims 4 path proposes mapped actions and records only game-confirmed outcomes.
+- Player-triggered Sims dialogue is a cancelable single-turn transaction with separate routing and
+  waiting queue phases, portrait notifications, cosmetic waiting animation, and bounded observed
+  friendship or romance consequences.
 - Epistemic memory scenarios cover observations, belief provenance, contradiction, revision,
   and deterministic trust-decayed propagation.
 - The differentiated adaptive benchmark reduced provider calls on one synthetic workload while

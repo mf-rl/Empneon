@@ -613,10 +613,61 @@ def test_openrouter_and_baseline_defaults_are_configured() -> None:
     )
 
     assert config["active_agent_limit"] == 1
+    assert config["response_rejection_enabled"] is False
     assert config["providers"]["openrouter"] == {
         "endpoint": "https://openrouter.ai/api/v1",
         "model": "openai/gpt-4.1-mini",
     }
+
+
+def test_disabled_response_rejection_accepts_first_normalized_response(
+    monkeypatch,
+) -> None:
+    calls = []
+    provider_response = _social_provider_response(
+        "This answer would normally be rejected.",
+        "friendly",
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append("called") or json.dumps(provider_response),
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "response_grounding_issue",
+        lambda _payload, response, _context: (
+            "dialogue copies the current input"
+            if response["dialogue"] == provider_response["dialogue"]
+            else ""
+        ),
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "response_has_role_confusion",
+        lambda _response, _context: False,
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "RESPONSE_REJECTION_ENABLED",
+        False,
+        raising=False,
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Hello",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert calls == ["called"]
+    assert response["dialogue"] == provider_response["dialogue"]
 
 
 def test_actor_prompt_separates_recalled_history_from_current_session() -> None:
@@ -999,6 +1050,7 @@ def test_valid_model_reply_is_not_replaced_for_omitting_a_critical_need(
 
 
 def test_dialogue_fallback_refuses_unsupported_fact(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     responses = iter(
         [
             json.dumps({"dialogue": "It is behind the main house."}),
@@ -1427,6 +1479,7 @@ def test_legacy_action_metadata_cannot_replace_response_category() -> None:
 
 
 def test_repetition_retry_keeps_history_and_requests_new_direction(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     prompts = []
     responses = iter(
         [
@@ -1493,6 +1546,7 @@ def test_repetition_retry_keeps_history_and_requests_new_direction(monkeypatch) 
 
 
 def test_current_message_mirror_retries_and_returns_distinct_response(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     message = (
         "You make me happier than I ever expected, and I don't want to wonder "
         "what this could be anymore. I want us to be together. Will you be my girlfriend?"
@@ -1536,6 +1590,7 @@ def test_current_message_mirror_retries_and_returns_distinct_response(monkeypatc
 
 
 def test_persistent_current_message_mirror_uses_distinct_fallback(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     message = (
         "You make me happier than I ever expected, and I don't want to wonder "
         "what this could be anymore. I want us to be together. Will you be my girlfriend?"
@@ -1573,6 +1628,7 @@ def test_persistent_current_message_mirror_uses_distinct_fallback(monkeypatch) -
 
 
 def test_mirroring_reasoning_fallback_uses_grounded_neutral_dialogue(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     message = "I may not have every answer, but I'll tell you what I know."
     calls = []
 
@@ -1817,8 +1873,8 @@ def test_prompt_separates_incoming_category_from_state_grounded_response() -> No
     "dialogue,category,issue",
     [
         ("Yes, I would love to date you.", "friendly", "explicit romance"),
-        ("No, I would rather stay friends.", "romance", "romantic refusal"),
-        ("No, I don't want to date you.", "friendly", ""),
+        ("No, I would rather stay friends.", "romance", ""),
+        ("No, I don't want to date you.", "friendly", "explicit romance"),
         ("Go away, idiot.", "friendly", "explicit mean"),
         ("That was hilarious!", "funny", ""),
         ("I need time to think.", "friendly", ""),
@@ -1828,6 +1884,106 @@ def test_response_category_issue(dialogue: str, category: str, issue: str) -> No
     assert ai_sims_server.response_category_issue(
         {"dialogue": dialogue, "response_category": category}
     ) == issue
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            {
+                "dialogue": "I enjoy talking with you too.",
+                "response_category": "friendly",
+                "relationship_outcome": "friendship_positive",
+            },
+            "friendship_positive",
+        ),
+        (
+            {
+                "dialogue": "Please leave me alone.",
+                "response_category": "mean",
+                "relationship_outcome": "friendship_negative",
+            },
+            "friendship_negative",
+        ),
+        (
+            {
+                "dialogue": "Yes, I would love to date you.",
+                "response_category": "romance",
+                "relationship_outcome": "romance_positive",
+            },
+            "romance_positive",
+        ),
+        (
+            {
+                "dialogue": "No, I would rather stay friends.",
+                "response_category": "romance",
+                "relationship_outcome": "romance_negative",
+            },
+            "romance_negative",
+        ),
+        (
+            {
+                "dialogue": "Oh, you're sweet! Thanks for noticing!",
+                "response_category": "romance",
+                "tone_tags": ["playful", "romantic"],
+                "relationship_outcome": "none",
+            },
+            "romance_positive",
+        ),
+        (
+            {
+                "dialogue": "That's sweet! It sounds nice when you say it.",
+                "response_category": "romance",
+                "tone_tags": ["playful", "warm"],
+                "relationship_outcome": "romance_positive",
+            },
+            "romance_positive",
+        ),
+        (
+            {
+                "dialogue": "It is nice to hear that. I need time to think.",
+                "response_category": "romance",
+                "tone_tags": ["warm", "hesitant"],
+                "relationship_outcome": "none",
+            },
+            "none",
+        ),
+        (
+            {
+                "dialogue": "No, I would rather stay friends.",
+                "response_category": "romance",
+                "tone_tags": ["warm"],
+                "relationship_outcome": "none",
+            },
+            "none",
+        ),
+        (
+            {
+                "dialogue": "The weather changed.",
+                "response_category": "friendly",
+                "relationship_outcome": "friendship_lifetime",
+            },
+            "none",
+        ),
+    ],
+)
+def test_relationship_outcome_is_bounded_and_grounded(raw, expected) -> None:
+    response = ai_sims_server.normalize_response(raw)
+    assert response["relationship_outcome"] == expected
+
+
+def test_dialogue_schema_requires_relationship_outcome() -> None:
+    assert ai_sims_server.DIALOGUE_SCHEMA["properties"]["relationship_outcome"] == {
+        "type": "string",
+        "enum": [
+            "friendship_positive",
+            "friendship_negative",
+            "romance_positive",
+            "romance_negative",
+            "none",
+        ],
+    }
+    assert "relationship_outcome" in ai_sims_server.DIALOGUE_SCHEMA["required"]
 
 
 def _social_provider_response(dialogue: str, category: str) -> dict:
@@ -1843,6 +1999,7 @@ def _social_provider_response(dialogue: str, category: str) -> dict:
 
 
 def test_category_contradiction_retries_once(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     responses = iter(
         (
             _social_provider_response("Yes, I would love to date you.", "friendly"),
@@ -1874,6 +2031,7 @@ def test_category_contradiction_retries_once(monkeypatch) -> None:
 
 
 def test_persistent_category_contradiction_is_dialogue_only(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     response = _social_provider_response("Yes, I would love to date you.", "friendly")
     monkeypatch.setattr(
         ai_sims_server,
@@ -2143,6 +2301,14 @@ def test_provider_output_parsing_uses_first_json_and_never_exposes_malformed_dat
     assert "{\"dialogue\"" not in fallback["dialogue"]
     assert fallback["memory"] == {"importance": 0.0, "summary": ""}
 
+    plain_text = ai_sims_server.fallback_response(
+        "Well, what's with the clown comparison? You always were an idiot, Bernard.",
+        ["friendly", "funny", "romance", "mean", "mischief"],
+    )
+    assert plain_text["dialogue"].endswith("You always were an idiot, Bernard.")
+    assert plain_text["response_category"] == "mean"
+    assert plain_text["relationship_outcome"] == "friendship_negative"
+
 
 def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     tmp_path, monkeypatch
@@ -2159,6 +2325,7 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
             },
             "memory": {"importance": 0.2, "summary": "One concrete event memory."},
             "animation": "friendly_chat",
+            "relationship_outcome": "none",
         }
     )
 
@@ -2218,13 +2385,6 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     ai_sims_server.confirm_dialogue_delivery(
         {"decision_id": result["decision_id"], "status": "displayed"}
     )
-    ai_sims_server.confirm_action(
-        {
-            "decision_id": result["decision_id"],
-            "action": result["animation"],
-            "status": "succeeded",
-        }
-    )
     with open_db(core_db) as conn:
         confirmed = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
         recalled = ai_sims_server.empneon_state.recalled_memories(
@@ -2251,13 +2411,6 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     )
     ai_sims_server.confirm_dialogue_delivery(
         {"decision_id": question["decision_id"], "status": "displayed"}
-    )
-    ai_sims_server.confirm_action(
-        {
-            "decision_id": question["decision_id"],
-            "action": question["animation"],
-            "status": "succeeded",
-        }
     )
     with open_db(core_db) as conn:
         after_question = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
@@ -2566,6 +2719,9 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
             },
             "memory": {"importance": 0.2, "summary": "A greeting."},
             "animation": "friendly_chat",
+            "response_category": "friendly",
+            "tone_tags": [],
+            "relationship_outcome": "friendship_positive",
         },
     )
 
@@ -2587,7 +2743,7 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
         diagnostics = ai_sims_server.empneon_state.sim_diagnostics(conn, "bella")
         observed = EpisodicMemoryStore(conn).get(proposal.event_id)
     assert result["action_status"] == "proposed"
-    assert result["animation"] == "social.friendly"
+    assert result["animation"] == "relationship.friendship_positive"
     assert proposal is not None
     assert record is None
     assert diagnostics["agent_state"]["agent_id"] == "bella"
@@ -2668,6 +2824,9 @@ def test_dialogue_delivery_records_experience_and_empneon_trust_once(
             },
             "memory": {"importance": 0.8, "summary": "Karmine reassured Bernard."},
             "animation": "friendly_chat",
+            "response_category": "friendly",
+            "tone_tags": [],
+            "relationship_outcome": "friendship_positive",
         },
     )
     result = ai_sims_server.chat(

@@ -6,6 +6,7 @@
   "database": "ai_sims_memory.sqlite3",
   "core_database": "empneon_core.sqlite3",
   "preserve_memory_only_on_game_save": false,
+  "response_rejection_enabled": false,
   "active_agent_limit": 1,
   "agent_wake_timeout_seconds": 60,
   "provider": "lmstudio",

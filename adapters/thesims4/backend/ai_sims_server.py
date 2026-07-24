@@ -63,6 +63,7 @@ DEFAULT_CONFIG = {
     "core_database": "empneon_core.sqlite3",
     "memory_database": "empneon_core_memory.sqlite3",
     "preserve_memory_only_on_game_save": False,
+    "response_rejection_enabled": False,
     "active_agent_limit": 1,
     "agent_wake_timeout_seconds": 60,
     "provider": "lmstudio",
@@ -152,6 +153,8 @@ def load_config():
 CONFIG = load_config()
 if not isinstance(CONFIG.get("preserve_memory_only_on_game_save"), bool):
     raise ValueError("preserve_memory_only_on_game_save must be true or false")
+if not isinstance(CONFIG.get("response_rejection_enabled"), bool):
+    raise ValueError("response_rejection_enabled must be true or false")
 HOST = str(CONFIG.get("host") or "127.0.0.1")
 PORT = int(CONFIG.get("port") or 8765)
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
@@ -164,6 +167,7 @@ CORE_DB_PATH = MEMORY_DB_PATH
 ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 1)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
+RESPONSE_REJECTION_ENABLED = CONFIG["response_rejection_enabled"]
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
 ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
@@ -220,16 +224,33 @@ Use this exact shape with concrete values:
   "intent": "accept_playfully",
   "response_category": "romance",
   "tone_tags": ["playful", "hesitant"],
-  "trust_delta": 1
+  "trust_delta": 1,
+  "relationship_outcome": "romance_positive"
 }
 
 Choose one response category from the request's available common social categories. The response
 category describes the Speaker's own dialogue, independently from the incoming category. Tone tags
-may blend style and mood, but never select additional actions. Do not return friendship, romance,
-attraction, or action fields; the adapter and game own them.
+may blend style and mood, but never select additional actions. Choose friendship_positive only for
+a warm or funny response, friendship_negative only for a mean or hostile response,
+romance_positive only when the Speaker clearly reciprocates romance, romance_negative only for an
+explicit romantic rejection, and none otherwise. Do not return numeric friendship, romance,
+attraction, tuning, or action fields; the adapter and game own them.
 """
 
 SOCIAL_ACTIONS = {category: "social." + category for category in SOCIAL_CATEGORIES}
+RELATIONSHIP_OUTCOMES = (
+    "friendship_positive",
+    "friendship_negative",
+    "romance_positive",
+    "romance_negative",
+    "none",
+)
+ROMANTIC_RECIPROCATION = re.compile(
+    r"\b(yes|i would love|i'd love|me too|feel the same|date sounds|be together)\b"
+)
+ROMANTIC_REJECTION = re.compile(
+    r"\b(no|not interested|rather stay friends|do not want|don't want|cannot|can't)\b"
+)
 
 DIALOGUE_SCHEMA = {
     "type": "object",
@@ -249,6 +270,10 @@ DIALOGUE_SCHEMA = {
             "uniqueItems": True,
         },
         "trust_delta": {"type": "integer", "minimum": -10, "maximum": 10},
+        "relationship_outcome": {
+            "type": "string",
+            "enum": list(RELATIONSHIP_OUTCOMES),
+        },
     },
     "required": [
         "dialogue",
@@ -257,6 +282,7 @@ DIALOGUE_SCHEMA = {
         "response_category",
         "tone_tags",
         "trust_delta",
+        "relationship_outcome",
     ],
 }
 
@@ -908,6 +934,41 @@ def sanitize_action_proposal(response, actions):
     return response
 
 
+def validated_relationship_outcome(response):
+    value = str(response.get("relationship_outcome") or "none")
+    dialogue = str(response.get("dialogue") or "").casefold()
+    category = str(response.get("response_category") or "")
+    tone_tags = {
+        str(tag).strip().casefold() for tag in response.get("tone_tags") or ()
+    }
+    warm_romance = (
+        category == "romance"
+        and bool(tone_tags & {"warm", "playful", "romantic"})
+        and not tone_tags & {"hesitant", "neutral", "uncertain", "hostile"}
+        and not ROMANTIC_REJECTION.search(dialogue)
+    )
+    if value not in RELATIONSHIP_OUTCOMES:
+        return "none"
+    if value == "friendship_positive" and category not in ("friendly", "funny"):
+        return "none"
+    if value == "friendship_negative" and category not in ("mean", "mischief"):
+        return "none"
+    if value == "romance_positive" and (
+        category != "romance"
+        or not (ROMANTIC_RECIPROCATION.search(dialogue) or warm_romance)
+    ):
+        return "none"
+    if value == "romance_negative" and (
+        category != "romance" or not ROMANTIC_REJECTION.search(dialogue)
+    ):
+        return "none"
+    if (
+        value == "none" and warm_romance
+    ):
+        return "romance_positive"
+    return value
+
+
 def normalize_response(raw, available_categories=None):
     if not isinstance(raw, dict):
         raw = {}
@@ -976,6 +1037,9 @@ def normalize_response(raw, available_categories=None):
         "suggested_action": SOCIAL_ACTIONS[category],
         "animation": SOCIAL_ACTIONS[category],
     }
+    response["relationship_outcome"] = validated_relationship_outcome(
+        dict(response, relationship_outcome=raw.get("relationship_outcome"))
+    )
     return response
 
 
@@ -1019,14 +1083,29 @@ def extract_json(text):
 
 
 def fallback_response(text, available_categories=None):
+    dialogue = str(text or "").strip()
+    if not dialogue or any(marker in dialogue for marker in ("{", "}", "```")):
+        dialogue = "I couldn't form a reliable response. Please try again."
+    categories = (
+        available_response_categories(available_categories)
+        if available_categories is not None
+        else SOCIAL_CATEGORIES
+    )
+    category = classify_social_category(dialogue)
+    if category not in categories:
+        category = "friendly" if "friendly" in categories else categories[0]
     response = normalize_response(
         {
-            "dialogue": "I couldn't form a reliable response. Please try again.",
+            "dialogue": dialogue,
             "emotion": "neutral",
             "intent": "respond",
+            "response_category": category,
+            "relationship_outcome": (
+                "friendship_negative" if category == "mean" else "none"
+            ),
             "memory": {"importance": 0.0, "summary": ""},
         },
-        available_categories,
+        categories,
     )
     response["suggested_action"] = response["animation"] = "none"
     return response
@@ -1690,12 +1769,6 @@ def classify_social_category(message):
 def response_category_issue(response):
     dialogue = str(response.get("dialogue") or "")
     category = str(response.get("response_category") or "")
-    romantic_refusal = re.search(
-        r"\b(no|not interested|rather stay friends|do not want|don't want)\b",
-        dialogue.casefold(),
-    )
-    if romantic_refusal:
-        return "romantic refusal" if category == "romance" else ""
     explicit = explicit_social_category(dialogue)
     if explicit is not None and explicit != category:
         return "explicit {}".format(explicit)
@@ -1968,6 +2041,8 @@ class HermesRuntime:
                 )
             except (ValueError, json.JSONDecodeError):
                 response = fallback_response(content, categories)
+            if not RESPONSE_REJECTION_ENABLED:
+                return response
             issue = response_grounding_issue(payload, response, context)
             category_issue = response_category_issue(response)
             if not response_has_role_confusion(response, context) and not issue:

@@ -13,9 +13,14 @@ import game_services
 import services
 import sims4.commands
 import zone
+from distributor.shared_messages import IconInfoData
 from interactions import ParticipantType
 from interactions.base.super_interaction import SuperInteraction
 from interactions.constraints import Anywhere, Circle
+from interactions.context import InteractionContext
+from interactions.interaction_finisher import FinishingType
+from interactions.priority import Priority
+from interactions.social.social_super_interaction import SocialSuperInteraction
 from services.persistence_service import PersistenceService
 from sims.sim import Sim
 from sims4.collections import FrozenAttributeDict
@@ -28,6 +33,7 @@ from ui.ui_text_input import UiTextInput
 
 BACKEND_URL = "http://127.0.0.1:8765"
 EMPNEON_SOCIAL_INTERACTION_ID = 16906812068311597057
+EMPNEON_WAITING_INTERACTION_ID = 16906812068311597058
 AUTONOMY_INTERVAL_SIM_MINUTES = 30
 NATIVE_SOCIAL_TUNINGS = {
     "social.friendly": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
@@ -152,17 +158,17 @@ class EmpneonConversationSession:
         self.id = uuid.uuid4().hex
         self.turn_id = 0
         self.phase = "input"
-        self.transcript = ""
         self.closed = False
         self.canceled = False
         self.pending_decision = None
-        self.next_message = None
         self.response_data = None
         self.response_choice_ready = False
         self.dialogue_acknowledged = False
+        self.response_received = False
         self.native_interaction = None
         self.action_result_body = None
         self.action_result_started = False
+        self.relationship_outcome_applied = False
 
     def begin_turn(self):
         if self.closed or self.phase != "input":
@@ -176,13 +182,9 @@ class EmpneonConversationSession:
         self.closed = True
         self.canceled = bool(canceled)
         self.phase = "closed"
-        if self.canceled and self.native_interaction is not None:
-            cancel = getattr(self.native_interaction, "cancel", None)
-            if callable(cancel):
-                try:
-                    cancel()
-                except Exception:
-                    write_marker(traceback.format_exc())
+        actor_id = str(getattr(getattr(self.actor, "sim_info", None), "sim_id", ""))
+        if _CONVERSATION_SESSIONS.get(actor_id) is self:
+            _CONVERSATION_SESSIONS.pop(actor_id, None)
         if self.canceled and pending_decision is not None and not self.action_result_started:
             decision_id, action = pending_decision
             self.action_result_started = True
@@ -244,14 +246,7 @@ class EmpneonConversationSession:
         self.pending_decision = None
         self.native_interaction = None
         self.action_result_body = None
-        message = self.next_message
-        self.next_message = None
-        if message:
-            self.phase = "input"
-            if self.begin_turn() is not None:
-                submit_empneon_chat(self, message)
-        else:
-            self.close()
+        self.close()
         return True
 
 
@@ -274,8 +269,10 @@ def report_canceled_proposal(data):
 
 
 class EmpneonSocialInteraction(SuperInteraction):
-    def get_name(self, *args, **kwargs):
-        return LocalizationHelperTuning.get_raw_text("Empneon Social")
+    @flexmethod
+    def get_name(cls, inst, *args, **kwargs):
+        name = "Empneon Social" if inst is None else "Start conversation"
+        return LocalizationHelperTuning.get_raw_text(name)
 
     @flexmethod
     def _constraint_gen(cls, inst, sim, target, participant_type, **kwargs):
@@ -285,6 +282,7 @@ class EmpneonSocialInteraction(SuperInteraction):
             yield Anywhere()
 
     def _run_interaction_gen(self, timeline):
+        yield from ()
         actor = getattr(self, "sim", None)
         target = getattr(self, "target", None)
         actor_id = str(getattr(getattr(actor, "sim_info", None), "sim_id", ""))
@@ -298,20 +296,66 @@ class EmpneonSocialInteraction(SuperInteraction):
         )
         session = EmpneonConversationSession(self, actor, target)
         _CONVERSATION_SESSIONS[actor_id] = session
+        show_empneon_message_dialog(session)
+        return True
+
+
+class EmpneonWaitingInteraction(SocialSuperInteraction):
+    def __init__(self, *args, empneon_session_id=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._empneon_session_id = empneon_session_id
+
+    @flexmethod
+    def get_name(cls, inst, *args, **kwargs):
+        return LocalizationHelperTuning.get_raw_text("Waiting for response")
+
+    def get_source_social_kwargs(self):
+        kwargs = super().get_source_social_kwargs()
+        kwargs["empneon_session_id"] = self._empneon_session_id
+        return kwargs
+
+    def _run_interaction_gen(self, timeline):
+        session = find_conversation_session(
+            getattr(self, "_empneon_session_id", None)
+        )
+        if session is None or session.closed:
+            return False
+        social_group = getattr(self, "social_group", None)
+        if social_group is None:
+            session.fail("Could not start the Waiting for response social group.")
+            return False
+        social_group.on_social_super_interaction_run()
         try:
-            show_empneon_message_dialog(session)
-            while not session.closed:
+            while not session.closed and not session.response_received:
                 if session.actor is None or session.target is None:
                     session.close(canceled=True)
                     break
-                yield from element_utils.run_child(
-                    timeline, element_utils.sleep_until_next_tick_element()
+                idle = element_utils.sleep_until_next_tick_element()
+                child = (
+                    waiting_conversation_animation(self, idle)
+                    if getattr(self, "initiated", True)
+                    else idle
                 )
+                try:
+                    yield from element_utils.run_child(timeline, child)
+                    if (
+                        child is not idle
+                        and not getattr(self, "_empneon_animation_executed", False)
+                    ):
+                        self._empneon_animation_executed = True
+                        write_marker("Waiting conversation animation element completed")
+                except Exception:
+                    if child is idle:
+                        raise
+                    write_marker(
+                        "Waiting conversation animation execution failed:\n"
+                        + traceback.format_exc()
+                    )
+                    yield from element_utils.run_child(timeline, idle)
             return True
         finally:
-            if not session.closed:
+            if not session.closed and not session.response_received:
                 session.close(canceled=True)
-            _CONVERSATION_SESSIONS.pop(actor_id, None)
 
 
 def install_empneon_social(sim):
@@ -864,25 +908,7 @@ def relationship_payload(source_info, target_info):
         ("friendship", "LTR_Friendship_Main"),
         ("romance", "LTR_Romance_Main"),
     ):
-        track = None
-        for resource_name in ("STATISTIC", "RELATIONSHIP_TRACK"):
-            try:
-                resource_type = getattr(sims4.resources.Types, resource_name, None)
-                if resource_type is None:
-                    continue
-                manager = services.get_instance_manager(resource_type)
-                track = next(
-                    (
-                        tuning
-                        for tuning in manager.types.values()
-                        if getattr(tuning, "__name__", "") == tuning_name
-                    ),
-                    None,
-                )
-                if track is not None:
-                    break
-            except Exception:
-                pass
+        track = find_relationship_track(tuning_name)
         if track is None:
             continue
         track_read = False
@@ -919,6 +945,101 @@ def relationship_payload(source_info, target_info):
             except Exception:
                 pass
     return result
+
+
+def find_relationship_track(tuning_name):
+    for resource_name in ("STATISTIC", "RELATIONSHIP_TRACK"):
+        try:
+            resource_type = getattr(sims4.resources.Types, resource_name, None)
+            if resource_type is None:
+                continue
+            manager = services.get_instance_manager(resource_type)
+            track = next(
+                (
+                    tuning
+                    for tuning in manager.types.values()
+                    if getattr(tuning, "__name__", "") == tuning_name
+                ),
+                None,
+            )
+            if track is not None:
+                return track
+        except Exception:
+            pass
+    return None
+
+
+def relationship_score(tracker, target_info, track):
+    target_id = getattr(target_info, "sim_id", None)
+    for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
+        method = getattr(tracker, method_name, None)
+        if not callable(method):
+            continue
+        for target in (target_info, target_id):
+            try:
+                return float(method(target, track))
+            except Exception:
+                pass
+    return None
+
+
+def show_relationship_headlines(track, source_info, target_info, observed):
+    if not observed:
+        return
+    send = getattr(
+        getattr(track, "headline", None), "send_headline_message", None
+    )
+    if not callable(send):
+        write_marker("Native relationship headline unavailable")
+        return
+    for sim_info in (source_info, target_info):
+        try:
+            send(sim_info, observed)
+        except Exception:
+            write_marker("Relationship headline failed:\n" + traceback.format_exc())
+
+
+def apply_relationship_outcome(session, action):
+    outcomes = {
+        "relationship.friendship_positive": ("friendship", "LTR_Friendship_Main", 5),
+        "relationship.friendship_negative": ("friendship", "LTR_Friendship_Main", -5),
+        "relationship.romance_positive": ("romance", "LTR_Romance_Main", 5),
+        "relationship.romance_negative": ("romance", "LTR_Romance_Main", -5),
+    }
+    outcome = outcomes.get(action)
+    source_info = getattr(session.target, "sim_info", None)
+    target_info = getattr(session.actor, "sim_info", None)
+    if outcome is None or source_info is None or target_info is None:
+        return [], "Unsupported relationship outcome"
+    key, tuning_name, amount = outcome
+    tracker = getattr(source_info, "relationship_tracker", None)
+    track = find_relationship_track(tuning_name)
+    before = relationship_score(tracker, target_info, track)
+    add_score = getattr(tracker, "add_relationship_score", None)
+    if track is None or before is None or not callable(add_score):
+        return [], "Native relationship track unavailable"
+    try:
+        add_score(getattr(target_info, "sim_id", target_info), amount, track)
+    except Exception as exc:
+        return [], str(exc)
+    after = relationship_score(tracker, target_info, track)
+    if after is None:
+        return [], "Native relationship result unavailable"
+    observed = int(round(after - before))
+    if observed:
+        show_relationship_headlines(track, source_info, target_info, observed)
+    changes = (
+        [
+            {
+                "path": "relationship." + key,
+                "operation": "increment",
+                "value": observed,
+            }
+        ]
+        if observed
+        else []
+    )
+    return changes, None
 
 
 def iter_sim_infos():
@@ -1076,7 +1197,7 @@ def process_autonomy_responses(_alarm_handle):
         if session is not None:
             if event == "dialogue_displayed" and turn_id == session.turn_id:
                 session.dialogue_acknowledged = True
-                continue_displayed_turn(session)
+                complete_delivered_turn(session)
             elif event == "dialogue_failed" and turn_id == session.turn_id:
                 session.fail(detail)
             elif event == "native_finished":
@@ -1197,8 +1318,6 @@ def execute_sims_action(
             raise RuntimeError("no native social mapped for {}".format(action))
         from interactions.aop import AffordanceObjectPair
 
-        from interactions.context import InteractionContext
-        from interactions.priority import Priority
         import sims4.resources
 
         bit_manager = services.get_instance_manager(sims4.resources.Types.RELATIONSHIP_BIT)
@@ -1517,6 +1636,87 @@ def find_action_affordance(action):
     )
 
 
+class _VisualOutcomeActions:
+    _DISABLED = {
+        "loot_list": (),
+        "add_target_affordance_loot": False,
+        "consume_object": False,
+        "basic_extras": (),
+        "continuation": None,
+        "parameterized_autonomy": {},
+        "route_events": None,
+        "events_to_send": (),
+        "cancel_si": None,
+        "xevt": None,
+    }
+
+    def __init__(self, actions):
+        self._actions = actions
+
+    def __getattr__(self, name):
+        if name in self._DISABLED:
+            return self._DISABLED[name]
+        return getattr(self._actions, name)
+
+
+def waiting_conversation_animation(interaction, sequence):
+    try:
+        from interactions.aop import AffordanceObjectPair
+        from interactions.utils.outcome import build_outcome_actions
+
+        affordance = find_action_affordance("friendly_chat")
+        mixer = getattr(interaction, "_empneon_waiting_mixer", None)
+        if mixer is None:
+            mapped = AffordanceObjectPair(
+                affordance,
+                interaction.target,
+                interaction.affordance,
+                interaction,
+            ).interaction_factory(interaction.context)
+            mixer = getattr(mapped, "interaction", None)
+            if mixer is None:
+                raise RuntimeError("could not create waiting conversation mixer")
+            interaction._empneon_waiting_mixer = mixer
+        outcome = getattr(affordance, "outcome", None)
+        fallback_outcomes = tuple(getattr(outcome, "_fallback_outcomes", ()))
+        for weighted_outcome in fallback_outcomes:
+            actions = getattr(weighted_outcome, "outcome", None)
+            animation_ref = getattr(actions, "animation_ref", None)
+            if callable(animation_ref):
+                mixer.build_outcome = lambda: element_utils.build_element(())
+                mixer.relationship_scoring = False
+                animation = mixer.build_basic_elements(
+                    build_outcome_actions(mixer, _VisualOutcomeActions(actions))
+                )
+                if not getattr(interaction, "_empneon_animation_diagnostic", False):
+                    interaction._empneon_animation_diagnostic = True
+                    write_marker(
+                        "Waiting conversation animation built: affordance={} outcome={} "
+                        "fallbacks={} owner={} animation={}".format(
+                            getattr(affordance, "__name__", type(affordance).__name__),
+                            type(outcome).__name__,
+                            len(fallback_outcomes),
+                            type(mixer).__name__,
+                            type(animation).__name__,
+                        )
+                    )
+                return element_utils.build_element((animation, sequence))
+        if not getattr(interaction, "_empneon_animation_diagnostic", False):
+            interaction._empneon_animation_diagnostic = True
+            write_marker(
+                "Waiting conversation animation unavailable: affordance={} outcome={} "
+                "fallbacks={}".format(
+                    getattr(affordance, "__name__", type(affordance).__name__),
+                    type(outcome).__name__,
+                    len(fallback_outcomes),
+                )
+            )
+        return sequence
+    except Exception:
+        write_marker("Waiting conversation animation failed:\n" + traceback.format_exc())
+        return sequence
+
+
 def available_social_categories():
     return [
         category
@@ -1629,13 +1829,25 @@ def raw_text(text):
     return lambda **_: LocalizationHelperTuning.get_raw_text(str(text))
 
 
-def show_empneon_notification(owner, title, text):
-    notification = UiDialogNotification.TunableFactory().default(
-        owner,
-        title=raw_text(title),
-        text=raw_text(text),
-    )
-    notification.show_dialog()
+def show_empneon_notification(owner, title, text, secondary_owner=None):
+    if owner is None:
+        return False
+    try:
+        notification = UiDialogNotification.TunableFactory().default(
+            owner,
+            title=raw_text(title),
+            text=raw_text(text),
+        )
+        show_kwargs = {"icon_override": IconInfoData(obj_instance=owner)}
+        if secondary_owner is not None:
+            show_kwargs["secondary_icon_override"] = IconInfoData(
+                obj_instance=secondary_owner
+            )
+        notification.show_dialog(**show_kwargs)
+        return True
+    except Exception:
+        write_marker(traceback.format_exc())
+        return False
 
 
 def show_action_confirmation_dialog(session, message):
@@ -1669,7 +1881,7 @@ class EmpneonTextInputLength(HasTunableSingletonFactory, AutoFactoryInit):
         )
 
 
-def show_empneon_message_dialog(session, transcript="", response_data=None):
+def show_empneon_message_dialog(session):
     actor = session.actor
     target = session.target
     if actor is None or target is None:
@@ -1689,14 +1901,11 @@ def show_empneon_message_dialog(session, transcript="", response_data=None):
     inputs = FrozenAttributeDict({"message": message_input})
     dialog = UiDialogTextInputOkCancel.TunableFactory().default(
         actor,
-        title=raw_text(
-            "{} says:".format(target_name)
-            if response_data is not None
-            else "Empneon Social with {}".format(target_name)
-        ),
+        title=raw_text("Empneon Social with {}".format(target_name)),
         text=raw_text(
-            transcript
-            or "What should {} say to {}?".format(sim_full_name(actor.sim_info), target_name)
+            "What should {} say to {}?".format(
+                sim_full_name(actor.sim_info), target_name
+            )
         ),
         text_inputs=inputs,
     )
@@ -1704,10 +1913,7 @@ def show_empneon_message_dialog(session, transcript="", response_data=None):
     def on_response(response):
         if not getattr(response, "accepted", False):
             write_marker("Empneon Social input canceled")
-            if response_data is None:
-                session.close(canceled=True)
-            else:
-                finish_displayed_turn(session, response_data, None)
+            session.close(canceled=True)
             return
         responses = getattr(response, "text_input_responses", {}) or {}
         value = responses.get("message")
@@ -1723,16 +1929,47 @@ def show_empneon_message_dialog(session, transcript="", response_data=None):
         if not message:
             show_empneon_notification(actor, "Empneon Social", "Enter a message before sending.")
             return
-        if response_data is not None:
-            finish_displayed_turn(session, response_data, message)
+        if not show_empneon_notification(
+            actor,
+            sim_full_name(getattr(actor, "sim_info", actor)),
+            message,
+            target,
+        ):
+            session.close(canceled=True)
             return
-        turn_id = session.begin_turn()
-        if turn_id is not None:
-            session.transcript = transcript
-            submit_empneon_chat(session, message)
+        queue_awaiting_answer(session, message)
 
     dialog.add_listener(on_response)
     dialog.show_dialog()
+    return True
+
+
+def queue_awaiting_answer(session, message):
+    affordance = services.affordance_manager().get(EMPNEON_WAITING_INTERACTION_ID)
+    if affordance is None or session.actor is None or session.target is None:
+        session.fail("Could not queue Waiting for response.")
+        return False
+    context = InteractionContext(
+        session.actor,
+        InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
+        Priority.High,
+    )
+    result = session.actor.push_super_affordance(
+        affordance,
+        session.target,
+        context,
+    )
+    interaction = getattr(result, "interaction", None)
+    if interaction is None:
+        session.fail("Could not queue Waiting for response.")
+        return False
+    interaction._empneon_session_id = session.id
+    session.interaction = interaction
+    turn_id = session.begin_turn()
+    if turn_id is None:
+        session.close(canceled=True)
+        return False
+    submit_empneon_chat(session, message)
     return True
 
 
@@ -1747,10 +1984,6 @@ def submit_empneon_chat(session, message):
         "pie_menu",
     )
     payload["conversation_id"] = session.id
-    speaker_name = sim_full_name(getattr(actor, "sim_info", actor))
-    transcript = "{}\n\n{}: {}".format(session.transcript, speaker_name, message).strip()
-    session.transcript = transcript
-    show_empneon_notification(actor, "Empneon Social", "Thinking...")
 
     def worker():
         try:
@@ -1826,31 +2059,18 @@ def report_dialogue_delivery(
 def show_empneon_chat_result(session, data, error):
     actor = session.actor
     target = session.target
+    if actor is None or target is None:
+        report_canceled_proposal(data)
+        session.close(canceled=True)
+        return False
     target_name = sim_full_name(getattr(target, "sim_info", target))
     if error:
         show_empneon_notification(actor, "Empneon error", error)
         write_marker("Empneon Social failed: " + error)
-        session.phase = "input"
-        show_empneon_message_dialog(session, session.transcript)
-        return
+        session.close(canceled=True)
+        return False
     payload = data.get("_empneon_payload")
-    details = "Emotion: {} | Category: {} | Tone: {} | Native action: {}".format(
-        data.get("emotion", "neutral"),
-        data.get("response_category", "friendly"),
-        ", ".join(data.get("tone_tags") or []) or "neutral",
-        data.get("suggested_action", "none"),
-    )
-    trust_delta = int(data.get("trust_delta") or 0)
-    if trust_delta:
-        details += "\nEmpneon trust {:+d}".format(trust_delta)
     dialogue = str(data.get("dialogue") or "...")
-    transcript = "{}\n\n{}: {}\n\n{}".format(
-        session.transcript,
-        target_name,
-        dialogue,
-        details,
-    ).strip()
-    session.transcript = transcript
     decision_id = data.get("decision_id")
     session.pending_decision = (
         (
@@ -1860,7 +2080,23 @@ def show_empneon_chat_result(session, data, error):
         if decision_id
         else None
     )
-    displayed = show_empneon_message_dialog(session, transcript, data)
+    displayed = show_empneon_notification(target, target_name, dialogue, actor)
+    session.response_received = displayed
+    if displayed:
+        cancel = getattr(session.interaction, "cancel", None)
+        if callable(cancel):
+            try:
+                cancel(
+                    FinishingType.NATURAL,
+                    cancel_reason_msg="Empneon response received",
+                )
+            except Exception:
+                write_marker(
+                    "Waiting interaction completion failed:\n"
+                    + traceback.format_exc()
+                )
+    session.response_data = data
+    session.response_choice_ready = displayed
     if displayed and data.get("decision_id"):
         report_dialogue_delivery(
             actor,
@@ -1870,20 +2106,14 @@ def show_empneon_chat_result(session, data, error):
             session_id=session.id,
             turn_id=session.turn_id,
         )
+    elif not displayed:
+        report_canceled_proposal(data)
+        session.close(canceled=True)
     write_marker("Empneon Social response from {}: {}".format(target_name, dialogue))
+    return displayed
 
 
-def finish_displayed_turn(session, data, next_message):
-    if session.closed or session.phase != "showing_response":
-        return False
-    session.next_message = next_message
-    session.response_data = data
-    session.response_choice_ready = True
-    continue_displayed_turn(session)
-    return True
-
-
-def continue_displayed_turn(session):
+def complete_delivered_turn(session):
     if (
         session.closed
         or session.phase != "showing_response"
@@ -1894,13 +2124,19 @@ def continue_displayed_turn(session):
     data = session.response_data or {}
     action = str(data.get("suggested_action") or data.get("animation") or "none")
     if action == "none":
-        session.after_native_action(session.turn_id)
+        session.close()
         return True
-    session.phase = "running_native_action"
-    execute_sims_action(
-        data.pop("_empneon_payload", None),
-        data,
-        None,
+    if session.relationship_outcome_applied:
+        return False
+    session.relationship_outcome_applied = True
+    changes, error = apply_relationship_outcome(session, action)
+    session.phase = "confirming_relationship"
+    report_action_result(
+        data.get("decision_id"),
+        action,
+        "failed" if error else "succeeded",
+        error,
+        changes,
         session_id=session.id,
         turn_id=session.turn_id,
     )
@@ -2249,6 +2485,17 @@ def ai_relationship(*args, _connection=None):
     rel = data.get("relationship") or {}
     native = rel.get("native") or {}
     empneon = rel.get("empneon") or {}
+    if target_info is not None:
+        current = relationship_payload(target_info, getattr(sim, "sim_info", None))
+        native = dict(native)
+        native["friendship"] = current.get("friendship", 0)
+        native["romance"] = current.get("romance", 0)
+        current_attraction = (current.get("native") or {}).get("attraction")
+        native["attraction"] = (
+            dict(current_attraction, normalized=current.get("attraction"))
+            if isinstance(current_attraction, dict)
+            else {}
+        )
     attraction = native.get("attraction") or {}
     attraction_text = "unavailable"
     if isinstance(attraction, dict) and isinstance(

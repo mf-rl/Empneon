@@ -45,9 +45,13 @@ py -3.12 -m pip install -e ..\..\core -e .
 ```
 
 5. In The Sims 4, enable custom content and script mods, then restart the game. Clicking another
-   Sim now shows **Empneon Social** in the pie menu. It opens a native transcript dialog for
-   repeated messages and generated replies; progress and errors remain notifications. Safe
-   cancellation and save/reload continuity are documented in the
+   Sim now shows **Empneon Social** in the pie menu. **Start conversation** routes to the target
+   and opens one native input box. Sending displays the player's message with their portrait and
+   queues **Waiting for response**, where both Sims play a cosmetic conversation animation. The
+   reply is a notification with the target Sim's portrait and ends the interaction. A new message
+   requires a new Empneon Social. The current animation may occasionally include a bored-looking
+   gesture from the target Sim; it has no intended gameplay effect. Safe cancellation, relationship
+   feedback, and save/reload continuity are documented in the
    [setup guide](docs/setup.md).
 
    The existing diagnostic commands remain available through the cheat console:

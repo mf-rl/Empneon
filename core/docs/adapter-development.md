@@ -50,7 +50,7 @@ A dialogue `intent` describes what the response means. Request-scoped action met
 which currently available native action to run; it does not rewrite the dialogue intent. Treat
 both as proposals. Persist cognitive memory and trust only after the dialogue is delivered, and
 persist native relationship changes only from game-observed friendship or romance tracks after
-the selected action finishes. Queue acceptance alone confirms neither outcome.
+the selected game consequence is applied. Queue acceptance alone confirms neither outcome.
 
 ## Minimal adapter
 

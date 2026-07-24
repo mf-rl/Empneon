@@ -31,6 +31,20 @@ SIMS_ACTIONS = frozenset(
 )
 SOCIAL_ACTIONS = frozenset("social." + category for category in SOCIAL_CATEGORIES)
 SIMS_ACTIONS |= SOCIAL_ACTIONS
+RELATIONSHIP_OUTCOMES = frozenset(
+    {
+        "friendship_positive",
+        "friendship_negative",
+        "romance_positive",
+        "romance_negative",
+        "none",
+    }
+)
+RELATIONSHIP_ACTIONS = {
+    outcome: "relationship." + outcome
+    for outcome in RELATIONSHIP_OUTCOMES
+    if outcome != "none"
+}
 
 INTENT_ACTIONS = {
     "acknowledge": "idle",
@@ -282,6 +296,8 @@ class Sims4Adapter:
         for change in decision.state_changes:
             if change.path == "animation":
                 action = str(change.value)
+                if action in RELATIONSHIP_ACTIONS.values() or action == "none":
+                    return action
                 if action in SOCIAL_ACTIONS:
                     configured_categories = self._payload.get(
                         "available_response_categories"
@@ -318,6 +334,9 @@ class Sims4Adapter:
         category = str(response.get("response_category") or "friendly")
         if category not in SOCIAL_CATEGORIES:
             category = "friendly"
+        outcome = str(response.get("relationship_outcome") or "none")
+        if outcome not in RELATIONSHIP_OUTCOMES:
+            outcome = "none"
         changes.extend(
             (
                 StateDelta("social.response_category", "set", category),
@@ -326,14 +345,11 @@ class Sims4Adapter:
                     "set",
                     _items(response.get("tone_tags")),
                 ),
+                StateDelta("social.relationship_outcome", "set", outcome),
                 StateDelta(
                     "animation",
                     "set",
-                    (
-                        "none"
-                        if response.get("suggested_action") == "none"
-                        else "social." + category
-                    ),
+                    RELATIONSHIP_ACTIONS.get(outcome, "none"),
                 ),
             )
         )
@@ -359,6 +375,7 @@ class Sims4Adapter:
             "response_category": "friendly",
             "tone_tags": [],
             "trust_delta": 0,
+            "relationship_outcome": "none",
             "memory": {"importance": 0.0, "summary": ""},
             "suggested_action": "none",
             "animation": "none",
@@ -371,6 +388,8 @@ class Sims4Adapter:
                 response["response_category"] = change.value
             elif change.path == "social.tone_tags":
                 response["tone_tags"] = change.value
+            elif change.path == "social.relationship_outcome":
+                response["relationship_outcome"] = change.value
             elif change.path == "emotion":
                 response["expressed_emotion"] = response["emotion"] = change.value
             elif change.path == "animation":

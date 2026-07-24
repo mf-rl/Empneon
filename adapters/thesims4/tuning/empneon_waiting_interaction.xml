@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<I c="EmpneonWaitingInteraction" i="interaction" m="ai_sims_agent" n="Empneon:Waiting" s="16906812068311597058">
+  <V n="_saveable" t="disabled" />
+  <T n="_social_group_type">16390</T>
+  <T n="allow_autonomous">False</T>
+  <T n="allow_user_directed">True</T>
+  <V n="basic_content" t="flexible_length" />
+  <V n="canonical_animation" t="enabled">
+    <U n="enabled">
+      <T n="factory">11326</T>
+    </U>
+  </V>
+  <V n="idle_animation" t="enabled">
+    <U n="enabled">
+      <T n="factory">11570</T>
+    </U>
+  </V>
+  <T n="ignores_greetings">True</T>
+  <U n="listen_animation">
+    <T n="factory">11570</T>
+  </U>
+  <V n="outcome" t="single" />
+  <T n="relationship_scoring">False</T>
+  <E n="target_type">TARGET</E>
+</I>

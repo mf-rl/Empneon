@@ -7,7 +7,7 @@ data first.
 ## Common setup
 
 Test 5 is the exception to the release setup below: use the source-build development workflow in
-`setup.md` so the installed mod and backend both come from the feature worktree.
+`setup.md` so the installed mod and backend both come from the same repository checkout.
 
 1. Extract the release, run `install_mod.ps1`, then run `run_backend.ps1`.
 2. Enable **Custom Content and Mods** and **Script Mods Allowed**, restart the game, and load a
@@ -117,31 +117,38 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-22): PARTIAL / MULTI-TURN NATIVE ACTION DEADLOCK** — Automated coverage
-classifies incoming and response dialogue independently as `friendly`, `funny`, `romance`, `mean`,
-or `mischief`; derives exactly one common native action; grounds the response in both actor states;
-and leaves friendship and romance to observed game results. A live romance response reached the
-exact mapped tuning, but the held Empneon Social and the queued native action waited on each other.
-The second message never reached the backend, the native action ended with
-`FinishingType.LIABILITY`, and cleanup called the Sims cancellation API with missing arguments.
-Fix and retest this lifecycle before running the remaining category rows.
+**Current status (2026-07-23): PARTIAL / CORE FLOW AND WAITING ANIMATION LIVE-PASSED** — The two
+queue phases use separate tuning resources: **Start conversation** ends after input submission and
+**Waiting for response** is queued before provider work starts. The waiting task is a custom social
+super interaction using the native chat group. Its initiating side builds the visual portion of a
+friendly conversation outcome while disabling loot, continuations, events, cancellation, extras,
+and relationship scoring. Live testing confirms that the task ends when the answer arrives and a
+conversation animation now plays; the chosen EA animation occasionally makes Sim B look bored,
+which is accepted as a cosmetic limitation for this phase. Automated coverage verifies that the
+waiting visual path adds no relationship or gameplay outcome. Exact dual-portrait layout and
+floating relationship symbols remain open live checks.
+
+Warm, playful, or romantic reception in the `romance` response category now receives the existing
+mild `romance_positive` outcome when the model returns `none`, provided the response is not
+hesitant, neutral, uncertain, hostile, or an explicit rejection.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
-  start the source backend as documented in `setup.md`.
+  start the source backend as documented in `setup.md` with
+  `response_rejection_enabled` set to `false`.
 - Run this matrix and capture every row:
 
   | Incoming message | Expected incoming category | Acceptable response categories |
   |---|---|---|
-  | “How was your day?” | `friendly` | any state-grounded category |
-  | “Tell me a joke.” | `funny` | any state-grounded category |
-  | “Would you go on a date with me?” | `romance` | any state-grounded category |
-  | “I hate you. Go away.” | `mean` | any state-grounded category |
-  | “Let's prank another Sim.” | `mischief` | any state-grounded category |
+  | “How was your day?” | `friendly` | any normalized category |
+  | “Tell me a joke.” | `funny` | any normalized category |
+  | “Would you go on a date with me?” | `romance` | any normalized category |
+  | “I hate you. Go away.” | `mean` | any normalized category |
+  | “Let's prank another Sim.” | `mischief` | any normalized category |
 
-  For each row record both actor snapshots, incoming and response category, tone tags, common
-  `social.<category>` action, exact native tuning, completion result, and relationship values before
-  and after. The response category may differ from the incoming category. A naturally completed
-  native interaction with a zero relationship delta is valid.
+  For each row record both actor snapshots, incoming and response category, tone tags, bounded
+  `relationship_outcome`, displayed notifications, and relationship values before and after. The
+  response category may differ from the incoming category. `none` is a valid relationship-neutral
+  result.
 - Attraction evidence: capture `ai.relationship Karmine` in both directions before dialogue. The
   command must show either `Sims attraction <normalized> (<source>: <label>)` or explicit
   `unavailable`. With supported WickedWhims attraction enabled, source must be `wickedwhims`; with
@@ -150,41 +157,47 @@ Fix and retest this lifecycle before running the remaining category rows.
   tone without forcing flirtation, consent, or a romance delta.
 - Action: record `ai.relationship Karmine`, Karmine's reported life stage, gender, and traits, and
   Bernard's gender. Start **Empneon Social** with Karmine and submit a romantic invitation that
-  includes an exact date such as `Saturday`. Continue for at least one more turn. Repeat once,
-  manually cancelling the queued Empneon Social while the backend is still working.
-- Expected game result: the original grounded dialogue is displayed; Empneon Social stays in the
-  queue while waiting; autonomy does not interrupt the session; each displayed turn updates
-  memory and Empneon trust. After delivery acknowledgement, a non-`none` derived action launches
-  its mapped native Sims social; `none` remains dialogue-only. The native action finishes and
-  reports its observed before/after relationship tracks before the session continues. Only
-  game-observed friendship/romance changes persist; manual queue cancellation suppresses the late
-  backend result.
+  includes an exact date such as `Saturday`. Start a new Empneon Social for a second message.
+  Repeat once, manually cancelling **Waiting for response** while the backend is still working.
+- Expected game result: **Start conversation** disappears when the input opens. The player's
+  submitted text appears with Sim A as the primary portrait and Sim B as the secondary portrait.
+  **Waiting for response** remains only until the response arrives and both Sims play a cosmetic
+  conversation animation without another queue entry. The answer then appears with Sim B primary
+  and Sim A secondary, and the waiting animation stops. A non-`none` outcome applies one mild
+  native friendship or romance update without queueing another social, then shows the matching
+  tuned headline above both Sims; `none` is dialogue-only. Only the observed native delta is
+  reported. Manual cancellation suppresses the late dialogue, memory, trust, and relationship
+  outcome.
+- Low-grade romance check: submit a romantic compliment that receives a warm, playful, or romantic
+  answer without rejection. Confirm romance changes by the observed mild amount and the native
+  floating romance headline appears. Repeat with a hesitant or rejecting answer and confirm the
+  positive fallback does not apply.
 - Expected diagnostic result: `/diagnostics/sim?sim_id=<ACTOR_ID>` shows the actor-to-target Core
   relationship. Friendship/trust are normalized, and a confirmed positive romance consequence
   marks the relationship romantic. Query the target separately to verify that directed edges can
   differ.
-- Evidence to capture for each run: exact player message and displayed response, before/after
-  `ai.relationship` output, held-session decision ID, selected action, and whether the session
-  continued or closed. When the action is `none`, confirm no native social ran. When it is `flirt`,
-  capture the mapped native interaction, finishing result, and observed romance delta. For the
-  cancellation run, record that no late dialogue, memory, trust, or native action appeared.
-  Verify exact loaded tunings first with `ai.tunings AskAboutDay`, `TellJoke`,
-  `ComplimentAppearance`, `Insult`, and `LieAboutCareer`. If an exact tuning is absent, record that
-  category as unavailable; do not substitute another social category.
-- Focused dialogue assertions: Karmine's reply is distinct from Bernard's current message,
-  Bernard's earlier messages, and Karmine's earlier replies; Karmine uses `boyfriend` or neutral
-  wording for male Bernard, never `girlfriend`; the reply respects Karmine's reported life stage
-  and traits without reciting trait labels; and exact facts such as `Saturday` remain usable when
+- Evidence to capture for each run: exact player and response notification portrait order, queue
+  task names and timing, waiting animation start/stop behavior, decision ID, bounded relationship
+  outcome, before/after `ai.relationship` output, and the exact floating friendship/romance
+  symbols above each Sim. Confirm no response-derived native social appears. For the cancellation
+  run, record that the animation stops and no late dialogue, memory, trust, or relationship change
+  appeared.
+- Focused dialogue observations: record whether Karmine's reply is distinct from Bernard's current
+  message, Bernard's earlier messages, and Karmine's earlier replies; whether Karmine uses
+  `boyfriend` or neutral wording for male Bernard rather than `girlfriend`; whether the reply
+  respects Karmine's reported life stage and traits without reciting trait labels; and whether
+  exact facts such as `Saturday` remain usable when
   the surrounding response is distinct.
 - Focused need/continuity assertions: capture Karmine's and Bernard's visible mood/need state before
   the conversation. Green needs do not force a need report; orange/red needs may influence natural
   wording without exposing numeric values or replacing a valid model reply. Continue enough turns
   to confirm replies introduce a new reaction, detail, question, or decision instead of recycling
   earlier inputs or replies.
-- Focused queue/state assertions: held Empneon Social does not deadlock; it remains actionless for
-  `none` and runs the mapped native interaction for a non-`none` suggestion only after dialogue is
-  displayed. Sims friendship, romance, and attraction changes come only from game-observed
-  behavior; Empneon trust changes only after dialogue is displayed.
+- Focused queue/state assertions: **Start conversation** completes after input and **Waiting for
+  response** remains cancelable without deadlocking. No response-derived native social is queued.
+  A non-`none` relationship outcome is applied directly only after dialogue delivery, and only its
+  observed friendship or romance delta is confirmed. Attraction remains game-owned and independent;
+  Empneon trust changes only after dialogue is displayed.
 - Persistence: save/reload and compare both directions again.
 - Cleanup: none; use a disposable save if relationship changes matter.
 
