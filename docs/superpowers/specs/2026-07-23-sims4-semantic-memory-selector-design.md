@@ -1,7 +1,7 @@
 # Sims 4 Semantic Memory Selector Design
 
 **Date:** 2026-07-23
-**Status:** Implemented; date recall live-passed, response synthesis remains partial
+**Status:** Implemented; date and non-date paraphrase recall live-passed
 
 ## Goal
 
@@ -87,13 +87,16 @@ Automated tests will cover:
 In-game verification will repeat the existing date test with several phrasings and test at least one
 non-date memory after restarting the backend.
 
-The implementation passes all 200 Sims 4 adapter tests. A direct request through the configured LM
+The initial implementation passed all 200 Sims 4 adapter tests. A direct request through the configured LM
 Studio model selected only the stored `Tonight, 7pm, at my place` agreement for the indirect date
 question. Live testing with `Hey, baby. When are we going on a date?` also recalled that plan, but
 the main dialogue model repeated the stored acceptance response verbatim. Retrieval therefore
-passes for this date case while fresh, question-specific response synthesis remains the next task.
-The remaining manual checks are:
+passed for this date case while fresh, question-specific response synthesis remained a follow-up.
+Later July 24 work excluded stored generated replies from authoritative recall, enforced attributed
+time and location evidence, and produced fresh date wording across save/reload.
 
-- `When is our date?`
-- `Can you tell the day and time we're going on a date?`
-- `Any idea where I put the thing that opens the garden?`
+The final non-date acceptance asked the informed Sim `Where is the garden code item?` without the
+stored `PRIVATE-GARDEN-731` identifier. The Sim retrieved `under the blue bench` in fresh wording
+before and after backend restart. An uninformed Sim asked the same paraphrase and disclosed no
+private location. The complete Core and Sims suites later passed `225` and `235` tests,
+respectively.

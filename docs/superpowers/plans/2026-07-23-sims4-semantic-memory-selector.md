@@ -4,8 +4,7 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Execution status:** Implemented and automated checks passed. The first live paraphrased date
-recall selected the correct fact; fresh response synthesis remains a follow-up.
+**Execution status:** Implemented; date and non-date paraphrase recall live-passed.
 
 **Goal:** Select relevant shared Sims memories through one bounded LM Studio request so paraphrased
 questions retrieve supporting history without growing the main dialogue prompt indefinitely.
@@ -634,3 +633,8 @@ The first in-game paraphrase retest selected the correct `Tonight at 7 pm at you
 response verbatim. The selector task is complete; the next session should change response synthesis
 so selected exchanges ground a fresh answer rather than becoming copyable answer text, then retest
 both date and unrelated memory scenarios.
+
+July 24 closeout: subsequent recall-integrity work produced fresh attributed date responses across
+save/reload. The informed Sim then retrieved `under the blue bench` from `Where is the garden code
+item?` before and after backend restart, while the uninformed Sim disclosed no private location.
+The selector's date and non-date live acceptance is complete.

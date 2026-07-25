@@ -167,6 +167,13 @@ through its initiator-only visual fallback when no linked social group was avail
 `+++` feedback and relationship milestones such as best friends, first kisses, and proposals are
 deferred and must not be triggered by this implementation.
 
+On July 24, the in-game Core matrix also closed Tests 7 through 9. A non-date paraphrase retrieved
+the informed pair's private `under the blue bench` location before and after backend restart while
+an uninformed pair disclosed no location. Scheduled CLOD 1 autonomy queued a mapped NPC social with
+LM Studio stopped and retained a zero-token `core-rules` usage record after restart. A
+provider-backed current-state question then completed at CLOD 3 with grounded mood dialogue,
+positive token/latency accounting, and persistent telemetry.
+
 Memory settings:
 
 - `recent_limit`: memories placed in a conversation context

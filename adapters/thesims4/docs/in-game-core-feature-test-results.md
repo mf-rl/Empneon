@@ -6,7 +6,7 @@ this record contains only the evidence needed to determine pass/fail status.
 ## Remediation status
 
 The current branch includes automated regressions and fixes for the actionable defects below.
-Tests 4, 5, and 6 have passed their live acceptance retests; Test 7 remains the next partial gate:
+Tests 4 through 9 have passed their live acceptance retests; Test 10 is the next sequential gate:
 
 - Test 3 generic fallback summaries now contain the concrete message and reply.
 - Test 4 now passes: the live aspiration tracker is ingested, and need-goal lifecycle state
@@ -16,8 +16,13 @@ Tests 4, 5, and 6 have passed their live acceptance retests; Test 7 remains the 
   accepted invitations to `flirt`, and reads native friendship and romance tracks separately.
 - Test 6 persists confirmed identifier facts, rejects denial or contradiction when evidence is
   available, and rejects fabricated answers when the queried pair has no matching evidence.
-- Test 7 ranks the complete observable memory set, filters it by the exact Sim pair, and excludes
-  irrelevant historical summaries from the dialogue prompt.
+- Test 7 ranks the complete observable memory set, filters it by the exact Sim pair, excludes
+  irrelevant historical summaries, and retrieves a private non-date location from a paraphrase
+  without leaking it to an uninformed pair.
+- Test 8 confirms scheduled provider-free CLOD 1 autonomy, zero-token usage accounting, and
+  telemetry persistence after backend restart.
+- Test 9 confirms provider-backed dynamic CLOD 3 dialogue and persistent usage telemetry. Core no
+  longer mistakes a mid-sentence current-state `what do` question for historical recall.
 - `FinishingType.OBJECT_CHANGED` remains a reported game cancellation and is not retried
   automatically, avoiding duplicate native socials.
 
@@ -883,9 +888,9 @@ still answered that the item was under the blue bench while Billie did not revea
 **Final result:** Test 6 passes confirmation gating, informed recall, uninformed-pair privacy,
 response rejection, deterministic uncertainty fallback, and save/reload persistence.
 
-## Test 7: Local vector retrieval
+## Test 7: Semantic memory retrieval
 
-**Status:** PARTIAL / EXACT IDENTIFIER AND DATE RECALL PASS; NON-DATE PARAPHRASE PENDING
+**Status:** PASS / NON-DATE PARAPHRASE, PRIVACY, AND RESTART PERSISTENCE LIVE-VERIFIED
 
 **Procedure:** After several additional Empneon interactions, Bernard asked both Karmine and
 Billie `Where is the PRIVATE-GARDEN-731?`, then saved/reloaded and repeated both questions.
@@ -942,6 +947,54 @@ at your place is lovely. You have such a charming way of making things feel like
 save/reload and produces fresh grounded wording. Test 6 then verified exact private identifier
 recall and rejection for an uninformed pair.
 
-**Next task:** Ask the informed Sim `Where is the garden code item?` without repeating
-`PRIVATE-GARDEN-731`. Verify that the paraphrase retrieves `under the blue bench` in fresh wording,
-then ask the uninformed Sim the same paraphrase and confirm that no private location is disclosed.
+### July 24 non-date paraphrase acceptance
+
+- After unrelated pizza and relationship conversations, Sim A asked the informed Sim,
+  `Where is the garden code item?`
+- The informed Sim answered, `The garden code item? Well, it's right under the blue bench.`
+- After restarting the backend, the informed Sim answered the same paraphrase with,
+  `The garden code item is under the blue bench, Bernard.`
+- Sim A then asked the uninformed Sim the same paraphrase. The response asked which garden item was
+  meant and did not disclose `under the blue bench`.
+- This passes semantic paraphrase selection, fresh response wording, pair privacy, intervening
+  conversation tolerance, and backend-restart persistence. Test 7 is closed as **PASS**.
+
+## Test 8: Provider-free CLOD 1
+
+**Status:** PASS / SCHEDULED NATIVE EXECUTION AND USAGE PERSISTENCE LIVE-VERIFIED
+
+- With LM Studio stopped, the repeating 30-sim-minute alarm remained active. Several ticks safely
+  logged `no scored NPC interaction` while native Sims autonomy had no eligible scored pair.
+- A later scheduled tick selected Akachi Onoja and Alika Kahananui and queued the mapped
+  `mixer_social_AskAboutDay_targeted_Friendly_alwaysOn` interaction without invoking
+  `ai.autonomous`.
+- Global usage increased from `requests=45` to `requests=46` and from CLOD 1 `2` to `3`.
+- The new database record used provider `core-rules`, model `clod1`, and zero prompt tokens,
+  completion tokens, and latency.
+- After restarting only the backend with LM Studio still stopped, `aiping` succeeded and
+  `empneon.usage` retained `requests=46`, CLOD `{'3':51,'1':3,'2':23}`, prompt `538437`,
+  completion `5013`, and latency `1282606ms`.
+- Test 8 is closed as **PASS**.
+
+## Test 9: Provider-backed dynamic CLOD and usage
+
+**Status:** PASS / LIVE CLOD 3 ROUTING, GROUNDING, AND USAGE PERSISTENCE VERIFIED
+
+- The first live attempt asked, `How are you feeling right now, and what do you want to do?`
+  and exposed a Core classifier defect. The generic WH pattern treated the mid-sentence
+  `what do` clause as historical recall, rejected two normal model answers for lacking memory
+  evidence, rejected the fallback under the same rule, and returned HTTP 500.
+- Core now limits generic WH recall detection to sentence boundaries while preserving
+  explicit recall wording and existing time/location constraints. The exact failed prompt is a
+  non-recall regression.
+- Red/green verification reproduced `RecallQuery(explicit=True)` before the fix, then passed all
+  `29` focused recall tests. The complete Core suite passed `225` tests and the complete Sims 4
+  adapter suite passed `235` tests.
+- The live retest returned, `Feeling kind of awkward, honestly. What do you even want to do?`
+  The response was consistent with the target's visible **Embarrassed +1** and
+  **Uncomfortable +1** moodlets and red Energy need.
+- Global usage increased from `requests=46` to `47`, CLOD 3 from `51` to `52`, prompt tokens by
+  `13,588`, completion tokens by `97`, and latency by `13,793ms`.
+- After restarting only the backend, usage retained `requests=47`, CLOD
+  `{'3':52,'1':3,'2':23}`, prompt `552025`, completion `5110`, and latency `1296399ms`.
+- Test 9 is closed as **PASS**. Test 10 priority under concurrent Sims is the next sequential gate.

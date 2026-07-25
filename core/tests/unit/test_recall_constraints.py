@@ -31,6 +31,11 @@ from empneon.core.memory.recall import (
             False,
             frozenset(),
         ),
+        (
+            "How are you feeling right now, and what do you want to do?",
+            False,
+            frozenset(),
+        ),
         ("I remember our date.", False, frozenset()),
         ("I am happy today.", False, frozenset()),
     ],

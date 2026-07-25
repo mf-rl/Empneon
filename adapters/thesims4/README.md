@@ -62,6 +62,9 @@ py -3.12 -m pip install -e ..\..\core -e .
    instead of inventing or reversing the fact. Concrete identifiers such as
    `PRIVATE-GARDEN-731` require evidence containing the same identifier; an uninformed pair
    receives an uncertainty response rather than a location inferred from unrelated memories.
+   Live testing also retrieved `under the blue bench` from the non-date paraphrase
+   `Where is the garden code item?` before and after backend restart, while the uninformed pair
+   disclosed no location.
 
    The existing diagnostic commands remain available through the cheat console:
 
@@ -82,7 +85,9 @@ With a lot active, the mod also submits one NPC-to-NPC interaction every 30 simu
 minutes. Player-controlled Sims are excluded, and a new request is skipped while the
 previous one is still running. Autonomous proposals are restricted to mapped base-game
 **Ask About Day**, **Apologize**, and **Compliment Appearance** socials; queuing the selected
-mapping is reported back to Core only after the native interaction completes.
+mapping is reported back to Core only after the native interaction completes. Live validation
+confirmed scheduled provider-free CLOD 1 with zero tokens and persistent usage telemetry.
+Provider-backed player dialogue likewise records dynamic CLOD, tokens, and latency persistently.
 
 ## Configuration
 

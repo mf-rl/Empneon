@@ -23,9 +23,7 @@ _RECALL_REQUEST = re.compile(
     re.IGNORECASE,
 )
 _WH_REQUEST = re.compile(
-    r"(?:^|[.!?]\s*)(?:what|when|where|who|which)\b|"
-    r"\b(?:what|when|where|who|which)\s+"
-    r"(?:am|are|is|was|were|did|do|does|will|would|can|could|should|have|has)\b",
+    r"(?:^|[.!?]\s*)(?:what|when|where|who|which)\b",
     re.IGNORECASE,
 )
 _NUMERIC_CLOCK = re.compile(

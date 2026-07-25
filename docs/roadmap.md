@@ -27,18 +27,22 @@ feature promise.
   answer in favor of explicit uncertainty
 - Provider-neutral usage accounting for semantic selection and dialogue generation, with global or
   actor-filtered diagnostics
+- The Sims 4 model-backed dialogue path uses Core dynamic cognition routing; live CLOD 3 requests
+  and scheduled provider-free CLOD 1 requests retain usage telemetry across backend restart
+- Live non-date semantic recall retrieves a paraphrased private location before and after backend
+  restart while withholding that location from an uninformed pair
 
 ## Next gates
 
-- Repeat the semantic-memory live matrix with non-date plans, preferences, promises, identities,
-  conflicts, and locations.
+- Extend the now-passing non-date location matrix to preferences, promises, identities, and
+  conflicts.
 - Expand live social-category coverage beyond the passed romance and relationship-neutral
   friendship branches; a more consistently neutral waiting animation is optional polish.
 
 ### Core integration
 
-- Route The Sims 4 model-backed cognition through `decide_dynamic` after route estimates are
-  measured on the baseline hardware.
+- Measure route estimates on the baseline hardware and tune dynamic selection only from observed
+  resource and quality evidence.
 - Replace remaining adapter metadata documents with typed Core concepts only when a second game
   demonstrates a shared concept.
 

@@ -232,10 +232,11 @@ response rejection, deterministic uncertainty fallback, and save/reload persiste
 
 ## 7. Semantic memory retrieval
 
-**Current status (2026-07-24): PARTIAL / DATE RETRIEVAL AND FRESH RESPONSE PASSED; NON-DATE
-PARAPHRASE PENDING** — Date recall passed across save/reload with correct attributed time/location
-evidence in fresh wording. Exact private-identifier recall and uninformed-pair rejection also pass.
-The next live gate is the non-date paraphrase below.
+**Current status (2026-07-24): PASS** — Date recall passed across save/reload with correct
+attributed time/location evidence in fresh wording. Exact private-identifier recall,
+uninformed-pair rejection, and the non-date `garden code item` paraphrase also pass. The informed
+Sim retrieved `under the blue bench` before and after a backend restart; the uninformed Sim did not
+disclose the private location.
 
 - Prerequisite: complete section 6 and add several unrelated confirmed conversations.
 - Action: ask B, "Where is the garden code item?" without repeating the exact original sentence.
@@ -249,8 +250,10 @@ The next live gate is the non-date paraphrase below.
 
 ## 8. Provider-free CLOD 1
 
-**Current status (2026-07-20): PARTIAL** — Backend CLOD 1 telemetry passes; live native execution
-and restart persistence remain.
+**Current status (2026-07-24): PASS** — Scheduled provider-free autonomy queued a mapped native
+**Ask About Day** social for two NPCs. Global usage increased from two to three CLOD 1 records with
+provider `core-rules` and zero prompt, completion, or latency cost, then persisted across a backend
+restart while LM Studio remained stopped.
 
 - Prerequisite: leave normal autonomy enabled; the LLM may be stopped.
 - Action: let 30 simulated minutes pass with two eligible NPCs on the lot.
@@ -262,8 +265,10 @@ and restart persistence remain.
 
 ## 9. Provider-backed dynamic CLOD and usage
 
-**Current status (2026-07-20): PARTIAL** — LM Studio routing and latency pass; live token counts
-and restart persistence remain.
+**Current status (2026-07-24): PASS** — A live current-state question routed through LM Studio at
+CLOD 3, returned grounded dialogue, increased request, token, and latency telemetry, and retained
+the same totals across a backend restart. The retest also closed a Core false-recall defect that
+had rejected `what do you want to do?` as unsupported historical recall.
 
 - Prerequisite: start the configured OpenAI-compatible provider with a model loaded.
 - Action: use **Empneon Social** for a player-directed question involving mood, goals, or recent

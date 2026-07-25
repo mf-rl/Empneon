@@ -168,7 +168,12 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
   unsupported schedules, and allow fresh response wording. Live save/reload testing recalled a
   date as `tonight at 7pm at your place` in a new grounded response. Confirmed concrete identifier
   assignments are also pair-scoped: live testing recalled `PRIVATE-GARDEN-731` for the informed
-  Sim while rejecting an uninformed Sim's fabricated location and returning uncertainty.
+  Sim while rejecting an uninformed Sim's fabricated location and returning uncertainty. A
+  non-date `garden code item` paraphrase retrieved the private `under the blue bench` location
+  before and after backend restart without disclosing it to an uninformed pair.
+- Live Sims validation confirms both scheduled provider-free CLOD 1 autonomy with zero-token
+  persistent telemetry and provider-backed dynamic CLOD 3 dialogue with persistent token and
+  latency accounting.
 - Epistemic memory scenarios cover observations, belief provenance, contradiction, revision,
   and deterministic trust-decayed propagation.
 - The differentiated adaptive benchmark reduced provider calls on one synthetic workload while
