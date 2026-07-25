@@ -551,6 +551,9 @@ _DURABLE_FACT_CUE = re.compile(
     r"my\s+[a-z][a-z -]{0,30}\s+is|we met|we are|we're)\b",
     re.IGNORECASE,
 )
+_IDENTIFIER_ASSIGNMENT = re.compile(
+    r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\s+(?:is|are)\b"
+)
 _RECALL_STOPWORDS = frozenset(
     "about again been conversation did does first from have interaction just know "
     "last like remember said tell that the them then they this time was were what "
@@ -558,12 +561,23 @@ _RECALL_STOPWORDS = frozenset(
 )
 
 
-def _durable_fact(actor_id: str, text: str) -> dict[str, str] | None:
+def _durable_fact(
+    actor_id: str,
+    text: str,
+    *,
+    allow_identifier_assignment: bool = False,
+) -> dict[str, str] | None:
     statement = " ".join(str(text or "").split())
     if (
         not statement
         or statement.endswith("?")
-        or not _DURABLE_FACT_CUE.search(statement)
+        or not (
+            _DURABLE_FACT_CUE.search(statement)
+            or (
+                allow_identifier_assignment
+                and _IDENTIFIER_ASSIGNMENT.search(statement)
+            )
+        )
     ):
         return None
     return {"actor_id": str(actor_id), "statement": statement}
@@ -578,7 +592,7 @@ def _authoritative_facts(
 ) -> list[dict[str, object]]:
     speaker_id = str(data.get("speaker_id") or "")
     recall_answer = _is_recall_question(str(data.get("message") or ""))
-    return [
+    facts = [
         fact
         for fact in data.get("facts") or []
         if isinstance(fact, dict)
@@ -587,6 +601,18 @@ def _authoritative_facts(
             and str(fact.get("actor_id") or "") == speaker_id
         )
     ]
+    legacy_fact = (
+        None
+        if recall_answer
+        else _durable_fact(
+            str(data.get("listener_id") or ""),
+            str(data.get("message") or ""),
+            allow_identifier_assignment=True,
+        )
+    )
+    if legacy_fact is not None and legacy_fact not in facts:
+        facts.append(legacy_fact)
+    return facts
 
 
 def _recall_terms(text: str) -> set[str]:
@@ -767,7 +793,11 @@ def record_delivered_experience(
     facts = [
         fact
         for fact in (
-            _durable_fact(proposal.decision.target_id or "", message),
+            _durable_fact(
+                proposal.decision.target_id or "",
+                message,
+                allow_identifier_assignment=True,
+            ),
             dialogue_fact,
         )
         if fact is not None

@@ -215,26 +215,27 @@ hesitant, neutral, uncertain, hostile, or an explicit rejection.
 
 ## 6. Private observations and beliefs
 
-**Current status (2026-07-20): PARTIAL** — Confirmation gating, privacy, and persistence pass;
-recall dialogue contradicts stored memory.
+**Current status (2026-07-24): PASS** — Confirmation gating, exact identifier recall, pair privacy,
+response rejection, deterministic uncertainty fallback, and save/reload persistence passed live.
 
 - Prerequisite: Sims A, B, and C are present. C must not participate in the first conversation.
 - Action: as A, tell B a unique fact such as `PRIVATE-GARDEN-731 is under the blue bench`. Then ask
   B to recall it. Switch to C and ask for the same fact.
 - Expected game result: B can use the supplied fact after confirmation; C says it does not know or
   remember rather than leaking it.
-- Expected diagnostic result: `empneon.beliefs` on B lists the fact. B's `/diagnostics/sim` has an
-  observation-backed belief; C's response contains no such belief or accessible memory.
+- Expected diagnostic result: B's confirmed accessible memory contains the actor-attributed fact;
+  C has no matching fact or accessible memory. `empneon.beliefs` may remain `0` because the adapter
+  stores this confirmed dialogue evidence in episodic memory rather than projecting it into the
+  standalone belief store.
 - Persistence: save/reload and repeat both questions.
 - Cleanup: delete the disposable database after the plan if the unique fact should not remain.
 
 ## 7. Semantic memory retrieval
 
-**Current status (2026-07-23): PARTIAL / PARAPHRASED DATE RETRIEVAL PASSED, RESPONSE REPLAY
-FAILED** — The bounded semantic selector retrieved the correct confirmed date plan for `Hey, baby.
-When are we going on a date?` after the Sims returned to one another. The generated answer repeated
-the earlier acceptance dialogue verbatim instead of using the recalled fact as evidence for a
-fresh answer. Non-date semantic recall remains to be live-tested.
+**Current status (2026-07-24): PARTIAL / DATE RETRIEVAL AND FRESH RESPONSE PASSED; NON-DATE
+PARAPHRASE PENDING** — Date recall passed across save/reload with correct attributed time/location
+evidence in fresh wording. Exact private-identifier recall and uninformed-pair rejection also pass.
+The next live gate is the non-date paraphrase below.
 
 - Prerequisite: complete section 6 and add several unrelated confirmed conversations.
 - Action: ask B, "Where is the garden code item?" without repeating the exact original sentence.

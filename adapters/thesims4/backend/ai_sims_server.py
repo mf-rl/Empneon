@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
     "core_database": "empneon_core.sqlite3",
     "memory_database": "empneon_core_memory.sqlite3",
     "preserve_memory_only_on_game_save": False,
-    "response_rejection_enabled": False,
+    "response_rejection_enabled": True,
     "active_agent_limit": 1,
     "agent_wake_timeout_seconds": 60,
     "provider": "lmstudio",
@@ -1987,6 +1987,14 @@ def _supported_recall_facts(message, context):
     query = analyze_recall_query(str(message or ""))
     if not query.explicit:
         return []
+    identifiers = {
+        match.group(0).casefold()
+        for match in re.finditer(
+            r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
+            str(message or ""),
+            re.IGNORECASE,
+        )
+    }
     facts = [
         {
             "actor_id": str(fact.get("actor_id") or ""),
@@ -1996,10 +2004,24 @@ def _supported_recall_facts(message, context):
         for fact in memory.get("facts") or []
         if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
     ]
+    if identifiers:
+        facts = [
+            fact
+            for fact in facts
+            if identifiers
+            <= {
+                match.group(0).casefold()
+                for match in re.finditer(
+                    r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
+                    fact["statement"],
+                    re.IGNORECASE,
+                )
+            }
+        ]
     supporting = [
         fact for fact in facts if fact_supports_query(fact, query)
     ]
-    if supporting or query.requested_slots:
+    if supporting:
         return supporting
     question_terms = set(_dialogue_words(message, context))
     return [
@@ -2112,7 +2134,10 @@ def _supported_recall_issue(payload, response, context):
 
 
 def _memory_supports_question(message, context):
-    if _supported_recall_facts(message, context):
+    facts = _supported_recall_facts(message, context)
+    if analyze_recall_query(str(message or "")).explicit:
+        return bool(facts)
+    if facts:
         return True
     ignored = {
         "where",

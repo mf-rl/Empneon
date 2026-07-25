@@ -114,7 +114,7 @@ JSON file. Environment variables override the loaded file.
 | `database`, `AI_SIM_DB` | Former adapter database imported once for compatibility | `ai_sims_memory.sqlite3` |
 | `core_database` | Former Core database adopted once for compatibility | `empneon_core.sqlite3` |
 | `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `false` |
-| `response_rejection_enabled` | Reject and retry grounded, copied, role-confused, or contradictory model replies | `false` |
+| `response_rejection_enabled` | Reject and retry ungrounded, copied, role-confused, or contradictory model replies | `true` |
 | `active_agent_limit` | Concurrent reference-adapter sessions and Core admissions | `1` |
 | `agent_wake_timeout_seconds` | Wait for an agent-session slot | `60` |
 | `provider`, `AI_SIM_PROVIDER` | Default provider entry | `lmstudio` |
@@ -127,14 +127,16 @@ Relative database paths resolve from the backend process's working directory. Bo
 database paths are read-only migration sources. All current state is written to the single active
 `empneon_core_memory.sqlite3` database; legacy sources are never deleted automatically.
 
-With `response_rejection_enabled` set to `false`, Empneon skips the optional broad copying,
-role-confusion, and conversational grounding filters. Supported factual recall remains
+The shipped configuration enables `response_rejection_enabled`. With it set to `false`, Empneon
+skips the optional broad copying, role-confusion, and conversational grounding filters. Supported
+factual recall remains
 deterministically constrained: answers must preserve selected attributed time and location
 evidence, receive one corrected model attempt when necessary, and fall back to an attributed
 quotation rather than inventing a fact. JSON/plain-text parsing and response normalization always
-run because the game adapter requires a stable response object. Set the value to `true` to enable
-the broader rejection rules as well. Restart the backend after changing this setting; the game
-does not need to restart.
+run because the game adapter requires a stable response object. Keep the value at `true` for
+privacy and epistemic-recall acceptance tests: unsupported answers are rejected and replaced with
+an uncertainty fallback. Restart the backend after changing this setting; the game does not need
+to restart.
 
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`

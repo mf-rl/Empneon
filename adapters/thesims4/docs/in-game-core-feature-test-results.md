@@ -3,11 +3,10 @@
 Test evidence for `in-game-core-feature-test-plan.md`. Raw diagnostic responses remain local;
 this record contains only the evidence needed to determine pass/fail status.
 
-## Remediation awaiting in-game verification (2026-07-20)
+## Remediation status
 
-The feature branch now includes automated regressions and fixes for every actionable defect below.
-Test 4 has passed its release-build retest; the remaining statuses stay unchanged until their
-corresponding in-game retests pass:
+The current branch includes automated regressions and fixes for the actionable defects below.
+Tests 4, 5, and 6 have passed their live acceptance retests; Test 7 remains the next partial gate:
 
 - Test 3 generic fallback summaries now contain the concrete message and reply.
 - Test 4 now passes: the live aspiration tracker is ingested, and need-goal lifecycle state
@@ -15,7 +14,8 @@ corresponding in-game retests pass:
 - Test 5 resolves relationship display names to numeric Sim IDs, recognizes common romantic
   phrases, rejects copied or recycled dialogue, supports explicit acceptance or rejection, maps
   accepted invitations to `flirt`, and reads native friendship and romance tracks separately.
-- Test 6 rejects denial or contradiction when a supporting private memory is available.
+- Test 6 persists confirmed identifier facts, rejects denial or contradiction when evidence is
+  available, and rejects fabricated answers when the queried pair has no matching evidence.
 - Test 7 ranks the complete observable memory set, filters it by the exact Sim pair, and excludes
   irrelevant historical summaries from the dialogue prompt.
 - `FinishingType.OBJECT_CHANGED` remains a reported game cancellation and is not retried
@@ -818,7 +818,10 @@ log remain documented defects for the next session.
 
 ## Test 6: Private observations and beliefs
 
-**Status:** PARTIAL / RECALL CONSISTENCY FAILED
+**Status:** PASS / PRIVATE RECALL, REJECTION, AND PERSISTENCE LIVE-VERIFIED
+
+Historical failures below remain as diagnostic evidence. The July 24 acceptance retest is
+authoritative for the current result.
 
 **Procedure:** Bernard taught Karmine `PRIVATE-GARDEN-731 is under the blue bench`, asked Karmine
 to recall it, taught it again, and asked uninvolved Billie for the same fact.
@@ -841,20 +844,48 @@ to recall it, taught it again, and asked uninvolved Billie for the same fact.
   that.” Privacy isolation therefore passed.
 - Karmine's later reply retrieved the correct location, “under the blue bench.”
 
-**Failure:** Karmine contradicted the retrieved belief by adding “you didn't mention it before.”
-The fact was present in the prompt-accessible belief and memory, so this is a dialogue-grounding
-failure. The recall action itself later failed natively with `FinishingType.OBJECT_CHANGED`, but
-that does not explain the already-generated contradiction.
+**Historical failure:** Karmine contradicted the retrieved belief by adding “you didn't mention it
+before.” The fact was present in the prompt-accessible belief and memory, so this is a
+dialogue-grounding failure. The recall action itself later failed natively with
+`FinishingType.OBJECT_CHANGED`, but that does not explain the already-generated contradiction.
 
 **Persistence result:** PASS. After several unrelated interactions and a game save/reload, Karmine
 still answered that the item was under the blue bench while Billie did not reveal the location.
 
-**Remaining defect:** A clean, non-contradictory recall remains to be retested after the grounding
-defect is fixed.
+### July 24 identifier-recall remediation and acceptance
+
+- Confirmed player declarations with an uppercase, hyphenated, digit-bearing subject such as
+  `PRIVATE-GARDEN-731 is under the blue bench` now become actor-attributed facts. Generated model
+  replies cannot create the same authority, and recall answers cannot promote themselves into
+  facts.
+- Existing confirmed exchanges without a stored `facts` field remain compatible: the adapter
+  derives the player-authored identifier assignment when reading legacy events.
+- Explicit recall support now requires an authoritative pair-scoped fact. Earlier questions and
+  unsupported generated answers are conversation history, not evidence.
+- The first live retest exposed a second defect. Billie's unrelated confirmed date plan,
+  `Tonight, 7 PM, at my place`, was accepted as support for any location question. Identifier
+  questions now require a fact containing the same identifier before generic location matching can
+  satisfy the grounding gate.
+- With rejection disabled as a diagnostic control, the informed Sim recalled the blue bench while
+  the uninformed Sim invented a third-floor observatory. This is expected when the optional broad
+  epistemic filter is disabled and is not the Test 6 acceptance configuration.
+- With rejection enabled, the final live run passed. Sim C answered,
+  `It's right here, Bernard! It's under the blue bench.` For uninformed Sim B, the model first
+  generated `It's in the private garden! You'll love it, Bernard.` Empneon rejected that response
+  and delivered `I don't know or remember that.`
+- `empneon.beliefs` reported `0` during this run. The authoritative identifier fact is retained in
+  the confirmed pair-scoped episodic memory; it is not projected into the standalone belief store.
+  The test plan now names the actual diagnostic boundary.
+- Automated verification after the final correction passed all `235` Sims adapter tests and all
+  `224` Core tests. Ruff, mypy (`52` source files), backend byte-compilation, and
+  `git diff --check` also passed.
+
+**Final result:** Test 6 passes confirmation gating, informed recall, uninformed-pair privacy,
+response rejection, deterministic uncertainty fallback, and save/reload persistence.
 
 ## Test 7: Local vector retrieval
 
-**Status:** FAIL
+**Status:** PARTIAL / EXACT IDENTIFIER AND DATE RECALL PASS; NON-DATE PARAPHRASE PENDING
 
 **Procedure:** After several additional Empneon interactions, Bernard asked both Karmine and
 Billie `Where is the PRIVATE-GARDEN-731?`, then saved/reloaded and repeated both questions.
@@ -880,8 +911,8 @@ retrieval/grounding relevance defect.
   previously asked Billie about that exact identifier; Billie may remember the question while
   remaining uninformed about its answer.
 
-**Final result:** Persistence and answer privacy pass. Paraphrased local vector retrieval fails and
-requires a fix.
+**Historical result:** Persistence and answer privacy passed, while the original paraphrased local
+vector retrieval attempt failed.
 
 ### July 23 semantic-memory selector and date retest
 
@@ -907,6 +938,10 @@ requires a fix.
 going on a date?`, but returned the exact earlier response: `That sounds perfect! Tonight at 7 pm
 at your place is lovely. You have such a charming way of making things feel like heaven.`
 
-**Next task:** Keep the selected memory as grounding evidence while requiring the main dialogue
-generation to answer the current question naturally. Verify that it preserves the date fact without
-copying the stored response, then repeat the live matrix with non-date memory scenarios.
+**Current result:** The later July 24 Test 5 retests verified that selected date evidence survives
+save/reload and produces fresh grounded wording. Test 6 then verified exact private identifier
+recall and rejection for an uninformed pair.
+
+**Next task:** Ask the informed Sim `Where is the garden code item?` without repeating
+`PRIVATE-GARDEN-731`. Verify that the paraphrase retrieves `under the blue bench` in fresh wording,
+then ask the uninformed Sim the same paraphrase and confirm that no private location is disclosed.

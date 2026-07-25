@@ -1393,7 +1393,7 @@ def test_openrouter_and_baseline_defaults_are_configured() -> None:
     )
 
     assert config["active_agent_limit"] == 1
-    assert config["response_rejection_enabled"] is False
+    assert config["response_rejection_enabled"] is True
     assert config["providers"]["openrouter"] == {
         "endpoint": "https://openrouter.ai/api/v1",
         "model": "openai/gpt-4.1-mini",
@@ -2286,6 +2286,12 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
                 "message": "PRIVATE-GARDEN-731 is under the blue bench",
                 "dialogue": "",
                 "explicit": True,
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "PRIVATE-GARDEN-731 is under the blue bench",
+                    }
+                ],
             }
         ],
     )
@@ -2396,6 +2402,94 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
     assert fallback["response_category"] == "friendly"
     assert fallback["trust_delta"] == 0
     assert "relationship" not in fallback
+
+
+def test_confirmed_identifier_fact_is_required_for_explicit_recall() -> None:
+    payload = {"message": "Where is PRIVATE-GARDEN-731?"}
+    fact = {
+        "actor_id": "bernard",
+        "statement": "PRIVATE-GARDEN-731 is under the blue bench.",
+    }
+    informed = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "speaker_id": "bernard",
+                "listener_id": "karmine",
+                "message": fact["statement"],
+                "dialogue": "That's a great spot!",
+                "facts": [fact],
+            }
+        ],
+    )
+    informed.update(
+        conversation=[], speaker_id="karmine", listener_id="bernard"
+    )
+    uninformed = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Billie"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "speaker_id": "billie",
+                "listener_id": "bernard",
+                "message": payload["message"],
+                "dialogue": "It's in the private garden!",
+                "facts": [],
+            },
+            {
+                "speaker_id": "bernard",
+                "listener_id": "billie",
+                "message": "Tonight, 7 PM, at my place.",
+                "dialogue": "That sounds perfect.",
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "Tonight, 7 PM, at my place.",
+                    }
+                ],
+            }
+        ],
+    )
+    uninformed.update(
+        conversation=[], speaker_id="billie", listener_id="bernard"
+    )
+
+    assert "selected attributed fact" in ai_sims_server.response_grounding_issue(
+        payload, {"dialogue": "It's in the private garden."}, informed
+    )
+    assert "under the blue bench" in ai_sims_server.reasoning_fallback_response(
+        payload, informed
+    )["dialogue"]
+    assert "no supporting memory" in ai_sims_server.response_grounding_issue(
+        payload, {"dialogue": "It sounds good! What about it?"}, uninformed
+    )
+    assert "don't know" in ai_sims_server.reasoning_fallback_response(
+        payload, uninformed
+    )["dialogue"].casefold()
+
+
+def test_legacy_confirmed_identifier_assignment_is_authoritative() -> None:
+    assert ai_sims_server.empneon_state._authoritative_facts(
+        {
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "PRIVATE-GARDEN-731 is under the blue bench.",
+            "dialogue": "That's a great spot!",
+            "facts": [],
+        }
+    ) == [
+        {
+            "actor_id": "bernard",
+            "statement": "PRIVATE-GARDEN-731 is under the blue bench.",
+        }
+    ]
 
 
 def test_grounding_rejects_asking_for_known_listener_name() -> None:
@@ -3403,6 +3497,12 @@ def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -
                 "message": "PRIVATE-GARDEN-731 is under the blue bench",
                 "dialogue": "",
                 "explicit": True,
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "PRIVATE-GARDEN-731 is under the blue bench",
+                    }
+                ],
             }
         ],
     )
@@ -3647,6 +3747,12 @@ def test_player_dialogue_uses_dynamic_clod_and_records_provider_usage(
     assert confirmed["beliefs"] == []
     assert [item["message"] for item in recalled] == [
         "PRIVATE-GARDEN-731 is under the blue bench."
+    ]
+    assert recalled[0]["facts"] == [
+        {
+            "actor_id": "mortimer",
+            "statement": "PRIVATE-GARDEN-731 is under the blue bench.",
+        }
     ]
     assert len(confirmed["accessible_memories"]) == 1
     description = json.loads(confirmed["accessible_memories"][0]["description"])

@@ -59,7 +59,9 @@ py -3.12 -m pip install -e ..\..\core -e .
    replies and validate requested time and location evidence. Live save/reload testing retrieved
    the correct `Tonight at 7 pm at your place` plan and delivered it in fresh wording. If both
    corrected model attempts remain unsupported, the adapter returns an attributed quotation
-   instead of inventing or reversing the fact.
+   instead of inventing or reversing the fact. Concrete identifiers such as
+   `PRIVATE-GARDEN-731` require evidence containing the same identifier; an uninformed pair
+   receives an uncertainty response rather than a location inferred from unrelated memories.
 
    The existing diagnostic commands remain available through the cheat console:
 

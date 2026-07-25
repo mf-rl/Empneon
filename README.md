@@ -166,7 +166,9 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
   request with deterministic fallback. Shared Core recall constraints prioritize authoritative
   attributed facts, normalize equivalent time expressions, preserve location ownership, reject
   unsupported schedules, and allow fresh response wording. Live save/reload testing recalled a
-  date as `tonight at 7pm at your place` in a new grounded response.
+  date as `tonight at 7pm at your place` in a new grounded response. Confirmed concrete identifier
+  assignments are also pair-scoped: live testing recalled `PRIVATE-GARDEN-731` for the informed
+  Sim while rejecting an uninformed Sim's fabricated location and returning uncertainty.
 - Epistemic memory scenarios cover observations, belief provenance, contradiction, revision,
   and deterministic trust-decayed propagation.
 - The differentiated adaptive benchmark reduced provider calls on one synthetic workload while

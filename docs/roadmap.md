@@ -22,6 +22,9 @@ feature promise.
 - Bounded, pair-scoped semantic memory selection with deterministic fallback and shared recall
   constraints; live date-plan recall succeeds across paraphrasing and save/reload while preserving
   exact time and attributed location ownership in fresh wording
+- Confirmed Sims identifier assignments become pair-scoped attributed evidence; live testing
+  preserves exact private recall for the informed Sim and rejects an uninformed Sim's fabricated
+  answer in favor of explicit uncertainty
 - Provider-neutral usage accounting for semantic selection and dialogue generation, with global or
   actor-filtered diagnostics
 
