@@ -1,0 +1,83 @@
+{
+  "status": "failed",
+  "reason": "player request was not observed",
+  "run_id": "beebd695cc5b",
+  "actor_ids": [
+    "empneon-test10-beebd695cc5b-blocker",
+    "empneon-test10-beebd695cc5b-waiting"
+  ],
+  "evaluation": {
+    "passed": false,
+    "reason": "player request was not observed",
+    "indices": {
+      "blocker_started": 1,
+      "waiting_submitted": 2,
+      "player_submitted": null,
+      "player_started": null,
+      "waiting_started": 4
+    }
+  },
+  "recent": [
+    {
+      "request_id": "b76754a1-6ff7-492f-a92b-79f47f523eb8",
+      "actor_id": "empneon-test10-beebd695cc5b-blocker",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "submitted",
+      "submitted_at": 1785016947.6305106,
+      "started_at": null,
+      "recorded_at": 1785016947.6305106
+    },
+    {
+      "request_id": "b76754a1-6ff7-492f-a92b-79f47f523eb8",
+      "actor_id": "empneon-test10-beebd695cc5b-blocker",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "started",
+      "submitted_at": 1785016947.6305106,
+      "started_at": 1785016947.6325457,
+      "recorded_at": 1785016947.6325457
+    },
+    {
+      "request_id": "8a865717-63e9-40c3-804b-cef3ef291414",
+      "actor_id": "empneon-test10-beebd695cc5b-waiting",
+      "event_type": "critical_need",
+      "urgency": 0.85,
+      "state": "submitted",
+      "submitted_at": 1785016947.7491546,
+      "started_at": null,
+      "recorded_at": 1785016947.7498891
+    },
+    {
+      "request_id": "b76754a1-6ff7-492f-a92b-79f47f523eb8",
+      "actor_id": "empneon-test10-beebd695cc5b-blocker",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "completed",
+      "submitted_at": 1785016947.6305106,
+      "started_at": 1785016947.6325457,
+      "recorded_at": 1785016951.5765421
+    },
+    {
+      "request_id": "8a865717-63e9-40c3-804b-cef3ef291414",
+      "actor_id": "empneon-test10-beebd695cc5b-waiting",
+      "event_type": "critical_need",
+      "urgency": 0.85,
+      "state": "started",
+      "submitted_at": 1785016947.7491546,
+      "started_at": 1785016951.5780585,
+      "recorded_at": 1785016951.5780585
+    },
+    {
+      "request_id": "8a865717-63e9-40c3-804b-cef3ef291414",
+      "actor_id": "empneon-test10-beebd695cc5b-waiting",
+      "event_type": "critical_need",
+      "urgency": 0.85,
+      "state": "completed",
+      "submitted_at": 1785016947.7491546,
+      "started_at": 1785016951.5780585,
+      "recorded_at": 1785016951.5830946
+    }
+  ],
+  "errors": []
+}

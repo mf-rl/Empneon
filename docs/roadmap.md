@@ -29,6 +29,9 @@ feature promise.
   actor-filtered diagnostics
 - The Sims 4 model-backed dialogue path uses Core dynamic cognition routing; live CLOD 3 requests
   and scheduled provider-free CLOD 1 requests retain usage telemetry across backend restart
+- Bounded Sims cognition exposes non-sensitive lifecycle diagnostics; a loopback-only,
+  auto-releasing acceptance gate live-verifies that real player dialogue preempts already-waiting
+  lower-priority ambient cognition without changing scheduler ordering
 - Live non-date semantic recall retrieves a paraphrased private location before and after backend
   restart while withholding that location from an uninformed pair
 
@@ -38,6 +41,8 @@ feature promise.
   conflicts.
 - Expand live social-category coverage beyond the passed romance and relationship-neutral
   friendship branches; a more consistently neutral waiting animation is optional polish.
+- Complete Test 11 live confirmation coverage for successful delivery and deliberate cancellation,
+  including persistence and absence of consequences for failed actions.
 
 ### Core integration
 

@@ -2,6 +2,7 @@ import ast
 import asyncio
 import contextlib
 import dataclasses
+import ipaddress
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -15,7 +16,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
-from collections import Counter
+from collections import Counter, deque
 from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -31,6 +32,7 @@ from empneon.core.contracts import (
     CognitiveRequest,
     Decision,
     StateDelta,
+    WorldEvent,
 )
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import Event
@@ -1132,10 +1134,13 @@ def fallback_response(text, available_categories=None):
 
 class CognitionQueue:
     def __init__(self, workers, max_queue_size):
+        self._worker_limit = max(1, int(workers))
         self._scheduler = PriorityScheduler(max_queue_size)
         self._jobs = {}
+        self._states = {}
+        self._recent = deque(maxlen=64)
         self._condition = threading.Condition()
-        for index in range(max(1, int(workers))):
+        for index in range(self._worker_limit):
             worker = threading.Thread(
                 target=self._work,
                 name="empneon-cognition-{}".format(index),
@@ -1146,15 +1151,67 @@ class CognitionQueue:
     def __len__(self):
         return len(self._scheduler)
 
+    def _request_state(self, request, state):
+        return {
+            "request_id": request.id,
+            "actor_id": request.agent_id,
+            "event_type": request.event.type,
+            "urgency": request.urgency,
+            "state": state,
+            "submitted_at": time.time(),
+            "started_at": None,
+        }
+
+    def _record(self, item, state):
+        record = dict(item, state=state, recorded_at=time.time())
+        self._recent.append(record)
+        try:
+            AGENT_LOG.info(
+                "cognition request %s id=%s actor=%s event=%s urgency=%s queue_depth=%s",
+                state,
+                record["request_id"],
+                record["actor_id"],
+                record["event_type"],
+                record["urgency"],
+                len(self._scheduler),
+            )
+        except Exception:
+            pass
+
+    def snapshot(self):
+        with self._condition:
+            states = [dict(item) for item in self._states.values()]
+            return {
+                "worker_limit": self._worker_limit,
+                "running": [
+                    item for item in states if item["state"] == "running"
+                ],
+                "waiting": [
+                    item for item in states if item["state"] == "waiting"
+                ],
+                "recent": [dict(item) for item in self._recent],
+            }
+
     def run(self, request, work):
         job = {"work": work, "done": threading.Event(), "result": None, "error": None}
         with self._condition:
             self._jobs[request.id] = job
-            self._scheduler.submit(request)
+            state = self._request_state(request, "waiting")
+            self._states[request.id] = state
+            try:
+                self._scheduler.submit(request)
+            except Exception:
+                self._jobs.pop(request.id, None)
+                self._states.pop(request.id, None)
+                raise
+            self._record(state, "submitted")
             self._condition.notify()
         if not job["done"].wait(request.deadline_ms / 1000):
             with self._condition:
                 self._jobs.pop(request.id, None)
+                state = self._states.pop(request.id, None)
+                if state is not None:
+                    self._record(state, "timed_out")
             raise RequestDeadlineExceeded("cognitive request deadline exceeded")
         if job["error"] is not None:
             raise job["error"]
@@ -1172,6 +1229,12 @@ class CognitionQueue:
                 job = self._jobs.get(request.id)
             if job is None:
                 continue
+            with self._condition:
+                state = self._states.get(request.id)
+                if state is not None:
+                    state["state"] = "running"
+                    state["started_at"] = time.time()
+                    self._record(state, "started")
             try:
                 job["result"] = job["work"]()
             except Exception as exc:
@@ -1179,7 +1242,98 @@ class CognitionQueue:
             finally:
                 with self._condition:
                     self._jobs.pop(request.id, None)
+                    state = self._states.pop(request.id, None)
+                    if state is not None:
+                        self._record(
+                            state,
+                            "failed" if job["error"] is not None else "completed",
+                        )
                 job["done"].set()
+
+
+class Test10QueueGate:
+    def __init__(self, queue, timeout_seconds=60):
+        self._queue = queue
+        self._timeout_seconds = max(1, int(timeout_seconds))
+        self._lock = threading.Lock()
+        self._active = None
+
+    def _wait_for(self, actor_id, state):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if any(
+                item["actor_id"] == actor_id
+                for item in self._queue.snapshot()[state]
+            ):
+                return True
+            time.sleep(0.005)
+        return False
+
+    def _run_safely(self, request, work):
+        try:
+            self._queue.run(request, work)
+        except Exception:
+            AGENT_LOG.exception("Test 10 diagnostic queue work failed")
+
+    def arm(self, run_id):
+        run_id = str(run_id or "")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", run_id):
+            raise ValueError("valid Test 10 run_id is required")
+        release = threading.Event()
+        blocker_id = "empneon-test10-{}-blocker".format(run_id)
+        waiting_id = "empneon-test10-{}-waiting".format(run_id)
+        with self._lock:
+            if self._active is not None:
+                raise ValueError("a Test 10 queue gate is already active")
+            self._active = {"run_id": run_id, "release": release}
+
+        blocker = CognitiveRequest(
+            blocker_id,
+            1,
+            WorldEvent("test10_blocker", (blocker_id,)),
+            urgency=0.0,
+            deadline_ms=(self._timeout_seconds + 5) * 1000,
+        )
+
+        def hold_worker():
+            try:
+                self._queue.run(
+                    blocker,
+                    lambda: release.wait(self._timeout_seconds),
+                )
+            finally:
+                with self._lock:
+                    if self._active and self._active["run_id"] == run_id:
+                        self._active = None
+
+        threading.Thread(target=hold_worker, daemon=True).start()
+        if not self._wait_for(blocker_id, "running"):
+            release.set()
+            raise RuntimeError("Test 10 blocker did not start")
+
+        waiting = CognitiveRequest(
+            waiting_id,
+            1,
+            WorldEvent("critical_need", (waiting_id,)),
+            urgency=0.85,
+            deadline_ms=(self._timeout_seconds + 5) * 1000,
+        )
+        threading.Thread(
+            target=self._run_safely,
+            args=(waiting, lambda: None),
+            daemon=True,
+        ).start()
+        if not self._wait_for(waiting_id, "waiting"):
+            release.set()
+            raise RuntimeError("Test 10 ambient request did not wait")
+        return {"blocker": blocker_id, "waiting": waiting_id}
+
+    def release(self, run_id):
+        with self._lock:
+            if self._active is None or self._active["run_id"] != str(run_id or ""):
+                raise ValueError("matching active Test 10 run_id is required")
+            self._active["release"].set()
+        return {"run_id": str(run_id), "released": True}
 
 
 class AgentManager:
@@ -1240,6 +1394,7 @@ class AgentManager:
 
 AGENTS = AgentManager(ACTIVE_AGENT_LIMIT)
 COGNITION_QUEUE = CognitionQueue(ACTIVE_AGENT_LIMIT, max(8, ACTIVE_AGENT_LIMIT * 4))
+TEST10_QUEUE_GATE = Test10QueueGate(COGNITION_QUEUE)
 
 
 def task_model_config(task="large"):
@@ -2999,6 +3154,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(404, {"error": "not found"})
 
     def _send_diagnostic(self, path, query):
+        if path == "/diagnostics/cognition-queue":
+            self.send_json(200, COGNITION_QUEUE.snapshot())
+            return
         if path == "/diagnostics/migration":
             body = MIGRATION_STATUS.as_dict()
             with open_db(CORE_DB_PATH) as conn:
@@ -3055,6 +3213,38 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(400, {"error": str(exc)})
                     return
                 self.send_json(200, {"agent": {"id": agent.id, "name": agent.name}})
+                return
+            if parsed.path == "/diagnostics/cognition-queue/test10-gate":
+                try:
+                    loopback = ipaddress.ip_address(self.client_address[0]).is_loopback
+                except (AttributeError, IndexError, ValueError):
+                    loopback = False
+                if not loopback:
+                    self.send_json(403, {"error": "loopback access required"})
+                    return
+                action = str(payload.get("action") or "")
+                run_id = str(payload.get("run_id") or "")
+                try:
+                    if action == "arm":
+                        actor_ids = TEST10_QUEUE_GATE.arm(run_id)
+                        self.send_json(
+                            200,
+                            {
+                                "status": "armed",
+                                "run_id": run_id,
+                                "actor_ids": actor_ids,
+                            },
+                        )
+                    elif action == "release":
+                        TEST10_QUEUE_GATE.release(run_id)
+                        self.send_json(
+                            200,
+                            {"status": "released", "run_id": run_id},
+                        )
+                    else:
+                        self.send_json(400, {"error": "action must be arm or release"})
+                except ValueError as exc:
+                    self.send_json(400, {"error": str(exc)})
                 return
             session_id = payload.get("_empneon_session_id")
             save_slot_id = payload.get("_empneon_save_slot_id") or ""

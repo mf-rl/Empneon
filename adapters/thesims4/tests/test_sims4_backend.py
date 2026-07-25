@@ -1132,11 +1132,117 @@ def test_cognition_queue_prioritizes_waiting_player_work() -> None:
     threads[2].start()
     while len(queue) < 2:
         time.sleep(0.001)
+    snapshot = queue.snapshot()
+    assert snapshot["worker_limit"] == 1
+    assert [item["actor_id"] for item in snapshot["running"]] == ["blocker"]
+    assert {item["actor_id"] for item in snapshot["waiting"]} == {
+        "ambient",
+        "player",
+    }
+    assert all(
+        set(item)
+        == {
+            "request_id",
+            "actor_id",
+            "event_type",
+            "urgency",
+            "state",
+            "submitted_at",
+            "started_at",
+        }
+        for item in snapshot["running"] + snapshot["waiting"]
+    )
     release_blocker.set()
     for thread in threads:
         thread.join(2)
 
     assert order == ["blocker", "player", "ambient"]
+    snapshot = queue.snapshot()
+    assert snapshot["running"] == []
+    assert snapshot["waiting"] == []
+    assert [
+        item["actor_id"]
+        for item in snapshot["recent"]
+        if item["state"] == "started"
+    ] == ["blocker", "player", "ambient"]
+
+
+def test_cognition_queue_snapshot_clears_failed_work() -> None:
+    queue = ai_sims_server.CognitionQueue(1, 1)
+    request = CognitiveRequest(
+        "failed-agent",
+        1,
+        WorldEvent("test", ("failed-agent",)),
+        deadline_ms=1_000,
+    )
+
+    with pytest.raises(RuntimeError, match="expected"):
+        queue.run(request, lambda: (_ for _ in ()).throw(RuntimeError("expected")))
+
+    snapshot = queue.snapshot()
+    assert snapshot["running"] == []
+    assert snapshot["waiting"] == []
+    assert snapshot["recent"][-1]["state"] == "failed"
+
+
+def test_test10_gate_holds_worker_until_player_is_waiting() -> None:
+    queue = ai_sims_server.CognitionQueue(1, 4)
+    gate = ai_sims_server.Test10QueueGate(queue, timeout_seconds=2)
+    actor_ids = gate.arm("abc123")
+    order = []
+    player = CognitiveRequest(
+        "real-player",
+        3,
+        WorldEvent("player_conversation", ("real-player",)),
+        urgency=1.0,
+        deadline_ms=2_000,
+    )
+    player_thread = threading.Thread(
+        target=lambda: queue.run(player, lambda: order.append("player"))
+    )
+    player_thread.start()
+    deadline = time.time() + 1
+    while time.time() < deadline:
+        if any(
+            item["actor_id"] == "real-player" for item in queue.snapshot()["waiting"]
+        ):
+            break
+        time.sleep(0.001)
+
+    assert [item["actor_id"] for item in queue.snapshot()["running"]] == [
+        actor_ids["blocker"]
+    ]
+    assert {item["actor_id"] for item in queue.snapshot()["waiting"]} == {
+        actor_ids["waiting"],
+        "real-player",
+    }
+
+    gate.release("abc123")
+    player_thread.join(2)
+    deadline = time.time() + 1
+    while queue.snapshot()["running"] or queue.snapshot()["waiting"]:
+        assert time.time() < deadline
+        time.sleep(0.001)
+
+    assert order == ["player"]
+    assert [
+        item["actor_id"]
+        for item in queue.snapshot()["recent"]
+        if item["state"] == "started"
+    ] == [actor_ids["blocker"], "real-player", actor_ids["waiting"]]
+
+
+def test_test10_gate_releases_automatically() -> None:
+    queue = ai_sims_server.CognitionQueue(1, 2)
+    gate = ai_sims_server.Test10QueueGate(queue, timeout_seconds=1)
+    gate.arm("auto")
+    deadline = time.time() + 2
+    while queue.snapshot()["running"] or queue.snapshot()["waiting"]:
+        assert time.time() < deadline
+        time.sleep(0.005)
+
+    with pytest.raises(ValueError, match="matching active"):
+        gate.release("auto")
 
 
 def test_unified_database_is_the_only_active_default() -> None:
@@ -4771,6 +4877,100 @@ def test_usage_diagnostics_without_sim_id_returns_global_telemetry(
     handler.do_GET()
 
     assert responses == [(200, {"agent_id": None, "requests": 2})]
+
+
+def test_cognition_queue_diagnostic_is_read_only(monkeypatch) -> None:
+    expected = {
+        "worker_limit": 1,
+        "running": [],
+        "waiting": [],
+        "recent": [],
+    }
+    monkeypatch.setattr(
+        ai_sims_server.COGNITION_QUEUE,
+        "snapshot",
+        lambda: expected,
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "open_db",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("queue diagnostics must not open the database")
+        ),
+    )
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/diagnostics/cognition-queue"
+    responses = []
+    monkeypatch.setattr(
+        handler, "send_json", lambda status, body: responses.append((status, body))
+    )
+
+    handler.do_GET()
+
+    assert responses == [(200, expected)]
+
+
+def test_test10_gate_diagnostic_arms_and_releases(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(
+        ai_sims_server.TEST10_QUEUE_GATE,
+        "arm",
+        lambda run_id: calls.append(("arm", run_id))
+        or {"blocker": "blocker", "waiting": "waiting"},
+    )
+    monkeypatch.setattr(
+        ai_sims_server.TEST10_QUEUE_GATE,
+        "release",
+        lambda run_id: calls.append(("release", run_id))
+        or {"run_id": run_id, "released": True},
+    )
+
+    responses = []
+    for payload in (
+        {"action": "arm", "run_id": "abc123"},
+        {"action": "release", "run_id": "abc123"},
+    ):
+        handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+        handler.path = "/diagnostics/cognition-queue/test10-gate"
+        handler.client_address = ("127.0.0.1", 12345)
+        monkeypatch.setattr(handler, "read_json", lambda value=payload: value)
+        monkeypatch.setattr(
+            handler,
+            "send_json",
+            lambda status, body: responses.append((status, body)),
+        )
+        handler.do_POST()
+
+    assert calls == [("arm", "abc123"), ("release", "abc123")]
+    assert responses == [
+        (
+            200,
+            {
+                "status": "armed",
+                "run_id": "abc123",
+                "actor_ids": {"blocker": "blocker", "waiting": "waiting"},
+            },
+        ),
+        (200, {"status": "released", "run_id": "abc123"}),
+    ]
+
+    handler = ai_sims_server.Handler.__new__(ai_sims_server.Handler)
+    handler.path = "/diagnostics/cognition-queue/test10-gate"
+    handler.client_address = ("192.0.2.1", 12345)
+    monkeypatch.setattr(
+        handler,
+        "read_json",
+        lambda: {"action": "arm", "run_id": "remote"},
+    )
+    monkeypatch.setattr(
+        handler,
+        "send_json",
+        lambda status, body: responses.append((status, body)),
+    )
+    handler.do_POST()
+
+    assert responses[-1] == (403, {"error": "loopback access required"})
+    assert calls == [("arm", "abc123"), ("release", "abc123")]
 
 
 def test_usage_diagnostics_with_sim_id_remains_actor_filtered(

@@ -1,12 +1,12 @@
 # Empneon Core In-Game Test Results
 
-Test evidence for `in-game-core-feature-test-plan.md`. Raw diagnostic responses remain local;
-this record contains only the evidence needed to determine pass/fail status.
+Test evidence for `in-game-core-feature-test-plan.md`. Raw diagnostics normally remain local;
+reviewed, non-sensitive acceptance reports may be retained with this record.
 
 ## Remediation status
 
 The current branch includes automated regressions and fixes for the actionable defects below.
-Tests 4 through 9 have passed their live acceptance retests; Test 10 is the next sequential gate:
+Tests 4 through 10 have passed their live acceptance retests; Test 11 is the next sequential gate:
 
 - Test 3 generic fallback summaries now contain the concrete message and reply.
 - Test 4 now passes: the live aspiration tracker is ingested, and need-goal lifecycle state
@@ -23,6 +23,8 @@ Tests 4 through 9 have passed their live acceptance retests; Test 10 is the next
   telemetry persistence after backend restart.
 - Test 9 confirms provider-backed dynamic CLOD 3 dialogue and persistent usage telemetry. Core no
   longer mistakes a mid-sentence current-state `what do` question for historical recall.
+- Test 10 confirms that a real player conversation starts before already-waiting lower-priority
+  ambient cognition when the single worker becomes available.
 - `FinishingType.OBJECT_CHANGED` remains a reported game cancellation and is not retried
   automatically, avoiding duplicate native socials.
 
@@ -997,4 +999,38 @@ recall and rejection for an uninformed pair.
   `13,588`, completion tokens by `97`, and latency by `13,793ms`.
 - After restarting only the backend, usage retained `requests=47`, CLOD
   `{'3':52,'1':3,'2':23}`, prompt `552025`, completion `5110`, and latency `1296399ms`.
-- Test 9 is closed as **PASS**. Test 10 priority under concurrent Sims is the next sequential gate.
+- Test 9 is closed as **PASS**.
+
+## Test 10: Priority under concurrent Sims
+
+**Status:** PASS / LIVE PLAYER-OVER-AMBIENT PRIORITY VERIFIED
+
+- The first controlled attempt exposed that `critical_need` alone did not cross the dynamic
+  cognition value threshold, selected CLOD 1, and completed before a backlog could form.
+- Provider-timed blockers then established a backlog but remained nondeterministic: they completed
+  in roughly 3-4.5 seconds, sometimes before the game finished preprocessing the player request.
+  These runs were correctly recorded as **INCONCLUSIVE**, not scheduler failures.
+- The final harness uses an explicit loopback-only, single-run queue gate with a 60-second automatic
+  release. It does not call a provider, database, or gameplay action and is dormant unless armed.
+- The loopback-only diagnostic gate held the single cognition worker and submitted one
+  lower-priority `critical_need` request at urgency `0.85`.
+- A real in-game Empneon Social request from Sim `1048519419916491057` entered the same queue at
+  urgency `1.0` while that ambient request was already waiting.
+- After the blocker released, the player request started first, completed, and only then did the
+  waiting ambient request start.
+- The lifecycle indices were blocker start `1`, ambient submission `2`, player submission `3`,
+  player start `5`, and ambient start `7`.
+- The preserved local evidence is
+  `output/test10-priority-20260725T222101Z.json`.
+- Automated regression remained green: Sims 4 adapter `246`, Core `225`, and Godot `4`.
+- Test 10 is closed as **PASS**. Test 11 confirmation behavior is the next sequential gate and
+  remains **PARTIAL**.
+
+### Adjacent live dialogue observation
+
+- A live Empneon Social request produced two LM Studio responses that copied the player's message.
+  Existing grounding validation rejected both and delivered the deterministic accepted fallback,
+  `I may not have every answer, but I'll tell you what I know.`
+- The delivered fallback—not either rejected generation—was confirmed and persisted. This verifies
+  that the observed model/display difference was intentional response filtering rather than a game
+  delivery mismatch.

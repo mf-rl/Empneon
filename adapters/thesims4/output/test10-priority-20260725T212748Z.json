@@ -1,0 +1,76 @@
+{
+  "status": "inconclusive",
+  "reason": "ambient blocker did not remain running",
+  "actor_ids": [
+    "empneon-test10-5911bb0949b5-blocker",
+    "empneon-test10-5911bb0949b5-waiting"
+  ],
+  "snapshot": {
+    "worker_limit": 1,
+    "running": [],
+    "waiting": [],
+    "recent": [
+      {
+        "request_id": "4563fae8-a6df-42af-a096-0a6c3e20f83b",
+        "actor_id": "empneon-test10-5911bb0949b5-blocker",
+        "event_type": "critical_need",
+        "urgency": 0.85,
+        "state": "submitted",
+        "submitted_at": 1785014838.348059,
+        "started_at": null,
+        "recorded_at": 1785014838.348059
+      },
+      {
+        "request_id": "4563fae8-a6df-42af-a096-0a6c3e20f83b",
+        "actor_id": "empneon-test10-5911bb0949b5-blocker",
+        "event_type": "critical_need",
+        "urgency": 0.85,
+        "state": "started",
+        "submitted_at": 1785014838.348059,
+        "started_at": 1785014838.3490708,
+        "recorded_at": 1785014838.3490708
+      },
+      {
+        "request_id": "4563fae8-a6df-42af-a096-0a6c3e20f83b",
+        "actor_id": "empneon-test10-5911bb0949b5-blocker",
+        "event_type": "critical_need",
+        "urgency": 0.85,
+        "state": "completed",
+        "submitted_at": 1785014838.348059,
+        "started_at": 1785014838.3490708,
+        "recorded_at": 1785014838.353131
+      },
+      {
+        "request_id": "8c50ffa6-60e7-4782-a02b-245c38ea246e",
+        "actor_id": "1048519419915604847",
+        "event_type": "autonomous_social",
+        "urgency": 0.5,
+        "state": "submitted",
+        "submitted_at": 1785014850.2900984,
+        "started_at": null,
+        "recorded_at": 1785014850.2900984
+      },
+      {
+        "request_id": "8c50ffa6-60e7-4782-a02b-245c38ea246e",
+        "actor_id": "1048519419915604847",
+        "event_type": "autonomous_social",
+        "urgency": 0.5,
+        "state": "started",
+        "submitted_at": 1785014850.2900984,
+        "started_at": 1785014850.2913268,
+        "recorded_at": 1785014850.2913268
+      },
+      {
+        "request_id": "8c50ffa6-60e7-4782-a02b-245c38ea246e",
+        "actor_id": "1048519419915604847",
+        "event_type": "autonomous_social",
+        "urgency": 0.5,
+        "state": "completed",
+        "submitted_at": 1785014850.2900984,
+        "started_at": 1785014850.2913268,
+        "recorded_at": 1785014850.2933211
+      }
+    ]
+  },
+  "errors": []
+}

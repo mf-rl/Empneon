@@ -282,17 +282,36 @@ had rejected `what do you want to do?` as unsupported historical recall.
 
 ## 10. Priority under concurrent Sims
 
-**Current status (2026-07-20): PENDING**
+**Current status (2026-07-25): PASS** — A controlled live run queued lower-priority ambient work,
+then submitted a real in-game player conversation. The player request started and completed before
+the already-waiting ambient request.
 
-- Prerequisite: set `active_agent_limit` to `1`, restart, and place several eligible NPCs on the
-  lot.
-- Action: allow an autonomous request to begin, then immediately start a player **Empneon Social**
-  while further ambient requests are waiting.
+- Prerequisite: set `active_agent_limit` to `1`, restart the source backend, load a disposable
+  save, and confirm the configured provider is available.
+- From `adapters/thesims4`, start the controlled priority harness:
+
+  ```powershell
+  py -3.12 .\scripts\test10_priority_harness.py
+  ```
+
+  At the first prompt, open **Empneon Social**, type the message without submitting it, then press
+  Enter in the harness terminal. The harness arms a loopback-only diagnostic gate that holds one
+  worker and queues one lower-priority ambient request. At the second prompt, submit the prepared
+  in-game message and immediately press Enter in the harness terminal. The harness waits until the
+  real player request is queued before releasing the blocker.
+- Exit code `0` proves the player request started before the already-waiting ambient request.
+  Exit code `1` records an observed ordering failure. Exit code `2` is inconclusive, normally
+  because the real player request was not observed before the diagnostic gate's 60-second automatic
+  release. Preserve `output/test10-priority-*.json`; reviewed reports may be committed as acceptance
+  evidence because they contain queue identifiers and timestamps rather than dialogue or secrets.
 - Expected game result: after the already-running work finishes, the player request completes
   before pending ambient work; the queue remains responsive rather than starting all requests.
-- Expected diagnostic result: timeline and usage timestamps place the player interaction ahead of
-  ambient requests that were waiting at the same time.
-- Persistence: restart and confirm timeline ordering remains readable.
+- Expected diagnostic result: `/diagnostics/cognition-queue` and the harness report show the
+  running blocker, the waiting ambient request, the submitted player request, then player
+  start before waiting-ambient start. Timeline and usage remain consistent with that order.
+- Persistence: restart the backend and confirm timeline ordering remains readable. Queue diagnostic
+  history is intentionally process-local and clears on restart; the JSON report is the queue-order
+  evidence.
 - Cleanup: restore the preferred `active_agent_limit`.
 
 ## 11. Successful and failed confirmation

@@ -1,0 +1,104 @@
+{
+  "status": "inconclusive",
+  "reason": "ambient backlog cleared before player submission",
+  "run_id": "ac0f156a0e26",
+  "actor_ids": [
+    "empneon-test10-ac0f156a0e26-blocker",
+    "empneon-test10-ac0f156a0e26-waiting"
+  ],
+  "evaluation": {
+    "passed": false,
+    "inconclusive": true,
+    "reason": "ambient backlog cleared before player submission",
+    "indices": {
+      "blocker_started": 1,
+      "waiting_submitted": 2,
+      "player_submitted": 6,
+      "player_started": 7,
+      "waiting_started": 4
+    }
+  },
+  "recent": [
+    {
+      "request_id": "955d1ff1-3c35-4612-89e6-9af75556c43b",
+      "actor_id": "empneon-test10-ac0f156a0e26-blocker",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "submitted",
+      "submitted_at": 1785015433.8542,
+      "started_at": null,
+      "recorded_at": 1785015433.8542
+    },
+    {
+      "request_id": "955d1ff1-3c35-4612-89e6-9af75556c43b",
+      "actor_id": "empneon-test10-ac0f156a0e26-blocker",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "started",
+      "submitted_at": 1785015433.8542,
+      "started_at": 1785015433.855208,
+      "recorded_at": 1785015433.855208
+    },
+    {
+      "request_id": "322aa717-edbd-41a3-bff6-bf1c2f457101",
+      "actor_id": "empneon-test10-ac0f156a0e26-waiting",
+      "event_type": "critical_need",
+      "urgency": 0.85,
+      "state": "submitted",
+      "submitted_at": 1785015433.9925723,
+      "started_at": null,
+      "recorded_at": 1785015433.9925723
+    },
+    {
+      "request_id": "955d1ff1-3c35-4612-89e6-9af75556c43b",
+      "actor_id": "empneon-test10-ac0f156a0e26-blocker",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "completed",
+      "submitted_at": 1785015433.8542,
+      "started_at": 1785015433.855208,
+      "recorded_at": 1785015437.0353768
+    },
+    {
+      "request_id": "322aa717-edbd-41a3-bff6-bf1c2f457101",
+      "actor_id": "empneon-test10-ac0f156a0e26-waiting",
+      "event_type": "critical_need",
+      "urgency": 0.85,
+      "state": "started",
+      "submitted_at": 1785015433.9925723,
+      "started_at": 1785015437.036374,
+      "recorded_at": 1785015437.036374
+    },
+    {
+      "request_id": "322aa717-edbd-41a3-bff6-bf1c2f457101",
+      "actor_id": "empneon-test10-ac0f156a0e26-waiting",
+      "event_type": "critical_need",
+      "urgency": 0.85,
+      "state": "completed",
+      "submitted_at": 1785015433.9925723,
+      "started_at": 1785015437.036374,
+      "recorded_at": 1785015437.0394058
+    },
+    {
+      "request_id": "164daa74-20ce-4729-9763-c722415947d9",
+      "actor_id": "1048519419916491057",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "submitted",
+      "submitted_at": 1785015470.2580516,
+      "started_at": null,
+      "recorded_at": 1785015470.2580516
+    },
+    {
+      "request_id": "164daa74-20ce-4729-9763-c722415947d9",
+      "actor_id": "1048519419916491057",
+      "event_type": "player_conversation",
+      "urgency": 1.0,
+      "state": "started",
+      "submitted_at": 1785015470.2580516,
+      "started_at": 1785015470.2590654,
+      "recorded_at": 1785015470.2590654
+    }
+  ],
+  "errors": []
+}
