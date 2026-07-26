@@ -54,6 +54,12 @@ py -3.12 -m pip install -e ..\..\core -e .
    feedback, and save/reload continuity are documented in the
    [setup guide](docs/setup.md).
 
+   Cancelling **Waiting for response** suppresses late dialogue and consequences. Failed
+   cancellation records retain zero applied changes across backend restart. Permanent HTTP client
+   errors while confirming an action result pause after one attempt and include their decision ID
+   and backend response in `ai_sims_agent_loaded.txt`; network and server failures retain bounded
+   exponential backoff.
+
    Confirmed pair history is selected through a bounded semantic-memory request, with deterministic
    recall as fallback. Shared Core constraints keep attributed facts ahead of newer factless
    replies and validate requested time and location evidence. Live save/reload testing retrieved

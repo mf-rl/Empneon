@@ -1,6 +1,8 @@
 import importlib.util
+import io
 import struct
 import sys
+import urllib.error
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -875,6 +877,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         waiting.affordance = affordance
         waiting.outcome = "neutral-waiting-outcome"
         waiting.listen_animation_calls = []
+        waiting.finishing_callback = None
+        waiting.register_on_finishing_callback = lambda callback: setattr(
+            waiting, "finishing_callback", callback
+        )
 
         def listen_animation(animation_interaction, sequence):
             waiting.listen_animation_calls.append((animation_interaction, sequence))
@@ -964,9 +970,12 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         )
     )
     waiting_cancellations = []
-    waiting.cancel = lambda finishing_type, cancel_reason_msg=None: (
+
+    def cancel_waiting(finishing_type, cancel_reason_msg=None):
         waiting_cancellations.append((finishing_type, cancel_reason_msg))
-    )
+        waiting.finishing_callback(waiting)
+
+    waiting.cancel = cancel_waiting
     mapped_aop_count = len(mapped_aops)
     with monkeypatch.context() as acknowledgement_patch:
         acknowledgement_patch.setattr(
@@ -1198,6 +1207,46 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     assert canceled_session.closed is True
     assert canceled_session.canceled is True
     assert "queue-cancel" not in agent._CONVERSATION_SESSIONS
+
+    race_actor = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="queue-cancel-race", full_name="Alice")
+    )
+    race_target = SimpleNamespace(
+        sim_info=SimpleNamespace(sim_id="race-target", full_name="Bob")
+    )
+    race_callbacks = []
+    race_interaction = agent.EmpneonWaitingInteraction()
+    race_interaction.sim = race_actor
+    race_interaction.target = race_target
+    race_interaction.register_on_finishing_callback = race_callbacks.append
+    race_actor.push_super_affordance = lambda *_args: SimpleNamespace(
+        interaction=race_interaction
+    )
+    race_session = agent.EmpneonConversationSession(
+        pie_interaction, race_actor, race_target
+    )
+    agent._CONVERSATION_SESSIONS["queue-cancel-race"] = race_session
+
+    assert agent.queue_awaiting_answer(race_session, "Cancel before the reply.")
+    assert len(race_callbacks) == 1
+    notification_count = len(notifications)
+    late = {
+        "decision_id": "late-race-decision",
+        "dialogue": "This must not be shown.",
+        "suggested_action": "none",
+    }
+    canceled_proposals = []
+    race_callbacks[0](race_interaction)
+    with monkeypatch.context() as race_patch:
+        race_patch.setattr(
+            agent, "report_canceled_proposal", canceled_proposals.append
+        )
+        assert race_session.accept_backend_result(1, late, None) is False
+
+    assert race_session.closed is True
+    assert race_session.canceled is True
+    assert len(notifications) == notification_count
+    assert canceled_proposals == [late]
 
     unavailable_actor = SimpleNamespace(
         sim_info=SimpleNamespace(sim_id="queue-unavailable", full_name="Alice")
@@ -2081,6 +2130,39 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         item["body"]["decision_id"] == "decision-retry"
         for item in agent._ACTION_RESULT_OUTBOX
     )
+
+    permanent_attempts = []
+
+    def permanently_rejected_post(_path, body, timeout=None):
+        permanent_attempts.append(body["decision_id"])
+        raise urllib.error.HTTPError(
+            "/action-result",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(b'{"error":"unknown or conflicting action proposal"}'),
+        )
+
+    monkeypatch.setattr(agent, "post_json", permanently_rejected_post)
+    agent.report_action_result(
+        "decision-permanent",
+        "friendly_chat",
+        "failed",
+        "interaction canceled",
+    )
+    permanent_item = agent._ACTION_RESULT_OUTBOX[-1]
+    pump_outbox()
+
+    assert permanent_attempts == ["decision-permanent"]
+    assert permanent_item["paused"] is True
+    assert permanent_item["attempts"] == 1
+    assert any(
+        "decision-permanent" in marker
+        and "HTTP 400" in marker
+        and "unknown or conflicting action proposal" in marker
+        for marker in selected
+    )
+    agent._ACTION_RESULT_OUTBOX.remove(permanent_item)
 
     malformed_reports = []
     malformed_session = agent.EmpneonConversationSession(

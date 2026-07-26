@@ -161,7 +161,9 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
 - The Sims 4 path proposes mapped actions and records only game-confirmed outcomes.
 - Player-triggered Sims dialogue is a cancelable single-turn transaction with separate routing and
   waiting queue phases, portrait notifications, cosmetic waiting animation, and bounded observed
-  friendship or romance consequences.
+  friendship or romance consequences. Live cancellation suppresses late dialogue and consequences,
+  persists zero-change failed records across backend restart, and stops retrying permanently
+  rejected action-result confirmations after one diagnostic attempt.
 - The Sims 4 bridge selects relevant, pair-scoped confirmed memories through a bounded model
   request with deterministic fallback. Shared Core recall constraints prioritize authoritative
   attributed facts, normalize equivalent time expressions, preserve location ownership, reject

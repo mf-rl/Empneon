@@ -18,7 +18,8 @@ feature promise.
 - Versioned SQLite migrations and Core-owned adapter memory documents
 - Save-aware The Sims 4 memory checkpoints and one-time legacy memory import
 - Single-turn The Sims 4 player dialogue with cancelable waiting, cosmetic conversation animation,
-  and bounded game-observed relationship outcomes
+  and bounded game-observed relationship outcomes; live cancellation suppresses late effects and
+  preserves zero-change failed records across backend restart
 - Bounded, pair-scoped semantic memory selection with deterministic fallback and shared recall
   constraints; live date-plan recall succeeds across paraphrasing and save/reload while preserving
   exact time and attributed location ownership in fresh wording
@@ -41,8 +42,7 @@ feature promise.
   conflicts.
 - Expand live social-category coverage beyond the passed romance and relationship-neutral
   friendship branches; a more consistently neutral waiting animation is optional polish.
-- Complete Test 11 live confirmation coverage for successful delivery and deliberate cancellation,
-  including persistence and absence of consequences for failed actions.
+- Complete Test 13 identity repeated-import and backend-restart persistence coverage.
 
 ### Core integration
 

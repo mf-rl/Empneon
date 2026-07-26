@@ -3,6 +3,7 @@ import math
 import os
 import threading
 import traceback
+import urllib.error
 import urllib.parse
 import uuid
 
@@ -1207,7 +1208,7 @@ def process_autonomy_responses(_alarm_handle):
             elif event == "action_confirmation_failed" and turn_id == session.turn_id:
                 session.action_confirmation_failed(turn_id, detail)
     if action_result is not None:
-        outbox_id, error = action_result
+        outbox_id, error, permanent = action_result
         outbox_item = next(
             (entry for entry in _ACTION_RESULT_OUTBOX if entry["id"] == outbox_id),
             None,
@@ -1237,24 +1238,39 @@ def process_autonomy_responses(_alarm_handle):
                     )
             else:
                 outbox_item["attempts"] += 1
-                outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
-                    outbox_item["attempts"]
-                )
                 session = find_conversation_session(outbox_item["session_id"])
-                if (
-                    outbox_item["attempts"] >= 3
-                    and outbox_item["body"]["status"] == "succeeded"
-                    and session is not None
-                ):
+                if permanent:
                     outbox_item["paused"] = True
-                    _SESSION_EVENTS.append(
-                        (
-                            outbox_item["session_id"],
-                            outbox_item["turn_id"],
-                            "action_confirmation_failed",
-                            "Action result confirmation failed: {}".format(error),
+                    if (
+                        outbox_item["body"]["status"] == "succeeded"
+                        and session is not None
+                    ):
+                        _SESSION_EVENTS.append(
+                            (
+                                outbox_item["session_id"],
+                                outbox_item["turn_id"],
+                                "action_confirmation_failed",
+                                "Action result confirmation failed: {}".format(error),
+                            )
                         )
+                else:
+                    outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
+                        outbox_item["attempts"]
                     )
+                    if (
+                        outbox_item["attempts"] >= 3
+                        and outbox_item["body"]["status"] == "succeeded"
+                        and session is not None
+                    ):
+                        outbox_item["paused"] = True
+                        _SESSION_EVENTS.append(
+                            (
+                                outbox_item["session_id"],
+                                outbox_item["turn_id"],
+                                "action_confirmation_failed",
+                                "Action result confirmation failed: {}".format(error),
+                            )
+                        )
     if dialogue_delivery is not None:
         outbox_id, error = dialogue_delivery
         outbox_item = next(
@@ -1546,13 +1562,26 @@ def dispatch_action_result_outbox():
 
     def worker():
         error = None
+        permanent = False
         try:
             post_json("/action-result", body, timeout=10)
+        except urllib.error.HTTPError as exc:
+            permanent = 400 <= exc.code < 500
+            detail = exc.read().decode("utf-8", "replace")
+            error = "HTTP {}: {}".format(exc.code, detail or exc.reason)
+            if permanent:
+                write_marker(
+                    "Action result rejected permanently: decision_id={} {}".format(
+                        body.get("decision_id"), error
+                    )
+                )
+            else:
+                write_marker(traceback.format_exc())
         except Exception as exc:
             error = str(exc)
             write_marker(traceback.format_exc())
         with _AUTONOMY_RESPONSES_LOCK:
-            _ACTION_RESULT_RESPONSES.append((outbox_id, error))
+            _ACTION_RESULT_RESPONSES.append((outbox_id, error, permanent))
 
     thread = threading.Thread(target=worker)
     thread.daemon = True
@@ -1991,6 +2020,17 @@ def queue_awaiting_answer(session, message):
         return False
     interaction._empneon_session_id = session.id
     session.interaction = interaction
+    register_finished = getattr(interaction, "register_on_finishing_callback", None)
+    if not callable(register_finished):
+        session.fail("Waiting for response has no completion callback.")
+        return False
+
+    def waiting_finished(_interaction):
+        if not session.closed and not session.response_received:
+            write_marker("Empneon Social waiting task canceled")
+            session.close(canceled=True)
+
+    register_finished(waiting_finished)
     turn_id = session.begin_turn()
     if turn_id is None:
         session.close(canceled=True)

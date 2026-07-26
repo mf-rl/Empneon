@@ -393,6 +393,10 @@ consequence, and left zero pending proposals without producing a new desync.
 - Social enqueue failure: run `ai.socialtunings friendly` on an active lot and inspect
   `ai_sims_agent_loaded.txt`. The optional final word filters loaded tuning names, and all
   matches are written to the marker file even though console output is capped at 100.
+- Repeated backend `POST /action-result` status `400`: reinstall the current mod and restart the
+  game. Current builds treat HTTP `400` through `499` as permanent, log the rejected decision ID
+  and backend response in `ai_sims_agent_loaded.txt`, and pause after one attempt. Network and
+  HTTP `500` through `599` failures continue retrying with exponential backoff.
 - `_weakrefset.py:121` reports `frozenset` and `tuple`: reinstall the current mod and clear
   `localthumbcache.package`. The adapter must leave the full-autonomy request's
   `object_list` unset because current game builds use tuple motives on native object

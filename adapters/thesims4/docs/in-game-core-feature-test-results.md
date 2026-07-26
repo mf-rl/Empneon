@@ -1034,3 +1034,52 @@ recall and rejection for an uninformed pair.
 - The delivered fallback—not either rejected generation—was confirmed and persisted. This verifies
   that the observed model/display difference was intentional response filtering rather than a game
   delivery mismatch.
+
+## Test 11: Successful and failed confirmation
+
+**Status:** PASS / LIVE SUCCESS, CANCELLATION, AND RESTART PERSISTENCE VERIFIED
+
+- Initial live run: the first Empneon Social completed successfully.
+- The second was sent and then cancelled from the interaction queue.
+- The target's response notification from the cancelled interaction still appeared in game.
+- Root cause: cancellation was recorded only when the waiting interaction generator resumed; a
+  completed backend request could be displayed first.
+- The waiting interaction now closes the conversation session directly from the game's finishing
+  callback. Late results are rejected, while normal response-triggered completion remains accepted.
+- Regression verification: focused cancellation/success test passed, the complete Sims 4 adapter
+  suite passed all `246` tests, Python compilation passed, and both mod artifacts rebuilt.
+- Live retest after installing the rebuilt mod: the first Empneon Social completed; the second was
+  sent and cancelled from the queue; no target-response notification appeared.
+- After restarting the backend with the game still running, the successful transaction remained as
+  three timeline entries: its observed event, confirmed event, and decision
+  `faf78481-f5a1-43f6-b94a-4047b749c476`.
+- Replay reported `succeeded`, `consequence_integrity: true`, and the applied relationship change.
+  The cancelled transaction left no proposal, result, event, or memory, confirming no late effect
+  but not the required persisted failed record.
+- Cancellation and successful-record persistence are live-verified. Test 11 remains open for a
+  persisted failed/cancelled record.
+- Two later cancellations produced failed decisions
+  `1e9df253-1a56-4d1d-91f5-9112853c9075` and
+  `e7583557-6306-4450-8d40-ffc3363ca4f9`, both with reason
+  `Empneon Social canceled`, zero applied changes, no confirmed event, no pending proposal, and
+  `consequence_integrity: true`.
+- Failed-record diagnostics are live-verified. Test 11 remains open only for confirming these
+  records after another backend restart.
+- After the next backend restart, both failed decision IDs still replayed with status `failed`,
+  reason `Empneon Social canceled`, zero applied changes, and `consequence_integrity: true`.
+- Test 11 is closed as **PASS**.
+
+### Action-result HTTP 400 retry remediation
+
+**Status:** AUTOMATED PASS / LIVE RETEST PENDING
+
+- A rejected action-result entry previously treated every HTTP `400` as transient and retried
+  indefinitely while the game remained open.
+- The adapter now pauses HTTP `400` through `499` after one attempt and logs the decision ID plus
+  backend response. Network and HTTP `500` through `599` failures retain exponential backoff.
+- The backend continues rejecting unknown, malformed, or conflicting results; no false success is
+  returned.
+- Regression verification passed the focused outbox test, all `246` Sims 4 adapter tests, Python
+  compilation, and the mod build.
+- Live acceptance remains: install the rebuilt mod, keep the game open across a backend restart,
+  and confirm a permanently rejected action result produces one `400`, not repeated requests.

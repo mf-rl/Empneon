@@ -316,8 +316,9 @@ the already-waiting ambient request.
 
 ## 11. Successful and failed confirmation
 
-**Current status (2026-07-20): PARTIAL** — Automated success/failure passes; deliberate live queue
-cancellation and persistence remain.
+**Current status (2026-07-25): PASS** — Successful delivery and queue cancellation passed live.
+The successful record and two failed cancellation records survived backend restarts with valid
+replay integrity. Cancelled interactions produced zero applied changes and no confirmed memory.
 
 - Prerequisite: two Sims and a baseline relationship diagnostic.
 - Action: complete one native Empneon social. Then start another and cancel it from the interaction
