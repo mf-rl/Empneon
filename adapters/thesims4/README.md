@@ -54,7 +54,9 @@ py -3.12 -m pip install -e ..\..\core -e .
    feedback, and save/reload continuity are documented in the
    [setup guide](docs/setup.md).
 
-   Cancelling **Waiting for response** suppresses late dialogue and consequences. Failed
+   Explicitly cancelling **Waiting for response** suppresses late dialogue and consequences.
+   Game-driven finishes while the backend is still working requeue the same waiting session without
+   sending another backend request; the task ends naturally after response delivery. Failed
    cancellation records retain zero applied changes across backend restart. Permanent HTTP client
    errors while confirming an action result pause after one attempt and include their decision ID
    and backend response in `ai_sims_agent_loaded.txt`; network and server failures retain bounded

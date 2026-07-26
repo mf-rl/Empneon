@@ -163,7 +163,9 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
   waiting queue phases, portrait notifications, cosmetic waiting animation, and bounded observed
   friendship or romance consequences. Live cancellation suppresses late dialogue and consequences,
   persists zero-change failed records across backend restart, and stops retrying permanently
-  rejected action-result confirmations after one diagnostic attempt.
+  rejected action-result confirmations after one diagnostic attempt. Only an explicit player
+  cancellation closes a pending session; a game-driven waiting-task finish requeues the same
+  visible task without submitting another backend request.
 - The Sims 4 bridge selects relevant, pair-scoped confirmed memories through a bounded model
   request with deterministic fallback. Shared Core recall constraints prioritize authoritative
   attributed facts, normalize equivalent time expressions, preserve location ownership, reject
@@ -181,6 +183,8 @@ or scalability. See the [benchmark results](adapters/thesims4/docs/benchmark-res
 - The differentiated adaptive benchmark reduced provider calls on one synthetic workload while
   passing its declared preference threshold; this is not a player study.
 - Timeline, replay, telemetry, regression fixtures, and package builds are implemented.
+- Repeated Sims identity import preserves canonical state across backend restart; timestamp-only
+  refreshes are not treated as identity changes.
 
 No result establishes novelty, broad player value, or production scalability.
 

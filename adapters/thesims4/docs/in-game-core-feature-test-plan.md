@@ -350,8 +350,8 @@ replay integrity. Cancelled interactions produced zero applied changes and no co
 
 ## 13. Identity export and import
 
-**Current status (2026-07-20): PARTIAL** — Automated round trip passes; repeated import and restart
-persistence remain.
+**Current status (2026-07-26): PASS** — Two imports and the post-restart export preserved all
+canonical identity fields. Raw JSON differed only because `updated_at` timestamps were refreshed.
 
 - Prerequisite: a Sim with goals, emotion, relationship, and optionally voice data.
 - Action:
@@ -371,7 +371,10 @@ persistence remain.
 
 ## 14. Save-slot isolation
 
-**Current status (2026-07-20): PENDING**
+**Current status (2026-07-26): PARTIAL** — Save-aware mode is enabled and slot 13 checkpoint/session
+files were created. Fact persistence and backend recall work, but game-driven cancellation
+discarded completed replies. The lifecycle fix is built and automated-pass; install/live retest and
+the Save A / Save B isolation matrix remain.
 
 - Prerequisite: set `preserve_memory_only_on_game_save` to `true` and restart.
 - Action: in Save A, teach a unique fact and save. Use **Save As** to create Save B, teach a second

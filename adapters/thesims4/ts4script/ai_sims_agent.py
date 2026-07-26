@@ -329,7 +329,7 @@ class EmpneonWaitingInteraction(SocialSuperInteraction):
         try:
             while not session.closed and not session.response_received:
                 if session.actor is None or session.target is None:
-                    session.close(canceled=True)
+                    session.fail("Could not continue Waiting for response.")
                     break
                 idle = element_utils.sleep_until_next_tick_element()
                 child = (
@@ -356,7 +356,7 @@ class EmpneonWaitingInteraction(SocialSuperInteraction):
             return True
         finally:
             if not session.closed and not session.response_received:
-                session.close(canceled=True)
+                waiting_interaction_finished(session, self)
 
 
 def install_empneon_social(sim):
@@ -1999,22 +1999,41 @@ def show_empneon_message_dialog(session):
     return True
 
 
-def queue_awaiting_answer(session, message):
+def waiting_interaction_finished(session, interaction):
+    if (
+        session.closed
+        or session.response_received
+        or session.interaction is not interaction
+    ):
+        return
+    if getattr(interaction, "finishing_type", None) == FinishingType.USER_CANCEL:
+        write_marker("Empneon Social waiting task canceled by user")
+        session.close(canceled=True)
+        return
+    write_marker("Empneon Social waiting task restarted")
+    queue_waiting_interaction(session)
+
+
+def queue_waiting_interaction(session):
     affordance = services.affordance_manager().get(EMPNEON_WAITING_INTERACTION_ID)
     if affordance is None or session.actor is None or session.target is None:
         session.fail("Could not queue Waiting for response.")
         return False
-    context = InteractionContext(
-        session.actor,
-        InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
-        Priority.High,
-    )
-    result = session.actor.push_super_affordance(
-        affordance,
-        session.target,
-        context,
-    )
-    interaction = getattr(result, "interaction", None)
+    try:
+        context = InteractionContext(
+            session.actor,
+            InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
+            Priority.High,
+        )
+        result = session.actor.push_super_affordance(
+            affordance,
+            session.target,
+            context,
+        )
+        interaction = getattr(result, "interaction", None)
+    except Exception:
+        write_marker(traceback.format_exc())
+        interaction = None
     if interaction is None:
         session.fail("Could not queue Waiting for response.")
         return False
@@ -2024,13 +2043,15 @@ def queue_awaiting_answer(session, message):
     if not callable(register_finished):
         session.fail("Waiting for response has no completion callback.")
         return False
+    register_finished(
+        lambda completed: waiting_interaction_finished(session, completed)
+    )
+    return True
 
-    def waiting_finished(_interaction):
-        if not session.closed and not session.response_received:
-            write_marker("Empneon Social waiting task canceled")
-            session.close(canceled=True)
 
-    register_finished(waiting_finished)
+def queue_awaiting_answer(session, message):
+    if not queue_waiting_interaction(session):
+        return False
     turn_id = session.begin_turn()
     if turn_id is None:
         session.close(canceled=True)

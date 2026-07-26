@@ -6,7 +6,8 @@ reviewed, non-sensitive acceptance reports may be retained with this record.
 ## Remediation status
 
 The current branch includes automated regressions and fixes for the actionable defects below.
-Tests 4 through 10 have passed their live acceptance retests; Test 11 is the next sequential gate:
+Tests 4 through 13 have passed their live acceptance retests. Test 14 is partial and is the next
+sequential gate:
 
 - Test 3 generic fallback summaries now contain the concrete message and reply.
 - Test 4 now passes: the live aspiration tracker is ingested, and need-goal lifecycle state
@@ -25,6 +26,13 @@ Tests 4 through 10 have passed their live acceptance retests; Test 11 is the nex
   longer mistakes a mid-sentence current-state `what do` question for historical recall.
 - Test 10 confirms that a real player conversation starts before already-waiting lower-priority
   ambient cognition when the single worker becomes available.
+- Test 11 confirms successful and canceled action-result persistence across backend restart.
+- Test 12 confirms timeline replay and consequence integrity.
+- Test 13 confirms repeated identity import and backend-restart persistence; raw export timestamps
+  may refresh while canonical identity remains unchanged.
+- Test 14 has created a slot 13 checkpoint and retained its confirmed test fact. A game-driven
+  waiting-task finish discarded two completed backend answers; the lifecycle fix is automated-pass
+  and awaiting installation/live retest.
 - `FinishingType.OBJECT_CHANGED` remains a reported game cancellation and is not retried
   automatically, avoiding duplicate native socials.
 
@@ -1023,8 +1031,8 @@ recall and rejection for an uninformed pair.
 - The preserved local evidence is
   `output/test10-priority-20260725T222101Z.json`.
 - Automated regression remained green: Sims 4 adapter `246`, Core `225`, and Godot `4`.
-- Test 10 is closed as **PASS**. Test 11 confirmation behavior is the next sequential gate and
-  remains **PARTIAL**.
+- Test 10 is closed as **PASS**. Tests 11 through 13 later closed as **PASS**; Test 14 is the next
+  sequential gate.
 
 ### Adjacent live dialogue observation
 
@@ -1083,3 +1091,56 @@ recall and rejection for an uninformed pair.
   compilation, and the mod build.
 - Live acceptance remains: install the rebuilt mod, keep the game open across a backend restart,
   and confirm a permanently rejected action result produces one `400`, not repeated requests.
+
+## Test 12: Timeline and replay
+
+**Status:** PASS
+
+- Test 11 replay returned both successful and failed decisions after backend restart.
+- Successful replay retained its applied relationship change and
+  `consequence_integrity: true`.
+- Both canceled decisions retained status `failed`, reason `Empneon Social canceled`, zero applied
+  changes, no confirmed memory, and `consequence_integrity: true`.
+- Replay remained diagnostic-only and did not execute another game action.
+
+## Test 13: Identity export and import
+
+**Status:** PASS / REPEATED IMPORT AND BACKEND-RESTART PERSISTENCE VERIFIED
+
+- Test subject: Aurelio Robles (`1048519419917370656`).
+- The same exported identity was imported twice.
+- Byte-for-byte JSON comparison returned `False` after each import because import refreshes
+  `updated_at` timestamps.
+- Semantic comparison excluding those timestamps passed after both imports and again after a
+  backend restart.
+- Canonical state retained one relationship, three emotions, five goals, and an optional `null`
+  voice profile.
+- No live Sim state changed, and the temporary identity snapshot remained local rather than being
+  added to the repository.
+
+## Test 14: Save-slot isolation
+
+**Status:** PARTIAL / WAITING-LIFECYCLE FIX BUILT; LIVE RETEST AND SLOT MATRIX PENDING
+
+- `preserve_memory_only_on_game_save` is enabled for the ongoing test.
+- The active game used slot `13`; the backend created
+  `empneon_core_memory.sqlite3.empneon-saved.slot-13` and the session marker.
+- The confirmed statement `TEST14-A-731 is under the red lamp.` became an accessible pair-scoped
+  fact.
+- The backend generated correct grounded answers for two `Where is TEST14-A-731?` requests, but
+  The Sims 4 ended `Waiting for response` before delivery. Both results were discarded and recorded
+  as `Empneon Social canceled` even though the player had not canceled and backend latency was not
+  the cause.
+- Root cause: the waiting finishing callback and generator cleanup treated every finish type as a
+  player cancellation.
+- The adapter now closes only `FinishingType.USER_CANCEL`. Other pending finishes requeue the
+  visible waiting interaction for the same session, without another `/chat` submission. Stale
+  callbacks cannot duplicate the replacement, and response-triggered natural completion remains
+  unchanged.
+- Red/green regression reproduced the old cancellation. Final automated verification passed all
+  `246` Sims adapter tests, Python compilation, the mod build, and `git diff --check`.
+- Adjacent open defect: `What is the exact private branch code I told you?` completed one backend
+  generation without game delivery, then returned HTTP `500` on retry because the grounded
+  fallback builder did not recognize that explicit-recall wording.
+- Next live step: install the rebuilt mod, restart the game, retry
+  `Where is TEST14-A-731?`, then complete the Save A / Save B branch-isolation and restart matrix.

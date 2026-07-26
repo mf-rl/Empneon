@@ -78,6 +78,9 @@ handoff so the next manual run cannot connect to a stale process.
    native message field. Sending removes that task, shows the player's message as a portrait
    notification, and queues the cancelable **Waiting for response** task. The target's answer is a
    portrait notification and ends the transaction; select Empneon Social again for another turn.
+   Only an explicit player cancellation closes a pending session. If the game finishes the waiting
+   task for another reason before the backend reply, the adapter queues a replacement tied to the
+   same request.
    While waiting, both Sims play a cosmetic EA conversation animation. Sim B may occasionally use
    a bored-looking gesture; this is a known visual limitation and does not select a mean interaction.
    A delivered answer may apply one mild (`5` point) friendship or romance outcome directly
@@ -113,7 +116,7 @@ JSON file. Environment variables override the loaded file.
 | `memory_database` | Single active identity, memory, action, and cognition database | `empneon_core_memory.sqlite3` |
 | `database`, `AI_SIM_DB` | Former adapter database imported once for compatibility | `ai_sims_memory.sqlite3` |
 | `core_database` | Former Core database adopted once for compatibility | `empneon_core.sqlite3` |
-| `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `false` |
+| `preserve_memory_only_on_game_save` | Roll back unsaved Sims narrative state at the next game session | `true` |
 | `response_rejection_enabled` | Reject and retry ungrounded, copied, role-confused, or contradictory model replies | `true` |
 | `active_agent_limit` | Concurrent reference-adapter sessions and Core admissions | `1` |
 | `agent_wake_timeout_seconds` | Wait for an agent-session slot | `60` |
@@ -166,6 +169,11 @@ introduction correctly displayed no icon. The waiting animation also completed a
 through its initiator-only visual fallback when no linked social group was available. Stronger
 `+++` feedback and relationship milestones such as best friends, first kisses, and proposals are
 deferred and must not be triggered by this implementation.
+
+On July 26, automated regression covered a later game-driven waiting-task cancellation that had
+discarded completed backend answers during Test 14. Non-user finishes now requeue the same session,
+stale callbacks cannot create duplicate tasks, and only `FinishingType.USER_CANCEL` suppresses a
+late reply. The rebuilt mod still requires a live in-game retest.
 
 On July 24, the in-game Core matrix also closed Tests 7 through 9. A non-date paraphrase retrieved
 the informed pair's private `under the blue bench` location before and after backend restart while

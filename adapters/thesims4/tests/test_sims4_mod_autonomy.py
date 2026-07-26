@@ -167,7 +167,10 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     aop_module = ModuleType("interactions.aop")
     context_module = ModuleType("interactions.context")
     interaction_finisher = ModuleType("interactions.interaction_finisher")
-    interaction_finisher.FinishingType = SimpleNamespace(NATURAL="natural")
+    interaction_finisher.FinishingType = SimpleNamespace(
+        NATURAL="natural",
+        USER_CANCEL="user_cancel",
+    )
 
     class FakeInteractionContext:
         SOURCE_SCRIPT_WITH_USER_INTENT = "script_with_user_intent"
@@ -1085,6 +1088,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         assert waiting_cancellations == [
             ("natural", "Empneon response received")
         ]
+        assert len(queued_waiting) == 1
         assert notifications[-1].owner is pie_interaction.target
         assert notifications[-1].kwargs["text"]() == "I remember."
         try:
@@ -1145,6 +1149,19 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     runtime_interaction.context = SimpleNamespace(sim=runtime_actor)
     runtime_interaction.affordance = agent.EmpneonWaitingInteraction
     runtime_interaction._empneon_session_id = runtime_session.id
+    runtime_session.interaction = runtime_interaction
+    runtime_replacements = []
+
+    def push_runtime_waiting(*_args):
+        replacement = agent.EmpneonWaitingInteraction()
+        replacement._empneon_session_id = runtime_session.id
+        replacement.register_on_finishing_callback = lambda callback: setattr(
+            replacement, "finishing_callback", callback
+        )
+        runtime_replacements.append(replacement)
+        return SimpleNamespace(interaction=replacement)
+
+    runtime_actor.push_super_affordance = push_runtime_waiting
 
     def runtime_run_child(_timeline, element):
         if isinstance(element, tuple):
@@ -1162,8 +1179,9 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         assert next(runtime_runner) == "next-tick"
         assert runtime_session.closed is False
         runtime_runner.close()
-    assert runtime_session.closed is True
-    assert runtime_session.canceled is True
+    assert runtime_session.closed is False
+    assert runtime_session.canceled is False
+    assert runtime_session.interaction is runtime_replacements[0]
 
     def fail_waiting_cancel(*_args, **_kwargs):
         raise RuntimeError("waiting interaction already finished")
@@ -1201,6 +1219,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     canceled_interaction.sim = canceled_actor
     canceled_interaction.target = canceled_target
     canceled_interaction._empneon_session_id = canceled_session.id
+    canceled_interaction.finishing_type = agent.FinishingType.USER_CANCEL
+    canceled_session.interaction = canceled_interaction
     canceled_runner = canceled_interaction._run_interaction_gen("timeline")
     assert next(canceled_runner) == "next-tick"
     canceled_runner.close()
@@ -1214,21 +1234,41 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     race_target = SimpleNamespace(
         sim_info=SimpleNamespace(sim_id="race-target", full_name="Bob")
     )
-    race_callbacks = []
-    race_interaction = agent.EmpneonWaitingInteraction()
-    race_interaction.sim = race_actor
-    race_interaction.target = race_target
-    race_interaction.register_on_finishing_callback = race_callbacks.append
-    race_actor.push_super_affordance = lambda *_args: SimpleNamespace(
-        interaction=race_interaction
-    )
+    race_interactions = []
+
+    def push_race_waiting(*_args):
+        interaction = agent.EmpneonWaitingInteraction()
+        interaction.sim = race_actor
+        interaction.target = race_target
+        interaction.finishing_type = ""
+        interaction.finishing_callback = None
+        interaction.register_on_finishing_callback = lambda callback: setattr(
+            interaction, "finishing_callback", callback
+        )
+        race_interactions.append(interaction)
+        return SimpleNamespace(interaction=interaction)
+
+    race_actor.push_super_affordance = push_race_waiting
     race_session = agent.EmpneonConversationSession(
         pie_interaction, race_actor, race_target
     )
     agent._CONVERSATION_SESSIONS["queue-cancel-race"] = race_session
 
-    assert agent.queue_awaiting_answer(race_session, "Cancel before the reply.")
-    assert len(race_callbacks) == 1
+    submission_count = len(submitted)
+    assert agent.queue_awaiting_answer(race_session, "Wait for the reply.")
+    assert len(submitted) == submission_count + 1
+    assert submitted[-1] == (race_session, "Wait for the reply.")
+    first_waiting = race_session.interaction
+    first_waiting.finishing_type = "displaced"
+    first_waiting.finishing_callback(first_waiting)
+    replacement = race_session.interaction
+    assert replacement is not first_waiting
+    assert replacement._empneon_session_id == race_session.id
+    assert race_session.closed is False
+    assert len(submitted) == submission_count + 1
+    first_waiting.finishing_callback(first_waiting)
+    assert race_session.interaction is replacement
+
     notification_count = len(notifications)
     late = {
         "decision_id": "late-race-decision",
@@ -1236,7 +1276,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "suggested_action": "none",
     }
     canceled_proposals = []
-    race_callbacks[0](race_interaction)
+    replacement.finishing_type = agent.FinishingType.USER_CANCEL
+    replacement.finishing_callback(replacement)
     with monkeypatch.context() as race_patch:
         race_patch.setattr(
             agent, "report_canceled_proposal", canceled_proposals.append
@@ -1267,7 +1308,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     else:
         raise AssertionError("Unavailable participant kept waiting interaction alive")
     assert unavailable_session.closed is True
-    assert unavailable_session.canceled is True
+    assert unavailable_session.canceled is False
     assert "queue-unavailable" not in agent._CONVERSATION_SESSIONS
 
     dialog_count = len(dialogs)

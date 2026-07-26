@@ -18,9 +18,11 @@ output/pytest-*/
 output/audit-pytest-*/
 *.sqlite3
 *.sqlite3-*
+*.sqlite3.*
 *.db
 .env
 *.log
+*.log.*
 stage*-config.json
 adapters/thesims4/dist/
 .core-publication-test/
