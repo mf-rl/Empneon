@@ -36,6 +36,9 @@ feature promise.
   lower-priority ambient cognition without changing scheduler ordering
 - Live non-date semantic recall retrieves a paraphrased private location before and after backend
   restart while withholding that location from an uninformed pair
+- Live semantic recall preserves preference, promise, sibling ownership, and conflict evidence
+  across backend/game restart while withholding preference and conflict facts from an uninformed
+  pair and applying no executable changes
 - Repeated identity import is semantically idempotent across backend restart for canonical agent,
   personality, relationship, emotion, goal, and optional voice state
 - The Sims 4 15-section in-game acceptance suite passes provider-backed and provider-free
@@ -44,8 +47,6 @@ feature promise.
 
 ## Next gates
 
-- Complete the post-remediation uninformed-pair and restart matrix; preference, promise, identity
-  ownership, conflict grounding, and neutral executable outcomes passed the informed-pair run.
 - Expand live social-category coverage beyond the passed romance and relationship-neutral
   friendship branches; a more consistently neutral waiting animation is optional polish.
 

@@ -10,6 +10,8 @@ build/
 .pytest-*/
 *.sqlite3
 output/http-simulation-*.json
+output/*-timeline-*.json
+output/*-replay-*.json
 *.db
 *.empneon-saved*
 *.empneon-session

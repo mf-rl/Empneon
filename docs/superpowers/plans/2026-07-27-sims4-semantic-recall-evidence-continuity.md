@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Execution status:** Informed-pair live matrix passed; privacy and restart checks pending.
+**Execution status:** Complete; informed recall, uninformed-pair privacy, and restart continuity
+passed live.
 
 **Goal:** Carry the semantic selector's primary attributed fact through dialogue grounding and fallback for paraphrased preference, promise, identity, and conflict questions.
 
@@ -28,8 +29,9 @@
   meaningful commitment detail; sibling replies preserve the fact owner's perspective.
 - Recall decisions no longer promote generated dialogue to responder facts. Existing attributed
   fallback wrappers recover the quoted fact and owner at read time without a migration.
-- The informed-pair live matrix passed preference, promise, identity, conflict, and neutral
-  executable outcomes. Uninformed-pair privacy and the final backend/game restart remain pending.
+- The post-restart informed-pair matrix passed preference, promise, identity, conflict, and
+  neutral executable outcomes. The uninformed Sim disclosed neither the preference nor conflict
+  fact; all six authoritative decisions applied zero changes.
 - Final automated verification covers `272` Sims tests, `225` Core tests, `4` Godot tests, and
   `5` shared tests, plus compilation, scoped lint, and whitespace checks.
 

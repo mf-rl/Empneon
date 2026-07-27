@@ -976,7 +976,7 @@ recall and rejection for an uninformed pair.
 
 ### July 27 expanded semantic-category matrix
 
-**Status:** INFORMED-PAIR PASS / PRIVACY AND RESTART RETEST PENDING
+**Status:** PASS
 
 - Sim A recorded four attributed facts with Sim B: a moon-orchid preference, a telescope-repair
   promise, a sister named Elara, and conflict over a lie about a promotion. The active Core
@@ -1031,12 +1031,22 @@ recall and rejection for an uninformed pair.
 - The authoritative action succeeded with `relationship_outcome=none`, `animation=none`, and
   `applied_changes=[]`. The model still supplied romance/playful metadata and a proposed trust
   increment, but the factual-recall boundary neutralized every executable effect.
-- This closes the informed-pair four-category matrix as **PASS**. Pair privacy and the final
-  backend/game restart repetition remain pending.
-- Before closing the expanded matrix, repeat preference, identity, and conflict with the informed
-  Sim only after the persistence restart, and ask the preference and conflict questions of an
-  uninformed Sim. Do not mark this follow-up passed until the restarted factual replies retain
-  neutral outcomes and the uninformed pair discloses neither fact.
+- After the backend/game persistence restart, the informed Sim recalled moon orchids
+  (`0ee4cfe8-960d-4c63-9c14-ac02ede70ed4`), the complete telescope promise
+  (`f72c0e58-af74-4c4b-aa73-0c2524c5bfb8`), Elara with correct ownership
+  (`6731a440-66cf-47a2-a8dd-63cfe38143b2`), and the promotion conflict
+  (`e5e3c3fb-7150-45e5-ba68-229f14c3bcfa`).
+- The uninformed Sim returned uncertainty for the bouquet
+  (`0ced3c84-f438-479c-b3cc-308215f171f4`) and requested clarification for the tension
+  (`eb1ba540-00ce-4851-8992-801674666f8f`) without disclosing either private fact.
+- The first proposed privacy control was excluded after its timeline showed prior pair history,
+  including the blue-bench fact. Sim `1048519419915536874` had no such history and served as the
+  valid uninformed control.
+- All six authoritative decisions succeeded with `relationship_outcome=none`,
+  `animation=none`, and `applied_changes=[]`. Two model responses proposed a trust increment,
+  but the factual-recall boundary applied no executable change.
+- This closes the expanded semantic-category matrix as **PASS**, including informed recall,
+  uninformed-pair privacy, neutral outcomes, and backend/game restart persistence.
 
 ## Test 8: Provider-free CLOD 1
 

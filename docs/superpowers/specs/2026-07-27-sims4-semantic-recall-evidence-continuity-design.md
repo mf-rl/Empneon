@@ -1,6 +1,6 @@
 # Sims 4 Semantic Recall Evidence Continuity Design
 
-**Status:** Informed-pair live matrix passed; privacy and restart checks pending
+**Status:** Accepted; informed recall, uninformed-pair privacy, and restart continuity passed live
 
 ## Goal
 
@@ -113,9 +113,10 @@ They must prove:
 - time, location, identifier, code-word ownership, and neutral factual outcomes do not regress.
 
 Run the focused Sims backend tests, the complete Sims adapter suite, the complete Core suite,
-Python compilation, and whitespace checks. The remaining live matrix asks an uninformed Sim the
-preference and conflict questions, then repeats all four informed-pair questions after a
-backend/game restart.
+Python compilation, and whitespace checks. The completed live matrix asked an uninformed Sim the
+preference and conflict questions, then repeated all four informed-pair questions after a
+backend/game restart. All six decisions succeeded with neutral relationship and animation
+outcomes and zero applied changes.
 
 ## Non-Goals
 
