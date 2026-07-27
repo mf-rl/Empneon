@@ -563,6 +563,11 @@ _CODEWORD_OWNER_QUERY = re.compile(
     r"\b(?P<owner>your|our)\s+(?:secret\s+)?code\s*word\b",
     re.IGNORECASE,
 )
+_ATTRIBUTED_RECALL_FACT = re.compile(
+    r"^(?P<cue>you told me|i remember saying):\s*"
+    r'["“](?P<statement>.+)["”]$',
+    re.IGNORECASE,
+)
 _RECALL_STOPWORDS = frozenset(
     "about again been conversation did does first from have interaction just know "
     "last like remember said tell that the them then they this time was were what "
@@ -632,16 +637,26 @@ def _authoritative_facts(
     data: dict[str, object],
 ) -> list[dict[str, object]]:
     speaker_id = str(data.get("speaker_id") or "")
+    listener_id = str(data.get("listener_id") or "")
     recall_answer = _is_recall_question(str(data.get("message") or ""))
-    facts = [
-        fact
-        for fact in data.get("facts") or []
-        if isinstance(fact, dict)
-        and not (
-            recall_answer
-            and str(fact.get("actor_id") or "") == speaker_id
+    facts = []
+    for stored in data.get("facts") or []:
+        if not isinstance(stored, dict):
+            continue
+        fact = dict(stored)
+        match = _ATTRIBUTED_RECALL_FACT.match(
+            str(fact.get("statement") or "")
         )
-    ]
+        if match and str(fact.get("actor_id") or "") == speaker_id:
+            fact["actor_id"] = (
+                listener_id
+                if match.group("cue").casefold() == "you told me"
+                else speaker_id
+            )
+            fact["statement"] = match.group("statement")
+        if recall_answer and str(fact.get("actor_id") or "") == speaker_id:
+            continue
+        facts.append(fact)
     possessive_fact = None if recall_answer else _possessive_identifier_fact(data)
     if possessive_fact is not None and possessive_fact not in facts:
         facts.append(possessive_fact)
@@ -849,7 +864,7 @@ def record_delivered_experience(
     dialogue = str(values.get("dialogue") or "").strip()
     dialogue_fact = (
         None
-        if _is_recall_question(message)
+        if _is_recall_question(message) or proposal.decision.intent == "recall"
         else _durable_fact(proposal.decision.actor_id, dialogue)
     )
     facts = [

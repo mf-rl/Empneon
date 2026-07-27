@@ -44,8 +44,8 @@ feature promise.
 
 ## Next gates
 
-- Extend the now-passing non-date location matrix to preferences, promises, identities, and
-  conflicts.
+- Complete the post-remediation uninformed-pair and restart matrix; preference, promise, identity
+  ownership, conflict grounding, and neutral executable outcomes passed the informed-pair run.
 - Expand live social-category coverage beyond the passed romance and relationship-neutral
   friendship branches; a more consistently neutral waiting animation is optional polish.
 

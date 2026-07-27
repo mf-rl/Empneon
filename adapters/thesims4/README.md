@@ -63,7 +63,7 @@ py -3.12 -m pip install -e ..\..\core -e .
    exponential backoff.
 
    Confirmed pair history is selected through a bounded semantic-memory request, with deterministic
-   recall as fallback. Shared Core constraints keep attributed facts ahead of newer factless
+   recall as fallback. Recall constraints keep attributed facts ahead of newer factless
    replies and validate requested time and location evidence. Live save/reload testing retrieved
    the correct `Tonight at 7 pm at your place` plan and delivered it in fresh wording. If both
    corrected model attempts remain unsupported, the adapter returns an attributed quotation
@@ -77,6 +77,13 @@ py -3.12 -m pip install -e ..\..\core -e .
    Live testing also retrieved `under the blue bench` from the non-date paraphrase
    `Where is the garden code item?` before and after backend restart, while the uninformed pair
    disclosed no location.
+
+   The July 27 expanded informed-pair matrix also passes semantic preference, promise, identity,
+   and conflict recall. Primary attributed evidence survives paraphrased questions; factless prior
+   answers cannot displace it; preference, complete-promise, and sibling-owner checks reject
+   superficially related but incorrect replies. Generated recall text is not promoted to a new
+   responder fact, and historical attributed fallbacks recover the quoted fact owner at read time.
+   The corresponding uninformed-pair and final backend/game restart matrix remains a live gate.
 
    The existing diagnostic commands remain available through the cheat console:
 
@@ -109,7 +116,8 @@ sim-only and scheduled speaker/listener payloads.
 See the complete [installation, configuration, privacy, and hardware guide](docs/setup.md).
 Use the [in-game Core feature test plan](docs/in-game-core-feature-test-plan.md) to validate every
 implemented identity, memory, cognition, confirmation, portability, and persistence capability.
-All 15 sections of that plan passed live acceptance on 2026-07-26.
+All 15 sections of that plan passed live acceptance on 2026-07-26. The expanded July 27 semantic
+category matrix passed for the informed pair; its privacy and final restart checks remain pending.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files

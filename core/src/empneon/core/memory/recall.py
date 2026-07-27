@@ -8,6 +8,7 @@ TIME_ISSUE = (
     "answer with the supported recalled time without inventing another schedule"
 )
 LOCATION_ISSUE = "preserve the recalled location owner and speaker perspective"
+RELATION_ISSUE = "preserve the recalled relation owner and speaker perspective"
 
 _TIME_QUESTION = re.compile(
     r"\bwhen\b|\b(?:what|which)\s+(?:time|day|date)\b",
@@ -52,6 +53,11 @@ _LOCATION = re.compile(
     re.IGNORECASE,
 )
 _LOCATION_NOUN = re.compile(r"\b(place|home|house)\b", re.IGNORECASE)
+_RELATION = re.compile(
+    r"\b(?P<possessive>my|your)\s+"
+    r"(?P<relation>sister|brother|sibling)\b",
+    re.IGNORECASE,
+)
 _ATTRIBUTED_QUOTATION = re.compile(
     r"(?:\byou told me|\bi remember saying|\b[^:\n]{1,50}\bsaid)"
     r'\s*:\s*(?:"[^"]*"|“[^”]*”)',
@@ -218,6 +224,37 @@ def _location_issue(
     return ""
 
 
+def _relation_issue(
+    facts: Sequence[Mapping[str, object]],
+    response: str,
+    speaker_id: str,
+    listener_id: str,
+) -> str:
+    owners_by_relation: dict[str, set[str]] = {}
+    for fact in facts:
+        actor_id = str(fact.get("actor_id") or "")
+        for match in _RELATION.finditer(str(fact.get("statement") or "")):
+            if match.group("possessive").casefold() == "my":
+                owners_by_relation.setdefault(
+                    match.group("relation").casefold(), set()
+                ).add(actor_id)
+    unquoted = _ATTRIBUTED_QUOTATION.sub("", response)
+    for match in _RELATION.finditer(unquoted):
+        owners = owners_by_relation.get(
+            match.group("relation").casefold(), set()
+        )
+        if len(owners) != 1:
+            continue
+        claimed_owner = (
+            speaker_id
+            if match.group("possessive").casefold() == "my"
+            else listener_id
+        )
+        if claimed_owner != next(iter(owners)):
+            return RELATION_ISSUE
+    return ""
+
+
 def validate_recall_response(
     query: RecallQuery,
     facts: Sequence[Mapping[str, object]],
@@ -226,9 +263,18 @@ def validate_recall_response(
     listener_id: str,
 ) -> str:
     value = str(response or "")
-    return _time_issue(query, facts, value) or _location_issue(
-        facts,
-        value,
-        str(speaker_id),
-        str(listener_id),
+    return (
+        _time_issue(query, facts, value)
+        or _location_issue(
+            facts,
+            value,
+            str(speaker_id),
+            str(listener_id),
+        )
+        or _relation_issue(
+            facts,
+            value,
+            str(speaker_id),
+            str(listener_id),
+        )
     )

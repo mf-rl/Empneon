@@ -329,6 +329,30 @@ def test_semantic_selector_returns_only_selected_candidate_memories(
     assert selected[0]["explicit"] is True
 
 
+def test_semantic_selector_marks_only_first_grounded_memory_primary(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(
+            {"event_ids": ["m2", "m1"]}
+        ),
+    )
+
+    selected = ai_sims_server.select_recalled_memories(
+        "What bouquet would suit me best?",
+        _semantic_memory_candidates(),
+    )
+
+    assert [item["event_id"] for item in selected] == [
+        "roses",
+        "date-plan",
+    ]
+    assert selected[0]["semantic_primary"] is True
+    assert "semantic_primary" not in selected[1]
+
+
 def test_semantic_selector_uses_a_compact_exact_response_protocol(
     monkeypatch,
 ) -> None:
@@ -407,9 +431,7 @@ def test_semantic_selector_drops_no_fact_recall_answers_when_facts_exist(
     monkeypatch.setattr(
         ai_sims_server,
         "llm_chat",
-        lambda *_args, **_kwargs: json.dumps(
-            {"event_ids": ["m1", "m2"]}
-        ),
+        lambda *_args, **_kwargs: json.dumps({"event_ids": ["m1"]}),
     )
 
     selected = ai_sims_server.select_recalled_memories(
@@ -418,6 +440,46 @@ def test_semantic_selector_drops_no_fact_recall_answers_when_facts_exist(
     )
 
     assert [item["event_id"] for item in selected] == ["date-plan"]
+
+
+def test_semantic_selector_ignores_factless_prior_answers_for_fact_query(
+    monkeypatch,
+) -> None:
+    question = "What commitment did I make about the observatory equipment?"
+    candidates = [
+        {
+            "event_id": "prior-answer",
+            "message": question,
+            "dialogue": "The telescope repair is on for tomorrow.",
+            "facts": [],
+        },
+        {
+            "event_id": "promise",
+            "message": "I promise I will repair the telescope tomorrow.",
+            "dialogue": "That sounds good.",
+            "facts": [
+                {
+                    "actor_id": "bernard",
+                    "statement": (
+                        "I promise I will repair the telescope tomorrow."
+                    ),
+                }
+            ],
+        },
+    ]
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps({"event_ids": ["m1"]}),
+    )
+
+    selected = ai_sims_server.select_recalled_memories(
+        question,
+        candidates,
+    )
+
+    assert [item["event_id"] for item in selected] == ["promise"]
+    assert selected[0]["semantic_primary"] is True
 
 
 def test_semantic_recall_falls_back_when_selector_provider_fails(
@@ -2669,6 +2731,343 @@ def test_grounding_rejects_memory_denial_and_allows_natural_romance() -> None:
     assert fallback["response_category"] == "friendly"
     assert fallback["trust_delta"] == 0
     assert "relationship" not in fallback
+
+
+@pytest.mark.parametrize(
+    ("question", "statement", "accepted_dialogue", "ignored_issue"),
+    [
+        (
+            "What bouquet would suit me best?",
+            "I prefer moon orchids to roses.",
+            "Moon orchids would suit you best.",
+            "answer with the supported preference",
+        ),
+        (
+            "What commitment did I make about the observatory equipment?",
+            "I promise I will repair the telescope tomorrow.",
+            "You promised to repair the telescope tomorrow.",
+            "answer with the complete supported promise",
+        ),
+        (
+            "Who is my sibling?",
+            "My sister is named Elara.",
+            "I remember the Elara detail.",
+            "answer the recall question with the selected attributed fact",
+        ),
+        (
+            "Why are things tense between us?",
+            "I hate that you lied about the promotion.",
+            "I remember the promotion detail.",
+            "answer the recall question with the selected attributed fact",
+        ),
+    ],
+)
+def test_primary_semantic_fact_survives_paraphrase(
+    question,
+    statement,
+    accepted_dialogue,
+    ignored_issue,
+) -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": question},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "event_id": "primary",
+                "semantic_primary": True,
+                "facts": [
+                    {"actor_id": "bernard", "statement": statement}
+                ],
+            },
+            {
+                "event_id": "secondary",
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "My favorite season is winter.",
+                    }
+                ],
+            },
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+
+    facts = ai_sims_server._supported_recall_facts(question, context)
+    assert [fact["statement"] for fact in facts] == [statement]
+
+    accepted = ai_sims_server.normalize_response(
+        {"dialogue": accepted_dialogue}
+    )
+    ignored = ai_sims_server.normalize_response(
+        {"dialogue": "Tell me more about what you mean."}
+    )
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question}, accepted, context
+    ) == ""
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question}, ignored, context
+    ) == ignored_issue
+
+
+def test_primary_semantic_fact_fallback_quotes_fact() -> None:
+    question = "Why are things tense between us?"
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": question},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "semantic_primary": True,
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": (
+                            "I hate that you lied about the promotion."
+                        ),
+                    }
+                ],
+            }
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+
+    fallback = ai_sims_server.reasoning_fallback_response(
+        {"message": question}, context
+    )
+
+    assert "promotion" in fallback["dialogue"].casefold()
+    assert fallback["relationship_outcome"] == "none"
+    assert fallback["suggested_action"] == "none"
+
+
+def test_semantic_preference_rejects_answer_that_promotes_alternative() -> None:
+    question = "What bouquet would suit me best?"
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": question},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "semantic_primary": True,
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "I prefer moon orchids to roses.",
+                    }
+                ],
+            }
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question},
+        {
+            "dialogue": (
+                "Moon orchids are beautiful, but roses have a certain "
+                "classic charm. They're quite popular for a reason!"
+            )
+        },
+        context,
+    ) == "answer with the supported preference"
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question},
+        {"dialogue": "Moon orchids would suit you best."},
+        context,
+    ) == ""
+
+
+def test_semantic_identity_rejects_reversed_sibling_ownership() -> None:
+    question = "Who is my sibling?"
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": question},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "semantic_primary": True,
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": "My sister is named Elara.",
+                    }
+                ],
+            }
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question},
+        {"dialogue": "Elara's name is Elara. She's my sister."},
+        context,
+    ) == "preserve the recalled relation owner and speaker perspective"
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question},
+        {"dialogue": "Elara is your sister."},
+        context,
+    ) == ""
+
+
+def test_semantic_promise_rejects_question_that_omits_commitment_detail() -> None:
+    question = "What commitment did I make about the observatory equipment?"
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": question},
+        {"name": "Karmine"},
+        {"name": "Bernard"},
+        {},
+        {},
+        [
+            {
+                "semantic_primary": True,
+                "facts": [
+                    {
+                        "actor_id": "bernard",
+                        "statement": (
+                            "I promise I will repair the telescope tomorrow."
+                        ),
+                    }
+                ],
+            }
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="bernard",
+    )
+
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question},
+        {
+            "dialogue": (
+                "The telescope? You meant the repair of the observatory "
+                "equipment, Bernard? What exactly was the commitment you made?"
+            )
+        },
+        context,
+    ) == "answer with the complete supported promise"
+    assert ai_sims_server._supported_recall_issue(
+        {"message": question},
+        {"dialogue": "You promised to repair the telescope tomorrow."},
+        context,
+    ) == ""
+
+
+def test_semantic_recall_fallback_is_not_archived_as_responder_fact(
+    tmp_path,
+) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    source = Event(
+        json.dumps(
+            {
+                "kind": "observed_interaction",
+                "message": "Why are things tense between us?",
+            }
+        ),
+        ["karmine", "bernard"],
+        id="semantic-recall-source",
+    )
+    decision = Decision(
+        "karmine",
+        "recall",
+        target_id="bernard",
+        state_changes=(
+            StateDelta(
+                "dialogue",
+                "set",
+                'You told me: "I hate that you lied about the promotion."',
+            ),
+        ),
+        id="semantic-recall-decision",
+    )
+    with open_db(database) as conn:
+        ai_sims_server.empneon_state.record_observed_event(
+            conn,
+            source,
+            {"karmine": source.description, "bernard": source.description},
+        )
+        proposal = ActionRecordStore(conn).propose(
+            source.id,
+            decision,
+            "none",
+        )
+        confirmed = ai_sims_server.empneon_state.record_delivered_experience(
+            conn,
+            proposal,
+        )
+
+    assert confirmed is not None
+    assert json.loads(confirmed.description)["facts"] == []
+
+
+def test_historical_attributed_fallback_recovers_original_fact_owner() -> None:
+    dialogue = 'You told me: "I hate that you lied about the promotion."'
+
+    facts = ai_sims_server.empneon_state._authoritative_facts(
+        {
+            "speaker_id": "karmine",
+            "listener_id": "bernard",
+            "message": "Why are things tense between us?",
+            "dialogue": dialogue,
+            "facts": [{"actor_id": "karmine", "statement": dialogue}],
+        }
+    )
+
+    assert facts == [
+        {
+            "actor_id": "bernard",
+            "statement": "I hate that you lied about the promotion.",
+        }
+    ]
+
+
+def test_uninformed_semantic_paraphrase_has_no_supported_fact() -> None:
+    question = "What bouquet would suit me best?"
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}, "message": question},
+        {"name": "Karmine"},
+        {"name": "Billie"},
+        {},
+        {},
+        [],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="karmine",
+        listener_id="billie",
+    )
+
+    assert ai_sims_server._supported_recall_facts(question, context) == []
+    fallback = ai_sims_server.reasoning_fallback_response(
+        {"message": question}, context
+    )
+    assert "don't know" in fallback["dialogue"].casefold()
 
 
 def test_confirmed_identifier_fact_is_required_for_explicit_recall() -> None:

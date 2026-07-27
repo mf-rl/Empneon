@@ -238,6 +238,13 @@ uninformed-pair rejection, and the non-date `garden code item` paraphrase also p
 Sim retrieved `under the blue bench` before and after a backend restart; the uninformed Sim did not
 disclose the private location.
 
+**Expanded status (2026-07-27): INFORMED-PAIR PASS / PRIVACY AND RESTART PENDING** — The informed
+Sim correctly recalled a moon-orchid preference, telescope-repair promise, sister named Elara, and
+conflict over a promotion lie from paraphrased questions. Each authoritative action remained
+relationship-neutral with zero applied changes. Repeat the preference and conflict questions
+against an uninformed Sim, then restart the game and backend and repeat all four informed-pair
+questions before closing the expanded matrix.
+
 - Prerequisite: complete section 6 and add several unrelated confirmed conversations.
 - Action: ask B, "Where is the garden code item?" without repeating the exact original sentence.
 - Expected game result: B retrieves the topically related garden memory.

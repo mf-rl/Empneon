@@ -974,6 +974,70 @@ recall and rejection for an uninformed pair.
 - This passes semantic paraphrase selection, fresh response wording, pair privacy, intervening
   conversation tolerance, and backend-restart persistence. Test 7 is closed as **PASS**.
 
+### July 27 expanded semantic-category matrix
+
+**Status:** INFORMED-PAIR PASS / PRIVACY AND RESTART RETEST PENDING
+
+- Sim A recorded four attributed facts with Sim B: a moon-orchid preference, a telescope-repair
+  promise, a sister named Elara, and conflict over a lie about a promotion. The active Core
+  database retained all four facts for the correct pair.
+- The first live paraphrase pass succeeded for the promise and identity questions.
+- Preference failed in the confirmed Core result. LM Studio produced a moon-orchid answer, but
+  broad copy rejection discarded it and deterministic fallback persisted
+  `I don't know or remember that.`
+- Conflict failed because the accepted response asked what was tense instead of using the stored
+  promotion fact.
+- Root cause: semantic selection found attributed evidence, but response grounding reconstructed
+  support from Core recall slots and lexical overlap. `bouquet` did not overlap `moon orchids`,
+  `tense` did not overlap `lied about the promotion`, and a general `why` question was not
+  classified as explicit recall.
+- The remediation marks the selector's first attributed result as request-local primary semantic
+  evidence. Existing slot and lexical matches retain precedence; otherwise grounding, correction,
+  neutral factual outcomes, and attributed fallback reuse that primary fact. Secondary selections
+  remain prompt context but cannot displace an overlapping primary fact.
+- The second informed-pair live run retained all four facts. Promise passed. Preference mentioned
+  moon orchids but promoted roses as the classic popular choice, identity reversed ownership with
+  `She's my sister`, and conflict reached the correct attributed fallback only after both model
+  attempts failed validation.
+- The conflict fallback also exposed a persistence boundary defect: its quoted
+  `I hate that you lied about the promotion` was parsed as a new responder fact because the
+  semantic `Why...` question is not an explicit recall query.
+- Preference grounding now requires a declarative answer that states the supported preferred
+  option. Core recall grounding now preserves `my`/`your` ownership for sister, brother, and
+  sibling relations. Confirmed decisions with `intent=recall` no longer archive generated
+  dialogue as a new responder fact. Existing attributed fallback rows are normalized at read time
+  to recover the original fact and owner without rewriting the database.
+- Automated verification passes: `272` Sims adapter tests, `225` Core tests, `4` Godot tests,
+  and `5` shared tests.
+- The third informed-pair run passed preference via attributed fallback, returned Elara with the
+  correct `your sister` perspective, and passed conflict via attributed fallback. Telescope
+  promise recall regressed to uncertainty after two model answers failed grounding.
+- The original promise remained correctly attributed in Core. Three newer factless telescope
+  recall exchanges exactly matched the repeated question and were presented ahead of the original
+  promise, so semantic selection chose conversation answers without authoritative facts.
+- Factual semantic recall now removes factless prior answers before assigning selector aliases.
+  Queries explicitly asking what was said, discussed, or how an interaction occurred retain full
+  exchanges. The accumulated-telescope regression verifies that the original promise becomes the
+  primary attributed selection.
+- The next telescope-only live run confirmed that selection fix: the model mentioned the
+  telescope and repair, but asked the player to restate the commitment and omitted `tomorrow`.
+  Generic grounding accepted it because one overlapping fact term was sufficient.
+- Promise grounding now requires every meaningful commitment detail in a declarative sentence.
+  For the live fact, `repair`, `telescope`, and `tomorrow` must all be present; otherwise the model
+  retries and then uses the attributed-fact fallback.
+- The telescope-only retest passed. After the first model attempt failed the complete-promise
+  guard, the accepted response was
+  `The commitment was that you will repair the telescope tomorrow.`
+- The authoritative action succeeded with `relationship_outcome=none`, `animation=none`, and
+  `applied_changes=[]`. The model still supplied romance/playful metadata and a proposed trust
+  increment, but the factual-recall boundary neutralized every executable effect.
+- This closes the informed-pair four-category matrix as **PASS**. Pair privacy and the final
+  backend/game restart repetition remain pending.
+- Before closing the expanded matrix, repeat preference, identity, and conflict with the informed
+  Sim only after the persistence restart, and ask the preference and conflict questions of an
+  uninformed Sim. Do not mark this follow-up passed until the restarted factual replies retain
+  neutral outcomes and the uninformed pair discloses neither fact.
+
 ## Test 8: Provider-free CLOD 1
 
 **Status:** PASS / SCHEDULED NATIVE EXECUTION AND USAGE PERSISTENCE LIVE-VERIFIED

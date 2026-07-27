@@ -1448,7 +1448,20 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
     return result.content
 
 
+_FULL_EXCHANGE_QUERY = re.compile(
+    r"\b(?:what (?:did (?:we|you|i) (?:say|discuss|talk about)|was said)"
+    r"|how did\b|how was (?:our|the) (?:conversation|interaction))",
+    re.IGNORECASE,
+)
+
+
 def select_recalled_memories(query, candidates):
+    if any(candidate.get("facts") for candidate in candidates) and not (
+        _FULL_EXCHANGE_QUERY.search(str(query or ""))
+    ):
+        candidates = [
+            candidate for candidate in candidates if candidate.get("facts")
+        ]
     blocks = []
     aliased = [
         ("m{}".format(index), candidate)
@@ -1523,7 +1536,10 @@ Return exactly {{"event_ids":[]}} when no memory is relevant.
     grounded = [item for item in selected if item.get("facts")]
     if grounded:
         selected = grounded
-    return [dict(item, explicit=True) for item in selected]
+    result = [dict(item, explicit=True) for item in selected]
+    if result and result[0].get("facts"):
+        result[0]["semantic_primary"] = True
+    return result
 
 
 def semantic_recalled_memories(query, candidates, fallback):
@@ -2140,8 +2156,17 @@ def response_grounding_issue(payload, response, context):
 
 def _supported_recall_facts(message, context):
     query = analyze_recall_query(str(message or ""))
-    if not query.explicit:
-        return []
+    memories = list(context.get("recalled_memories") or [])
+    primary_keys = {
+        (
+            str(fact.get("actor_id") or ""),
+            str(fact.get("statement") or "").strip(),
+        )
+        for memory in memories
+        if memory.get("semantic_primary") is True
+        for fact in memory.get("facts") or []
+        if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
+    }
     identifiers = {
         match.group(0).casefold()
         for match in re.finditer(
@@ -2155,7 +2180,7 @@ def _supported_recall_facts(message, context):
             "actor_id": str(fact.get("actor_id") or ""),
             "statement": str(fact.get("statement") or "").strip(),
         }
-        for memory in context.get("recalled_memories") or []
+        for memory in memories
         for fact in memory.get("facts") or []
         if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
     ]
@@ -2182,18 +2207,29 @@ def _supported_recall_facts(message, context):
                 )
             }
         ]
+    primary = [
+        fact
+        for fact in facts
+        if (fact["actor_id"], fact["statement"]) in primary_keys
+    ]
+    if not query.explicit:
+        return primary
     supporting = [
         fact for fact in facts if fact_supports_query(fact, query)
     ]
     if supporting:
         return supporting
     question_terms = set(_dialogue_words(message, context))
-    return [
+    lexical = [
         fact
         for fact in facts
         if question_terms
         & set(_dialogue_words(fact["statement"], context))
     ]
+    primary_lexical = [fact for fact in lexical if fact in primary]
+    if primary_lexical:
+        return primary_lexical
+    return lexical or primary
 
 
 _CODEWORD_FACT = re.compile(
@@ -2259,6 +2295,79 @@ def _recalled_fact_dialogue(fact, context, message=""):
     return 'I remember this: "{}"'.format(statement)
 
 
+_PREFERENCE_FACT = re.compile(
+    r"\bi prefer (?P<preferred>.+?) to (?P<alternative>.+?)(?:[.!?]|$)",
+    re.IGNORECASE,
+)
+_PROMISE_FACT = re.compile(
+    r"\bi promise(?: that)? (?P<commitment>.+?)(?:[.!?]|$)",
+    re.IGNORECASE,
+)
+
+
+def _preference_issue(facts, dialogue, context):
+    preferences = [
+        match
+        for fact in facts
+        if (
+            match := _PREFERENCE_FACT.search(
+                str(fact.get("statement") or "")
+            )
+        )
+    ]
+    if not preferences:
+        return ""
+    statements = re.split(r"(?<=[.!?])\s+", str(dialogue or ""))
+    for preference in preferences:
+        preferred = set(
+            _dialogue_words(preference.group("preferred"), context)
+        )
+        if any(
+            not statement.rstrip().endswith("?")
+            and preferred <= set(_dialogue_words(statement, context))
+            and re.search(
+                r"\b(?:prefer|best|suit|choice|choose|pick|recommend)\w*\b",
+                statement,
+                re.IGNORECASE,
+            )
+            for statement in statements
+        ):
+            return ""
+    return "answer with the supported preference"
+
+
+def _promise_issue(facts, dialogue, context):
+    promises = [
+        match
+        for fact in facts
+        if (
+            match := _PROMISE_FACT.search(
+                str(fact.get("statement") or "")
+            )
+        )
+    ]
+    if not promises:
+        return ""
+    statements = re.split(r"(?<=[.!?])\s+", str(dialogue or ""))
+    ignored = {"a", "an", "i", "i'll", "it", "my", "our", "the", "to", "will"}
+    for promise in promises:
+        details = {
+            word
+            for word in _dialogue_words(
+                promise.group("commitment"),
+                context,
+            )
+            if word not in ignored
+        }
+        if details and any(
+            not statement.rstrip().endswith("?")
+            and details <= set(_dialogue_words(statement, context))
+            for statement in statements
+        ):
+            return ""
+    return "answer with the complete supported promise"
+
+
 def _supported_recall_issue(payload, response, context):
     message = str(payload.get("message") or "")
     query = analyze_recall_query(message)
@@ -2287,6 +2396,12 @@ def _supported_recall_issue(payload, response, context):
         str(context.get("speaker_id") or ""),
         str(context.get("listener_id") or ""),
     )
+    if issue:
+        return issue
+    issue = _preference_issue(facts, dialogue, context)
+    if issue:
+        return issue
+    issue = _promise_issue(facts, dialogue, context)
     if issue:
         return issue
     owner_id = empneon_state.codeword_recall_owner_id(

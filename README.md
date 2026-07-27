@@ -191,6 +191,11 @@ Deterministic validation and fallback
 Only selected evidence enters dialogue generation
 ```
 
+For factual recall, attributed facts take precedence over accumulated factless answers. The Sims
+adapter validates time and location details, preference direction, complete promises, relation
+ownership, and concrete identifiers before accepting model dialogue; unsupported replies retry or
+fall back to attributed evidence without applying relationship effects.
+
 ## Repository layout
 
 ```text
