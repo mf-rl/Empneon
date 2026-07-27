@@ -179,6 +179,68 @@ def test_recall_candidates_are_pair_scoped_and_prioritized(tmp_path) -> None:
     }
 
 
+def test_codeword_recall_respects_possessive_owner(tmp_path) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    with open_db(database) as conn:
+        _record_confirmed_interaction(
+            conn,
+            "save-a-codeword",
+            "sim-b",
+            "sim-a",
+            "Our secret code word is TEST14-A-731.",
+            "Acknowledged.",
+            [],
+            happened_at=1,
+        )
+        _record_confirmed_interaction(
+            conn,
+            "save-b-codeword",
+            "sim-b",
+            "sim-a",
+            "Your secret code word is TEST14-B-731.",
+            "Acknowledged.",
+            [],
+            happened_at=2,
+        )
+
+        results = {}
+        for question in (
+            "What is your code word?",
+            "What is our code word?",
+            "What is the code word?",
+        ):
+            results[question] = (
+                ai_sims_server.empneon_state.recall_candidates(
+                    conn, "sim-b", "sim-a", question
+                ),
+                ai_sims_server.empneon_state.recalled_memories(
+                    conn, "sim-b", "sim-a", question
+                ),
+            )
+
+    for recalled in results["What is your code word?"]:
+        assert [
+            fact["statement"]
+            for memory in recalled
+            for fact in memory["facts"]
+        ] == ["Your secret code word is TEST14-B-731."]
+    for recalled in results["What is our code word?"]:
+        assert [
+            fact["statement"]
+            for memory in recalled
+            for fact in memory["facts"]
+        ] == ["Our secret code word is TEST14-A-731."]
+    for recalled in results["What is the code word?"]:
+        assert [
+            fact["statement"]
+            for memory in recalled
+            for fact in memory["facts"]
+        ] == [
+            "Your secret code word is TEST14-B-731.",
+            "Our secret code word is TEST14-A-731.",
+        ]
+
+
 def test_recall_candidates_have_a_fixed_serialized_budget(tmp_path) -> None:
     database = str(tmp_path / "core.sqlite3")
     with open_db(database) as conn:
@@ -1556,6 +1618,105 @@ def test_disabled_response_rejection_accepts_first_normalized_response(
     assert response["dialogue"] == provider_response["dialogue"]
 
 
+def test_supported_recall_is_relationship_and_action_neutral(
+    monkeypatch,
+) -> None:
+    provider_response = {
+        "dialogue": "TEST14-A-731? That's it! It's a secret code word for us.",
+        "expressed_emotion": "playful",
+        "intent": "accept_playfully",
+        "response_category": "romance",
+        "tone_tags": ["playful", "romantic"],
+        "trust_delta": 1,
+        "relationship_outcome": "romance_positive",
+        "memory": {"importance": 0.5, "summary": ""},
+    }
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(provider_response),
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "What is our code word?",
+        "available_response_categories": ["friendly", "romance"],
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Sim B"},
+        {"name": "Sim A"},
+        {},
+        {},
+        [
+            {
+                "facts": [
+                    {
+                        "actor_id": "sim-a",
+                        "statement": (
+                            "Our secret code word is TEST14-A-731."
+                        ),
+                    }
+                ]
+            }
+        ],
+    )
+    context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["dialogue"] == provider_response["dialogue"]
+    assert response["response_category"] == "romance"
+    assert response["trust_delta"] == 1
+    assert response["relationship_outcome"] == "none"
+    assert response["suggested_action"] == "none"
+    assert response["animation"] == "none"
+
+
+def test_normal_romance_remains_actionable(monkeypatch) -> None:
+    provider_response = {
+        "dialogue": "Yes, I feel the same. I would love to be together.",
+        "expressed_emotion": "playful",
+        "intent": "accept_playfully",
+        "response_category": "romance",
+        "tone_tags": ["playful", "romantic"],
+        "trust_delta": 1,
+        "relationship_outcome": "romance_positive",
+        "memory": {"importance": 0.5, "summary": ""},
+    }
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(provider_response),
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "RESPONSE_REJECTION_ENABLED",
+        False,
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "I love you. Do you feel the same?",
+        "available_response_categories": ["friendly", "romance"],
+    }
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Sim B"},
+        {"name": "Sim A"},
+        {},
+        {},
+        [],
+    )
+    context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["relationship_outcome"] == "romance_positive"
+    assert response["suggested_action"] == "social.romance"
+    assert response["animation"] == "social.romance"
+
+
 def _supported_date_recall_context():
     payload = {
         "speaker": {},
@@ -2598,6 +2759,37 @@ def test_legacy_confirmed_identifier_assignment_is_authoritative() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("message", "actor_id"),
+    (
+        ("Our secret code word is TEST14-A-731.", "sim-a"),
+        ("Your secret code word is TEST14-B-731.", "sim-b"),
+    ),
+)
+def test_possessive_identifier_assignment_is_authoritative(
+    message: str,
+    actor_id: str,
+) -> None:
+    assert ai_sims_server.empneon_state._authoritative_facts(
+        {
+            "speaker_id": "sim-b",
+            "listener_id": "sim-a",
+            "message": message,
+            "dialogue": "Acknowledged.",
+            "facts": [],
+        }
+    ) == [{"actor_id": actor_id, "statement": message}]
+
+
+def test_possessive_identifier_assignment_requires_an_attributed_actor() -> None:
+    assert ai_sims_server.empneon_state._authoritative_facts(
+        {
+            "message": "Our secret code word is TEST14-A-731.",
+            "facts": [],
+        }
+    ) == []
+
+
 def test_grounding_rejects_asking_for_known_listener_name() -> None:
     context = {
         "speaker": {"name": "Karmine Luna"},
@@ -3589,6 +3781,193 @@ def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
     assert responses[1]["intent"] == "set_boundary"
 
 
+@pytest.mark.parametrize(
+    ("statement", "question", "actor_id", "expected_dialogue"),
+    (
+        (
+            "Our secret code word is TEST14-A-731.",
+            "What is our code word?",
+            "sim-a",
+            "Our code word is TEST14-A-731.",
+        ),
+        (
+            "Your secret code word is TEST14-B-731.",
+            "What is your code word?",
+            "sim-b",
+            "My code word is TEST14-B-731.",
+        ),
+    ),
+)
+def test_reasoning_fallback_recalls_possessive_codeword(
+    statement: str,
+    question: str,
+    actor_id: str,
+    expected_dialogue: str,
+) -> None:
+    facts = ai_sims_server.empneon_state._authoritative_facts(
+        {
+            "speaker_id": "sim-b",
+            "listener_id": "sim-a",
+            "message": statement,
+            "facts": [],
+        }
+    )
+    context = ai_sims_server.build_context(
+        {"speaker": {"id": "sim-b"}, "listener": {"id": "sim-a"}},
+        {"id": "sim-b", "name": "Sim B"},
+        {"id": "sim-a", "name": "Sim A"},
+        {},
+        {},
+        [
+            {
+                "speaker_id": "sim-b",
+                "listener_id": "sim-a",
+                "message": statement,
+                "dialogue": "Acknowledged.",
+                "facts": facts,
+            }
+        ],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="sim-b",
+        listener_id="sim-a",
+    )
+
+    response = ai_sims_server.reasoning_fallback_response(
+        {"message": question},
+        context,
+    )
+
+    assert response["dialogue"] == expected_dialogue
+    assert ai_sims_server.response_grounding_issue(
+        {"message": question},
+        response,
+        context,
+    ) == ""
+    assert facts == [{"actor_id": actor_id, "statement": statement}]
+
+
+def test_codeword_recall_evidence_uses_owner_not_source_pronoun() -> None:
+    context = {
+        "speaker_id": "sim-b",
+        "listener_id": "sim-a",
+        "speaker": {"name": "Sim B"},
+        "listener": {"name": "Sim A"},
+    }
+    fact = {
+        "actor_id": "sim-b",
+        "statement": "Your secret code word is TEST14-B-731.",
+    }
+
+    assert ai_sims_server._attributed_fact_text(fact, context) == (
+        "Sim B's code word is TEST14-B-731."
+    )
+
+
+def test_supported_codeword_recall_requires_first_person_owner() -> None:
+    payload = {"message": "What is your code word?"}
+    context = ai_sims_server.build_context(
+        payload,
+        {"name": "Sim B"},
+        {"name": "Sim A"},
+        {},
+        {},
+        [
+            {
+                "facts": [
+                    {
+                        "actor_id": "sim-b",
+                        "statement": (
+                            "Your secret code word is TEST14-B-731."
+                        ),
+                    }
+                ]
+            }
+        ],
+    )
+    context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
+
+    assert ai_sims_server._supported_recall_issue(
+        payload,
+        {"dialogue": "Your code word is TEST14-B-731."},
+        context,
+    ) == (
+        "refer to the Speaker-owned code word in first person "
+        "as my code word"
+    )
+    assert ai_sims_server._supported_recall_issue(
+        payload,
+        {"dialogue": "My code word is TEST14-B-731."},
+        context,
+    ) == ""
+
+
+def test_reasoning_fallback_returns_uncertainty_for_unsupported_what_question() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {"id": "sim-b"}, "listener": {"id": "sim-a"}},
+        {"id": "sim-b", "name": "Sim B"},
+        {"id": "sim-a", "name": "Sim A"},
+        {},
+        {},
+        [],
+    )
+    context.update(
+        conversation=[],
+        speaker_id="sim-b",
+        listener_id="sim-a",
+    )
+
+    response = ai_sims_server.reasoning_fallback_response(
+        {"message": "What is our code word?"},
+        context,
+    )
+
+    assert response["intent"] == "admit_uncertainty"
+    assert "don't know" in response["dialogue"].casefold()
+
+
+def test_supported_codeword_facts_respect_possessive_owner() -> None:
+    facts = [
+        {
+            "actor_id": "sim-b",
+            "statement": "Your secret code word is TEST14-B-731.",
+        },
+        {
+            "actor_id": "sim-a",
+            "statement": "Our secret code word is TEST14-A-731.",
+        },
+    ]
+    context = ai_sims_server.build_context(
+        {"speaker": {"id": "sim-b"}, "listener": {"id": "sim-a"}},
+        {"id": "sim-b", "name": "Sim B"},
+        {"id": "sim-a", "name": "Sim A"},
+        {},
+        {},
+        [{"facts": facts}],
+    )
+    context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
+
+    assert ai_sims_server._supported_recall_facts(
+        "What is your code word?", context
+    ) == [facts[0]]
+    assert ai_sims_server._supported_recall_facts(
+        "What is our code word?", context
+    ) == [facts[1]]
+    assert ai_sims_server._supported_recall_facts(
+        "What is the code word?", context
+    ) == facts
+
+    context["recalled_memories"] = [{"facts": [facts[0]]}]
+    response = ai_sims_server.reasoning_fallback_response(
+        {"message": "What is our code word?"},
+        context,
+    )
+
+    assert response["intent"] == "admit_uncertainty"
+    assert "TEST14-B-731" not in response["dialogue"]
+
+
 def test_reasoning_fallback_recalls_supported_fact_and_uses_concrete_summary() -> None:
     context = ai_sims_server.build_context(
         {"speaker": {}, "listener": {}},
@@ -3935,6 +4314,27 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
     assert result["suggested_action"] == "none"
     assert "relationship" not in result
     assert telemetry["by_provider"] == {"core-rules": 1}
+
+
+def test_autonomous_action_accepts_sim_only_payload(tmp_path, monkeypatch) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+
+    proposal = ai_sims_server.autonomous_action(
+        {"sim": {"id": "bella", "name": "Bella"}}
+    )
+
+    with open_db(core_db) as conn:
+        agent = AgentStore(conn).get("bella")
+        usage = UsageStore(conn).telemetry("bella")
+
+    assert agent.name == "Bella"
+    assert proposal["selected_clod"] == 1
+    assert proposal["suggested_action"] == "idle"
+    assert usage["by_clod"] == {"1": 1}
+    assert usage["by_provider"] == {"core-rules": 1}
+    assert usage["actual"]["prompt_tokens"] == 0
+    assert usage["actual"]["completion_tokens"] == 0
 
 
 def test_confirmed_friendship_updates_core_relationship(tmp_path, monkeypatch) -> None:

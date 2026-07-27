@@ -38,18 +38,12 @@ feature promise.
   restart while withholding that location from an uninformed pair
 - Repeated identity import is semantically idempotent across backend restart for canonical agent,
   personality, relationship, emotion, goal, and optional voice state
+- The Sims 4 15-section in-game acceptance suite passes provider-backed and provider-free
+  cognition, save-slot isolation, grounded owner-aware recall, neutral factual outcomes, action
+  confirmation, replay, cancellation, and persistence
 
 ## Next gates
 
-- Install the rebuilt Sims mod and live-verify that `Waiting for response` survives game-driven
-  finishes until the backend answer arrives.
-- Resume Test 14 save-slot isolation from the existing slot 13 checkpoint and complete the Save A /
-  Save B branch matrix.
-- Remediate the adjacent HTTP `500` produced by the explicit private-code wording
-  `What is the exact private branch code I told you?`.
-- Complete the forced permanent-action-result rejection retest; an ordinary healthy restart
-  produced no `400`, so the one-attempt pause path still lacks live evidence.
-- Complete Test 15 provider-unavailable fallback.
 - Extend the now-passing non-date location matrix to preferences, promises, identities, and
   conflicts.
 - Expand live social-category coverage beyond the passed romance and relationship-neutral

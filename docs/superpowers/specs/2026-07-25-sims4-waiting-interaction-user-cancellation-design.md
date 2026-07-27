@@ -1,6 +1,6 @@
 # Sims 4 Waiting Interaction User-Cancellation Design
 
-**Status:** Implemented and automated-verified; live Test 14 retest pending.
+**Status:** Implemented, automated-verified, and live-verified in Test 14.
 
 ## Problem
 

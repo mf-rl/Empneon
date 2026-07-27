@@ -2159,6 +2159,15 @@ def _supported_recall_facts(message, context):
         for fact in memory.get("facts") or []
         if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
     ]
+    owner_id = empneon_state.codeword_recall_owner_id(
+        message,
+        str(context.get("speaker_id") or ""),
+        str(context.get("listener_id") or ""),
+    )
+    if owner_id is not None:
+        facts = [
+            fact for fact in facts if fact["actor_id"] == owner_id
+        ]
     if identifiers:
         facts = [
             fact
@@ -2187,6 +2196,21 @@ def _supported_recall_facts(message, context):
     ]
 
 
+_CODEWORD_FACT = re.compile(
+    r"\b(?P<possessive>my|our|your)\s+(?:secret\s+)?code\s*word\s+"
+    r"(?:is|are)\s+(?P<identifier>(?=[A-Z0-9-]*\d)"
+    r"[A-Z0-9]+(?:-[A-Z0-9]+)+)\b",
+    re.IGNORECASE,
+)
+
+
+def _codeword_fact_parts(fact):
+    match = _CODEWORD_FACT.search(str(fact.get("statement") or ""))
+    if match is None:
+        return None
+    return match.group("possessive").casefold(), match.group("identifier")
+
+
 def _attributed_fact_text(fact, context):
     actor_id = str(fact.get("actor_id") or "")
     names = {
@@ -2196,12 +2220,31 @@ def _attributed_fact_text(fact, context):
         or "Unknown actor",
     }
     actor = names.get(actor_id, actor_id or "Unknown actor")
+    parts = _codeword_fact_parts(fact)
+    if parts is not None:
+        possessive, identifier = parts
+        if possessive == "our":
+            return "The shared code word is {}.".format(identifier)
+        return "{}'s code word is {}.".format(actor, identifier)
     return "{} said: {}".format(actor, fact["statement"])
 
 
-def _recalled_fact_dialogue(fact, context):
+def _recalled_fact_dialogue(fact, context, message=""):
     actor_id = str(fact.get("actor_id") or "")
     statement = fact["statement"]
+    parts = _codeword_fact_parts(fact)
+    owner_id = empneon_state.codeword_recall_owner_id(
+        message,
+        str(context.get("speaker_id") or ""),
+        str(context.get("listener_id") or ""),
+    )
+    if parts is not None and owner_id is not None:
+        pronoun = (
+            "My"
+            if owner_id == str(context.get("speaker_id") or "")
+            else "Our"
+        )
+        return "{} code word is {}.".format(pronoun, parts[1])
     if actor_id == context.get("listener_id"):
         return 'You told me: "{}"'.format(statement)
     if actor_id == context.get("speaker_id"):
@@ -2246,6 +2289,24 @@ def _supported_recall_issue(payload, response, context):
     )
     if issue:
         return issue
+    owner_id = empneon_state.codeword_recall_owner_id(
+        message,
+        str(context.get("speaker_id") or ""),
+        str(context.get("listener_id") or ""),
+    )
+    if (
+        owner_id == str(context.get("speaker_id") or "")
+        and any(_codeword_fact_parts(fact) is not None for fact in facts)
+        and not re.search(
+            r"\bmy\s+(?:secret\s+)?code\s*word\b",
+            dialogue,
+            re.IGNORECASE,
+        )
+    ):
+        return (
+            "refer to the Speaker-owned code word in first person "
+            "as my code word"
+        )
     if "time" in query.requested_slots:
         return ""
     question_terms = set(_dialogue_words(message, context))
@@ -2331,7 +2392,9 @@ def reasoning_fallback_response(payload, context):
         "friendly": ("friendly", "neutral"),
     }.get(incoming_category, ("friendly", "neutral"))
     if "?" in message and supported_facts:
-        dialogue = _recalled_fact_dialogue(supported_facts[0], context)
+        dialogue = _recalled_fact_dialogue(
+            supported_facts[0], context, message
+        )
         emotion = "confident"
         intent = "recall"
         animation = "friendly_chat"
@@ -2354,10 +2417,9 @@ def reasoning_fallback_response(payload, context):
         intent = "recall"
         animation = "friendly_chat"
         trust_delta = 0
-    elif "?" in message and not _memory_supports_question(message, context) and (
-        message.startswith(("where ", "when ", "who ", "what did "))
-        or "remember" in message
-        or "did i say" in message
+    elif (
+        analyze_recall_query(message).explicit
+        and not _memory_supports_question(message, context)
     ):
         dialogue = "I don't know or remember that."
         emotion = "uncertain"
@@ -2435,11 +2497,7 @@ def reasoning_fallback_response(payload, context):
     candidates = []
     if "?" in message and _memory_supports_question(message, context):
         candidates.append("Here is the detail I remember: {}".format(dialogue))
-    elif "?" in message and (
-        message.startswith(("where ", "when ", "who ", "what did "))
-        or "remember" in message
-        or "did i say" in message
-    ):
+    elif analyze_recall_query(message).explicit:
         candidates.append("I'm not sure; I don't remember enough to answer that.")
     candidates.extend(
         (
@@ -2490,6 +2548,9 @@ class HermesRuntime:
                 )
             except (ValueError, json.JSONDecodeError):
                 response = fallback_response(content, categories)
+            if supported_facts:
+                response["relationship_outcome"] = "none"
+                response["suggested_action"] = response["animation"] = "none"
             recall_issue = _supported_recall_issue(payload, response, context)
             if not RESPONSE_REJECTION_ENABLED and not recall_issue:
                 return response
@@ -2796,8 +2857,11 @@ def autonomous_action(payload):
         action = adapter.action_for(decision)
         if action is None:
             raise ValueError("no supported Sims action available")
-        for key in ("speaker", "listener"):
-            persist_core_agent(conn, payload.get(key) or {})
+        actor = payload.get("speaker") or payload.get("sim") or {}
+        persist_core_agent(conn, actor)
+        listener = payload.get("listener")
+        if isinstance(listener, dict) and listener.get("id"):
+            persist_core_agent(conn, listener)
         persist_core_event(conn, event)
         actions.propose(event.id, decision, action)
         UsageStore(conn).record(

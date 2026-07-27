@@ -3,11 +3,13 @@
 Test evidence for `in-game-core-feature-test-plan.md`. Raw diagnostics normally remain local;
 reviewed, non-sensitive acceptance reports may be retained with this record.
 
+Subsection statuses below preserve point-in-time test history. The remediation summary and the
+numbered Test headings are the canonical current status.
+
 ## Remediation status
 
 The current branch includes automated regressions and fixes for the actionable defects below.
-Tests 4 through 13 have passed their live acceptance retests. Test 14 is partial and is the next
-sequential gate:
+Tests 4 through 15 have passed their live acceptance retests:
 
 - Test 3 generic fallback summaries now contain the concrete message and reply.
 - Test 4 now passes: the live aspiration tracker is ingested, and need-goal lifecycle state
@@ -26,13 +28,16 @@ sequential gate:
   longer mistakes a mid-sentence current-state `what do` question for historical recall.
 - Test 10 confirms that a real player conversation starts before already-waiting lower-priority
   ambient cognition when the single worker becomes available.
-- Test 11 confirms successful and canceled action-result persistence across backend restart.
+- Test 11 confirms successful and canceled action-result persistence across backend restart and
+  one-attempt handling of permanent HTTP client errors.
 - Test 12 confirms timeline replay and consequence integrity.
 - Test 13 confirms repeated identity import and backend-restart persistence; raw export timestamps
   may refresh while canonical identity remains unchanged.
-- Test 14 has created a slot 13 checkpoint and retained its confirmed test fact. A game-driven
-  waiting-task finish discarded two completed backend answers; the lifecycle fix is automated-pass
-  and awaiting installation/live retest.
+- Test 14 confirms checkpoint isolation, owner-aware code-word recall, correct reply perspective,
+  grounded uncertainty for branch-absent facts, and relationship-neutral factual recall across
+  Save A / Save B reloads.
+- Test 15 confirms provider-free CLOD 1 operation and conservative player fallback while LM Studio
+  is stopped, plus normal CLOD 3 provider recovery after it restarts.
 - `FinishingType.OBJECT_CHANGED` remains a reported game cancellation and is not retried
   automatically, avoiding duplicate native socials.
 
@@ -409,7 +414,7 @@ dialogue behavior and a positive native romance consequence in game.
 
 ### July 22 late-session Test 5 handoff
 
-**Status:** PARTIAL / MULTI-TURN NATIVE ACTION DEADLOCK
+**Status:** HISTORICAL / RESOLVED BY THE SINGLE-TURN FLOW
 
 This retest used Bernard Jaeger as the active Sim and Karmine Luna as the roleplayed target. The
 backend ran from source with LM Studio on its native `/api/v1/chat` endpoint.
@@ -519,7 +524,7 @@ log remain documented defects for the next session.
 
 ### July 23 single-turn Test 5 retest
 
-**Status:** PARTIAL / ROMANCE APPLIED, LIVE DIAGNOSTIC WAS STALE
+**Status:** HISTORICAL / ROMANCE AND LIVE DIAGNOSTICS LATER PASSED
 
 - Three Karmine replies were categorized as `romance` with `playful` and `warm` tone.
 - The first two model-proposed `romance_positive` outcomes were reduced to `none` before the
@@ -538,7 +543,7 @@ log remain documented defects for the next session.
 
 ### July 23 romance validation and visual source-build handoff
 
-**Status:** HISTORICAL / RELATIONSHIP FLOW PASSED, VISUAL RETEST THEN PENDING
+**Status:** HISTORICAL / RELATIONSHIP FLOW AND LATER VISUAL RETEST PASSED
 
 - A later four-turn live run increased Sims romance `0 -> 8 -> 16 -> 21 -> 26`. Friendship remained
   `14`, while WickedWhims attraction increased independently from `+0.33` (`MEDIUM`) to `+0.67`
@@ -570,7 +575,7 @@ log remain documented defects for the next session.
 
 ### July 23 final waiting-animation retest
 
-**Status:** PARTIAL / WAITING ANIMATION PASSED, REMAINING VISUAL DETAILS OPEN
+**Status:** PASS / WAITING ANIMATION LIVE-VERIFIED; OPTIONAL VISUAL POLISH OPEN
 
 - The installed source build now plays a visible conversation animation while **Waiting for
   response** is in the queue. The Sims no longer remain silent and motionless.
@@ -587,7 +592,7 @@ log remain documented defects for the next session.
 
 ### July 24 fresh recalled-response retest
 
-**Status:** PARTIAL / ROMANCE FLOW, PERSISTENCE, AND VISUALS PASSED; OTHER CATEGORIES PENDING
+**Status:** PASS / CORE FLOW VERIFIED; ADDITIONAL CATEGORY COVERAGE DEFERRED
 
 - Bernard asked Karmine, `Hey, baby. When are we going on a date?` in conversation
   `babc66e3fc9c484cb4045ddafb9d59e5`.
@@ -639,7 +644,7 @@ log remain documented defects for the next session.
 
 ### July 24 friendship-category normalization failure
 
-**Status:** FAIL / VALID MODEL RESPONSE REPLACED BY RELIABILITY FALLBACK
+**Status:** HISTORICAL FAIL / FIXED AND LIVE-VERIFIED
 
 - Bernard asked Dennis, `That's funny, man. You are wonderful. How about we gather together for
   some beers?`
@@ -669,7 +674,7 @@ log remain documented defects for the next session.
 
 ### July 24 latest save/reload recall and animation failure
 
-**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+**Status:** HISTORICAL / FIXED AND LIVE-VERIFIED
 
 - Same-session recall passed: Karmine remembered the confirmed date as tonight at 7 pm.
 - Save/reload data persistence passed. The database retained confirmed event
@@ -696,7 +701,7 @@ log remain documented defects for the next session.
 
 ### July 24 supported-recall compliance failure
 
-**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+**Status:** HISTORICAL / FIXED AND LIVE-VERIFIED
 
 - With the repaired selector and installed animation build, Bernard asked Karmine,
   `Hey, my sweet baby. When are we going on our date? Can you tell me?`
@@ -730,7 +735,7 @@ log remain documented defects for the next session.
 
 ### July 24 factless semantic override failure
 
-**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+**Status:** HISTORICAL / FIXED AND LIVE-VERIFIED
 
 - Bernard asked Karmine, `My sweet baby, you remember our date, right? Can you tell me when is it
   going to be?`
@@ -757,7 +762,7 @@ log remain documented defects for the next session.
 
 ### July 24 recalled-fact perspective and usage failure
 
-**Status:** AUTOMATED FIX PASSED / LIVE RETEST PENDING
+**Status:** HISTORICAL / FIXED AND LIVE-VERIFIED
 
 - Bernard asked Karmine, `My sweet baby. When are we going on a date? I wante to confirm you
   remember.`
@@ -931,7 +936,7 @@ vector retrieval attempt failed.
 
 ### July 23 semantic-memory selector and date retest
 
-**Status:** PARTIAL / CORRECT MEMORY SELECTED, VERBATIM RESPONSE REPLAY REMAINS
+**Status:** HISTORICAL PARTIAL / FRESH GROUNDED RESPONSE LATER PASSED
 
 - The backend now builds a bounded, pair-scoped candidate set from confirmed interactions and asks
   the configured small local model to select up to three relevant request-local IDs. Returned IDs
@@ -1031,8 +1036,7 @@ recall and rejection for an uninformed pair.
 - The preserved local evidence is
   `output/test10-priority-20260725T222101Z.json`.
 - Automated regression remained green: Sims 4 adapter `246`, Core `225`, and Godot `4`.
-- Test 10 is closed as **PASS**. Tests 11 through 13 later closed as **PASS**; Test 14 is the next
-  sequential gate.
+- Test 10 is closed as **PASS**. Tests 11 through 15 are recorded below and now also pass.
 
 ### Adjacent live dialogue observation
 
@@ -1079,7 +1083,7 @@ recall and rejection for an uninformed pair.
 
 ### Action-result HTTP 400 retry remediation
 
-**Status:** AUTOMATED PASS / LIVE RETEST PENDING
+**Status:** PASS / AUTOMATED AND LIVE-VERIFIED
 
 - A rejected action-result entry previously treated every HTTP `400` as transient and retried
   indefinitely while the game remained open.
@@ -1089,8 +1093,9 @@ recall and rejection for an uninformed pair.
   returned.
 - Regression verification passed the focused outbox test, all `246` Sims 4 adapter tests, Python
   compilation, and the mod build.
-- Live acceptance remains: install the rebuilt mod, keep the game open across a backend restart,
-  and confirm a permanently rejected action result produces one `400`, not repeated requests.
+- A prior live session confirmed that a permanently rejected action result produced one HTTP
+  `400`, logged the rejected decision, paused the outbox entry, and did not repeat the request.
+  The user reconfirmed that passing result on 2026-07-26.
 
 ## Test 12: Timeline and replay
 
@@ -1120,7 +1125,7 @@ recall and rejection for an uninformed pair.
 
 ## Test 14: Save-slot isolation
 
-**Status:** PARTIAL / WAITING-LIFECYCLE FIX BUILT; LIVE RETEST AND SLOT MATRIX PENDING
+**Status:** PASS / SAVE-SLOT ISOLATION AND OWNER-AWARE RECALL LIVE-VERIFIED
 
 - `preserve_memory_only_on_game_save` is enabled for the ongoing test.
 - The active game used slot `13`; the backend created
@@ -1142,5 +1147,117 @@ recall and rejection for an uninformed pair.
 - Adjacent open defect: `What is the exact private branch code I told you?` completed one backend
   generation without game delivery, then returned HTTP `500` on retry because the grounded
   fallback builder did not recognize that explicit-recall wording.
-- Next live step: install the rebuilt mod, restart the game, retry
-  `Where is TEST14-A-731?`, then complete the Save A / Save B branch-isolation and restart matrix.
+- A later live branch run created Save A slot `14` with `Our secret code word is TEST14-A-731.`
+  and Save B slot `15` with `Your secret code word is TEST14-B-731.`. Checkpoint inspection
+  confirms slot 14 contains only A while slot 15 contains inherited A plus B.
+- After loading Save A, semantic retrieval produced `TEST14-A-731 is our code word.` and
+  `The code word is TEST14-A-731.`, but both answers were rejected because the natural possessive
+  assignments had no structured facts. The incomplete explicit-recall fallback then raised
+  `could not build a grounded dialogue fallback`, returning HTTP `500`.
+- The backend now extracts identifier-bearing `my`/`our` assignments for the message author and
+  `your` assignments for the addressed Sim. Both fallback question branches reuse Core's explicit
+  recall classifier, so unsupported `What is ...?` questions return uncertainty rather than HTTP
+  `500`.
+- Automated verification passes: `252` Sims adapter tests, `225` Core tests, Python compilation,
+  and read-only recovery of correctly attributed A/B facts from the existing slot 14/15
+  checkpoints without migration.
+- The next live run confirmed delivery without HTTP `500`: Save A answered `TEST14-A-731` for
+  `your code word`; Save B answered `TEST14-B-731` for `your code word`.
+- Save B then incorrectly answered `TEST14-B-731` for `our code word`. Both facts were correctly
+  attributed, but possessive query terms did not constrain retrieval or grounding, so recency
+  selected B for both questions.
+- The adapter now filters code-word facts by requested owner before deterministic/semantic
+  selection and again at the grounding boundary. `your` selects the responding Sim, `our` selects
+  the message-author/shared fact, and unqualified questions retain both facts newest-first. A
+  missing requested owner returns grounded uncertainty.
+- Final automated verification passes: `254` Sims adapter tests, `225` Core tests, `4` Godot tests,
+  `5` shared tests, Python compilation, and read-only slot 15 checks returning B for `your`, A for
+  `our`, and B then A for an unqualified query.
+- The owner-aware live retest passed in Save B: `What is your code word?` returned
+  `TEST14-B-731`, and `What is our code word?` returned inherited `TEST14-A-731`.
+- Both factual recall responses were nevertheless accepted as `romance_positive`; action-result
+  evidence confirms each applied `relationship.romance +5`. The model labeled the neutral replies
+  as romance with warm/playful tags, and the existing warm-romance validator accepted those tags
+  without requiring romantic dialogue.
+- Supported factual recall is now neutralized after response normalization: dialogue and
+  descriptive metadata remain intact, but `relationship_outcome`, `suggested_action`, and
+  `animation` are forced to `none`. The guard does not run without supported recall facts.
+- Automated verification passes: `256` Sims adapter tests, `225` Core tests, `4` Godot tests,
+  `5` shared tests, Python compilation, and whitespace checks. The new compatibility regression
+  confirms an ordinary romantic exchange still produces `romance_positive` and
+  `social.romance`.
+- The next live run again returned B for `your` and A for `our`. Although the local model's raw
+  JSON still proposed `romance_positive`, both authoritative decisions stored
+  `relationship_outcome=none`, `animation=none`, and `applied_changes=[]`; the sanitization fix
+  therefore passed live without a romance increment.
+- The `your` answer exposed a separate perspective defect:
+  `Your code word is TEST14-B-731` should be Sim B's first-person
+  `My code word is TEST14-B-731`. The stored fact correctly identifies Sim B as owner but retains
+  Sim A's original `Your...` wording; prompt attribution treated the owner as the utterance author,
+  and grounding had no code-word pronoun rule.
+- Code-word evidence now renders ownership rather than quoted source pronouns. A responding-Sim
+  answer must use `my code word`, and deterministic fallback produces exact `My` for `your` and
+  `Our` for shared recall. Non-code-word attribution and Core time/location perspective remain
+  unchanged.
+- Automated verification passes: `258` Sims adapter tests, `225` Core tests, `4` Godot tests,
+  `5` shared tests, Python compilation, and whitespace checks.
+- The post-fix live run passed the reported perspective defect. Event
+  `6d75c3e0-3db9-46b5-8587-154320008893` answered
+  `My code word is TEST14-B-731.` for `your`. Event
+  `eca5f78e-2ee4-43a0-96fc-f29d3e1dfea0` answered
+  `The code word is TEST14-A-731.` for `our`, retaining the correct inherited shared fact with
+  neutral wording.
+- Both authoritative actions succeeded with `relationship_outcome=none`, `animation=none`, and
+  `applied_changes=[]`. The `your` response category was `friendly`; the model still described
+  the `our` response as romance, but Empneon correctly neutralized its executable outcome.
+- The final Save A reload completed the branch matrix. `What is your code word?` correctly
+  returned `I don't know or remember that.` because B exists only in Save B. `What is our code
+  word?` returned `The code word is TEST14-A-731.`.
+- Save A events `0abc1a21-e175-48dd-8456-bb8244c38f45` and
+  `689fecf3-b520-4f52-8756-9300dda8a5ba` both succeeded with
+  `relationship_outcome=none`, `animation=none`, and `applied_changes=[]`.
+- Together with the preceding Save B live pass, this closes Test 14 as **PASS**. Test 15 follows
+  below and also passed.
+
+## Test 15: LLM-unavailable fallback
+
+**Status:** PASS / PROVIDER-FREE FALLBACK AND PROVIDER RECOVERY LIVE-VERIFIED
+
+- With LM Studio stopped, `aiping` continued to confirm that the Empneon backend was alive.
+- The 30-sim-minute alarm fired repeatedly, but Sims 4 returned no scored NPC-to-NPC interaction
+  on each observed tick, so the scheduled path safely skipped before contacting the backend.
+- The controlled `aiautonomous` diagnostic reached CLOD 1 decision-making, then returned HTTP 500.
+  The command sends a legacy sim-only payload, while `autonomous_action` unconditionally attempted
+  to persist absent `speaker` and `listener` objects. Persisting the first empty object raised
+  `ValueError("observed Sim id is required")` before usage accounting.
+- The backend now persists `speaker` when present, otherwise `sim`, and persists an optional
+  listener only when it has an ID. Strict actor identity validation and scheduled
+  speaker/listener behavior remain unchanged.
+- The regression reproduced the exact exception before the fix and now confirms sim persistence,
+  a provider-free CLOD 1 `idle` decision, provider `core-rules`, and zero prompt/completion tokens.
+  Existing scheduled-autonomy regressions remain green.
+- Automated verification passes: `259` Sims adapter tests, `225` Core tests, `4` Godot tests,
+  `5` shared tests, Python compilation, and whitespace checks.
+- After restarting the backend with LM Studio still stopped, `aiautonomous` passed live:
+  `Core proposed autonomous action`, blank target, and action `idle`. The newest usage row,
+  request `2758ade5-2390-4aeb-a60a-5501b1fd5631`, recorded provider `core-rules`, model `clod1`,
+  selected CLOD `1`, zero prompt/completion tokens, and zero provider latency.
+- The provider-unavailable player exchange also passed live. Sim B answered
+  `That is flattering. Thank you for being honest with me.` to
+  `I'm very attracted to you. You are really hot.`. Request
+  `2c0f4209-2a98-4ba9-a22c-bbc4085697c3` recorded provider `core-rules`, model `clod1`,
+  selected CLOD `1`, and zero tokens/latency.
+- Event `87443059-d78b-4408-8f6a-0051f968cdaf` and decision
+  `40e24d25-668b-470b-a737-055d07ab5cec` succeeded with response category `friendly`,
+  tone `reserved`, `relationship_outcome=none`, `animation=none`, `applied_changes=[]`, and
+  zero persisted consequences.
+- After LM Studio restarted, Sim B answered
+  `My mind has been buzzing with creative ideas! Lately, it's just been a whirlwind of thoughts
+  about everything that needs to be done.` to `What has been on your mind today?`.
+- Request `8e8e032d-bbf0-4a58-965f-227aa2557864` returned through LM Studio. The final CLOD 3 record
+  used model `local-model`, `12648` prompt tokens, `113` completion tokens, and `29956` ms;
+  the same routed request also recorded its CLOD 2 stage.
+- Event `ed56f708-2cb9-4e7e-9ad6-0cfd78b5f35c` and decision
+  `84604cc9-42c5-43d3-9282-b6a6972a379f` succeeded with response category `friendly`,
+  `relationship_outcome=none`, `animation=none`, `applied_changes=[]`, and zero consequences.
+- This closes Test 15 as **PASS** and completes the 15-section sequential in-game acceptance suite.

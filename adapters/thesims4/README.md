@@ -70,6 +70,10 @@ py -3.12 -m pip install -e ..\..\core -e .
    instead of inventing or reversing the fact. Concrete identifiers such as
    `PRIVATE-GARDEN-731` require evidence containing the same identifier; an uninformed pair
    receives an uncertainty response rather than a location inferred from unrelated memories.
+   Possessive code-word facts retain their owner across save branches: `your code word` resolves
+   to the responding Sim and is answered as `my code word`, while `our code word` resolves to the
+   shared/message-author fact. Supported factual recall is always relationship-neutral even if a
+   model labels the wording as romantic.
    Live testing also retrieved `under the blue bench` from the non-date paraphrase
    `Where is the garden code item?` before and after backend restart, while the uninformed pair
    disclosed no location.
@@ -96,12 +100,16 @@ previous one is still running. Autonomous proposals are restricted to mapped bas
 mapping is reported back to Core only after the native interaction completes. Live validation
 confirmed scheduled provider-free CLOD 1 with zero tokens and persistent usage telemetry.
 Provider-backed player dialogue likewise records dynamic CLOD, tokens, and latency persistently.
+If the configured provider is unavailable, player dialogue returns a conservative local CLOD 1
+response without relationship consequences. The `aiautonomous` diagnostic accepts both legacy
+sim-only and scheduled speaker/listener payloads.
 
 ## Configuration
 
 See the complete [installation, configuration, privacy, and hardware guide](docs/setup.md).
 Use the [in-game Core feature test plan](docs/in-game-core-feature-test-plan.md) to validate every
 implemented identity, memory, cognition, confirmation, portability, and persistence capability.
+All 15 sections of that plan passed live acceptance on 2026-07-26.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files

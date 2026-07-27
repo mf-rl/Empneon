@@ -554,6 +554,15 @@ _DURABLE_FACT_CUE = re.compile(
 _IDENTIFIER_ASSIGNMENT = re.compile(
     r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\s+(?:is|are)\b"
 )
+_POSSESSIVE_IDENTIFIER_ASSIGNMENT = re.compile(
+    r"\b(?P<possessive>my|our|your)\s+[a-z][a-z -]{0,30}\s+"
+    r"(?:is|are)\s+(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
+    re.IGNORECASE,
+)
+_CODEWORD_OWNER_QUERY = re.compile(
+    r"\b(?P<owner>your|our)\s+(?:secret\s+)?code\s*word\b",
+    re.IGNORECASE,
+)
 _RECALL_STOPWORDS = frozenset(
     "about again been conversation did does first from have interaction just know "
     "last like remember said tell that the them then they this time was were what "
@@ -587,6 +596,38 @@ def _is_recall_question(text: str) -> bool:
     return analyze_recall_query(text).explicit
 
 
+def codeword_recall_owner_id(
+    query: str,
+    responding_id: str,
+    message_author_id: str,
+) -> str | None:
+    match = _CODEWORD_OWNER_QUERY.search(str(query or ""))
+    if match is None:
+        return None
+    return str(
+        responding_id
+        if match.group("owner").casefold() == "your"
+        else message_author_id
+    )
+
+
+def _possessive_identifier_fact(
+    data: dict[str, object],
+) -> dict[str, str] | None:
+    statement = " ".join(str(data.get("message") or "").split())
+    match = _POSSESSIVE_IDENTIFIER_ASSIGNMENT.search(statement)
+    if not statement or statement.endswith("?") or match is None:
+        return None
+    actor_id = (
+        str(data.get("speaker_id") or "")
+        if match.group("possessive").casefold() == "your"
+        else str(data.get("listener_id") or "")
+    )
+    if not actor_id:
+        return None
+    return {"actor_id": actor_id, "statement": statement}
+
+
 def _authoritative_facts(
     data: dict[str, object],
 ) -> list[dict[str, object]]:
@@ -601,6 +642,9 @@ def _authoritative_facts(
             and str(fact.get("actor_id") or "") == speaker_id
         )
     ]
+    possessive_fact = None if recall_answer else _possessive_identifier_fact(data)
+    if possessive_fact is not None and possessive_fact not in facts:
+        facts.append(possessive_fact)
     legacy_fact = (
         None
         if recall_answer
@@ -640,6 +684,7 @@ def recall_candidates(
     pair = {str(actor_id), str(other_id)}
     terms = _recall_terms(query)
     recall_query = analyze_recall_query(query)
+    owner_id = codeword_recall_owner_id(query, actor_id, other_id)
     ranked = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
         data = _event_data(event.description)
@@ -652,6 +697,14 @@ def recall_candidates(
         if participants != pair:
             continue
         facts = _authoritative_facts(data)
+        if owner_id is not None:
+            facts = [
+                fact
+                for fact in facts
+                if str(fact.get("actor_id") or "") == owner_id
+            ]
+            if not facts:
+                continue
         supporting_facts = [
             fact
             for fact in facts
@@ -707,6 +760,7 @@ def recalled_memories(
     terms = _recall_terms(query)
     recall_query = analyze_recall_query(query)
     explicit = recall_query.explicit
+    owner_id = codeword_recall_owner_id(query, actor_id, other_id)
     matches = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
         data = _event_data(event.description)
@@ -719,6 +773,14 @@ def recalled_memories(
         if participants != pair:
             continue
         facts = _authoritative_facts(data)
+        if owner_id is not None:
+            facts = [
+                fact
+                for fact in facts
+                if str(fact.get("actor_id") or "") == owner_id
+            ]
+            if not facts:
+                continue
         supporting_facts = [
             fact
             for fact in facts

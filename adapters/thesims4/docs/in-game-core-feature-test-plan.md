@@ -371,10 +371,10 @@ canonical identity fields. Raw JSON differed only because `updated_at` timestamp
 
 ## 14. Save-slot isolation
 
-**Current status (2026-07-26): PARTIAL** — Save-aware mode is enabled and slot 13 checkpoint/session
-files were created. Fact persistence and backend recall work, but game-driven cancellation
-discarded completed replies. The lifecycle fix is built and automated-pass; install/live retest and
-the Save A / Save B isolation matrix remain.
+**Current status (2026-07-26): PASS** — Save B returned `My code word is TEST14-B-731` for
+`your` and inherited A for `our`. After loading Save A, `your` correctly returned grounded
+uncertainty because B was branch-absent, while `our` returned `TEST14-A-731`. All final actions
+succeeded with `relationship_outcome=none`, `animation=none`, and no applied relationship changes.
 
 - Prerequisite: set `preserve_memory_only_on_game_save` to `true` and restart.
 - Action: in Save A, teach a unique fact and save. Use **Save As** to create Save B, teach a second
@@ -388,7 +388,11 @@ the Save A / Save B isolation matrix remain.
 
 ## 15. LLM-unavailable fallback
 
-**Current status (2026-07-20): PENDING**
+**Current status (2026-07-26): PASS** — With LM Studio stopped, `aiping` confirmed the backend
+remained alive, the corrected sim-only autonomy route completed as zero-token CLOD 1
+`core-rules`, and player dialogue returned the conservative local fallback without consequences.
+After LM Studio restarted, a new player exchange completed through the configured provider at
+CLOD 3 with nonzero token usage.
 
 - Prerequisite: stop the configured LLM server or temporarily configure an unreachable endpoint.
 - Action: allow CLOD 1 autonomy, then attempt player **Empneon Social**.
@@ -400,6 +404,10 @@ the Save A / Save B isolation matrix remain.
 - Cleanup: restore the provider endpoint and remove temporary configuration.
 
 ## Completion record
+
+**Suite status (2026-07-26): COMPLETE** — All 15 sections have passed their live acceptance
+checks. The corresponding sanitized evidence is retained in
+`in-game-core-feature-test-results.md`.
 
 Record the game version, Empneon release version, Python version, provider/model, save-slot IDs,
 and pass/fail evidence for all 15 sections. Preserve only sanitized diagnostics: do not attach API

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.7-compatible Sims 4 script, pytest, existing Sims 4 test fakes, existing mod builder.
 
-**Status:** Implemented; all automated checks passed, live Test 14 retest pending.
+**Status:** Implemented; automated checks and the live Test 14 branch matrix passed.
 
 ## Global Constraints
 
