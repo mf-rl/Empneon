@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Empneon architecture</title>
+  <desc id="desc">Game adapters connect Empneon Core to persistence and AI providers</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-opacity="0.18"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+  </defs>
+  <rect width="1200" height="520" rx="24" fill="#f8fafc"/>
+  <text x="600" y="46" text-anchor="middle" fill="#0f172a" font-family="Inter, Segoe UI, Arial" font-size="28" font-weight="700">Ports-and-adapters architecture</text>
+
+  <g filter="url(#shadow)">
+    <rect x="55" y="105" width="260" height="250" rx="18" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+    <text x="185" y="145" text-anchor="middle" font-family="Inter, Segoe UI, Arial" font-size="24" font-weight="700" fill="#075985">Game adapters</text>
+    <text x="88" y="195" font-family="Inter, Segoe UI, Arial" font-size="20" fill="#0f172a">• The Sims 4</text>
+    <text x="88" y="235" font-family="Inter, Segoe UI, Arial" font-size="20" fill="#0f172a">• Godot 4</text>
+    <text x="88" y="275" font-family="Inter, Segoe UI, Arial" font-size="20" fill="#0f172a">• Community adapters</text>
+    <text x="88" y="320" font-family="Inter, Segoe UI, Arial" font-size="16" fill="#475569">Observe world state and</text>
+    <text x="88" y="344" font-family="Inter, Segoe UI, Arial" font-size="16" fill="#475569">confirm native outcomes</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="405" y="82" width="390" height="300" rx="20" fill="#ecfeff" stroke="#0f766e" stroke-width="3"/>
+    <text x="600" y="128" text-anchor="middle" font-family="Inter, Segoe UI, Arial" font-size="30" font-weight="750" fill="#115e59">Empneon Core</text>
+    <text x="445" y="180" font-family="Inter, Segoe UI, Arial" font-size="19" fill="#0f172a">• Identity and relationships</text>
+    <text x="445" y="218" font-family="Inter, Segoe UI, Arial" font-size="19" fill="#0f172a">• Episodic memory and beliefs</text>
+    <text x="445" y="256" font-family="Inter, Segoe UI, Arial" font-size="19" fill="#0f172a">• Cognitive-level scheduling</text>
+    <text x="445" y="294" font-family="Inter, Segoe UI, Arial" font-size="19" fill="#0f172a">• Resource admission and routing</text>
+    <text x="445" y="332" font-family="Inter, Segoe UI, Arial" font-size="19" fill="#0f172a">• Telemetry and deterministic replay</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="885" y="105" width="260" height="250" rx="18" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+    <text x="1015" y="145" text-anchor="middle" font-family="Inter, Segoe UI, Arial" font-size="24" font-weight="700" fill="#5b21b6">AI providers</text>
+    <text x="918" y="195" font-family="Inter, Segoe UI, Arial" font-size="20" fill="#0f172a">• LM Studio</text>
+    <text x="918" y="235" font-family="Inter, Segoe UI, Arial" font-size="20" fill="#0f172a">• OpenAI-compatible</text>
+    <text x="918" y="275" font-family="Inter, Segoe UI, Arial" font-size="20" fill="#0f172a">• Custom providers</text>
+    <text x="918" y="320" font-family="Inter, Segoe UI, Arial" font-size="16" fill="#475569">Optional reasoning behind</text>
+    <text x="918" y="344" font-family="Inter, Segoe UI, Arial" font-size="16" fill="#475569">explicit capability limits</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="405" y="430" width="390" height="64" rx="16" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+    <text x="600" y="470" text-anchor="middle" font-family="Inter, Segoe UI, Arial" font-size="22" font-weight="650" fill="#9a3412">SQLite persistence and checkpoints</text>
+  </g>
+
+  <path d="M315 230 H395" stroke="#64748b" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M795 230 H875" stroke="#64748b" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M600 382 V420" stroke="#64748b" stroke-width="4" marker-end="url(#arrow)"/>
+</svg>

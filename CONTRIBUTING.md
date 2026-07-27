@@ -1,4 +1,17 @@
-# Contributing to Empneon
+# Contributing
+
+Contributions are welcome once the public contribution workflow is enabled. Useful areas include:
+
+- Installation and troubleshooting documentation
+- Sims patch compatibility testing
+- Diagnostics and support tooling
+- Additional game adapters
+- Provider integrations
+- Memory retrieval fixtures
+- Typed DTO and service extraction
+- Performance measurements on additional hardware
+
+Before opening a large pull request, create an issue or discussion describing the proposed change and its intended boundary.
 
 ## Before you start
 
