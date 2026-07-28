@@ -886,6 +886,86 @@ log remain documented defects for the next session.
   `225` Core tests, `4` Godot tests, and `18` release tests. Python byte-compilation and
   `git diff --check` also passed.
 
+### July 27 response-rejection diagnostic handoff
+
+**Status:** LIVE CAPTURE COMPLETE / FUNNY SAFETY PASSED / CORRECTED MISCHIEF RETEST PENDING
+
+- Each exhausted model attempt now carries only its one-based attempt number and normalized
+  rejection reason into request-local fallback metadata. Accepted first or second attempts carry
+  no rejection diagnostic.
+- The backend removes that private metadata from the player response and persists it under the
+  completed decision ID. The Sims timeline exposes the two reasons after dialogue delivery and
+  database reopen; malformed diagnostic documents are ignored.
+- Prompts, raw model replies, schemas, conversation text, and credentials are not stored.
+- Automated verification passed `285` Sims adapter tests, `225` Core tests, `4` Godot tests, and
+  `5` shared tests. Backend byte-compilation and `git diff --check` also passed.
+- Funny decision `0f22a48c-790d-4605-9def-26cfffe11051` completed at 21:27:09 local time after
+  one semantic-selector call and one CLOD 3 dialogue call, so the first provider response was
+  accepted. For `Tell me your funniest llama joke.`, it returned
+  `Here is one of my funniest llama jokes! It's about a very grumpy llama who loves to eat hay.`,
+  category `friendly`, tones `playful` and `friendly`, and `friendship_positive`. Native
+  confirmation applied `relationship.friendship +8`. No rejection document was created.
+- The accepted funny wording contains `funniest` and `jokes`, while the explicit classifier
+  recognizes only the exact words `funny` and `joke`. This is consistent with the response
+  remaining `friendly` rather than being corrected to `funny`.
+- The classifier now recognizes `jokes?` and `funn(?:y|ier|iest)`. An automated regression using
+  the exact live reply proves it is recategorized to `funny` with no relationship outcome or
+  suggested action.
+- The rebuilt-backend funny retest completed at 22:03:27 local time as decision
+  `37e1085e-fb74-48dc-b3d9-488b5c97af55`, after one CLOD 2 semantic-selector call and one CLOD 3
+  dialogue call. For `Tell me your funniest llama joke.`, the provider returned
+  `Here's one! It's about a llama who decided to become an artist and paint with its own wool.`
+  The reply contained no explicit funny marker, remained category `friendly` with tones `playful`
+  and `friendly`, and produced `friendship_positive`. Native confirmation applied
+  `relationship.friendship +8`; no rejection diagnostic was stored. This demonstrates that the
+  lexical word-form fix works only when the response itself contains a recognized funny marker.
+- Hermes now neutralizes trust, relationship outcome, suggested action, and animation when an
+  incoming funny interaction receives a `friendly` or `funny` response. The exact marker-free live
+  reply is covered while its dialogue and `friendly` response category remain unchanged. Automated
+  verification passed `286` Sims adapter tests, `225` Core tests, `4` Godot tests, and `5` shared
+  tests.
+- Rebuilt-backend decision `f9683406-6b0d-44ee-82c3-dbb5231f3329` completed at 22:21:32 local
+  time after one CLOD 2 semantic-selector call and one CLOD 3 dialogue call. For the same funny
+  prompt, the provider returned `Here's one! It's about a llama who decided to become a comedian.`
+  The independent response category remained `friendly` with tones `playful` and `friendly`, while
+  the safety guard produced `trust_delta=0`, `relationship_outcome=none`, `animation=none`, and
+  `applied_changes=[]`. No rejection diagnostic was stored. Funny state safety therefore passes
+  live.
+- Mischief decision `a3f2a3ae-edb8-4b7d-af31-ab6c932f7636` completed at 21:28:04 local time after
+  one semantic-selector call and two CLOD 3 dialogue calls. Both model attempts were rejected for
+  `explicit mischief`.
+- The resulting deterministic fallback was
+  `How about a harmless trick: tell them the llama council promoted them to Chief Snack Officer?`,
+  category `mischief`, tone `wary`, `relationship_outcome=none`, `animation=none`, and zero
+  applied changes. The rejection reason proves a generated-dialogue/category mismatch but does
+  not retain the model's discarded category or raw reply.
+- The in-game `ai.socialtunings lieaboutcareer` probe found
+  `mixer_social_LieAboutCareer_group_mischief_skills`. Empneon's stale targeted tuning caused
+  `available_social_categories()` to omit mischief, preventing Hermes from recategorizing explicit
+  mischief dialogue. The mapping now uses the live exact name; its regression failed before the
+  correction and passes afterward while retaining all five categories.
+- Automated verification passed `286` Sims adapter tests, `225` Core tests, `4` Godot tests, and
+  `5` shared tests. Scoped Ruff, Python compilation, and `git diff --check` also pass.
+- Decision `42a9156c-7b54-4b49-b43d-21fa1f826bff` completed at 22:44:03 local time
+  after one CLOD 2 semantic-selector call and two CLOD 3 dialogue calls. Attempt 1 was rejected for
+  `explicit mischief`; attempt 2 was rejected for
+  `respond naturally; do not copy the player's message`.
+- The displayed result was the neutral deterministic fallback
+  `How about a harmless trick: tell them the llama council promoted them to Chief Snack Officer?`,
+  category `mischief`, tone `wary`, `trust_delta=0`, `relationship_outcome=none`,
+  `animation=none`, and `applied_changes=[]`.
+- Artifact inspection then proved this was not a corrected-mapping retest. Both the installed mod
+  and repository `dist` archive were byte-identical July 26 builds containing
+  `mixer_social_LieAboutCareer_targeted_mischief_alwaysOn`; `install_mod.ps1` had skipped its
+  builder because the stale artifacts already existed.
+- The installer now always runs `build_mod.py` when available and retains prebuilt-only release
+  installation when it is absent. Its regression failed before the branch correction and passed
+  afterward. All `520` repository tests and scoped static checks pass.
+- With The Sims 4 closed, the corrected installer rebuilt and installed both artifacts
+  successfully. Built and installed hashes match; both script archives contain
+  `mixer_social_LieAboutCareer_group_mischief_skills` and exclude the stale targeted name.
+  Restart the game and repeat the provider-backed mischief row.
+
 ## Test 6: Private observations and beliefs
 
 **Status:** PASS / PRIVATE RECALL, REJECTION, AND PERSISTENCE LIVE-VERIFIED

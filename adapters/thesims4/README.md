@@ -44,6 +44,10 @@ py -3.12 -m pip install -e ..\..\core -e .
 .\install_mod.ps1
 ```
 
+   Close The Sims 4 before installing. In a source checkout, the installer always rebuilds current
+   source first. A release ZIP without `build_mod.py` continues to use its bundled prebuilt
+   artifacts.
+
 5. In The Sims 4, enable custom content and script mods, then restart the game. Clicking another
    Sim now shows **Empneon Social** in the pie menu. **Start conversation** routes to the target
    and opens one native input box. Sending displays the player's message with their portrait and
@@ -129,8 +133,22 @@ implemented identity, memory, cognition, confirmation, portability, and persiste
 All 15 sections of that plan passed live acceptance on 2026-07-26. The expanded July 27 semantic
 category matrix also passed informed recall, uninformed-pair privacy, neutral outcomes, and final
 backend/game restart persistence. The July 27 social breadth retest established safe live terminal
-behavior for all five social categories; provider-backed funny and mischief acceptance remains
-pending because their accepted final replies were deterministic fallbacks.
+behavior for all five social categories. A later provider-backed funny response was accepted but
+remained categorized as friendly and applied positive friendship; both provider-backed mischief
+attempts were rejected for `explicit mischief` before the neutral deterministic fallback. The
+live tuning probe later confirmed the mischief mapping was stale: the game loads
+`mixer_social_LieAboutCareer_group_mischief_skills`. Empneon now maps that exact tuning, and the
+discovery regression proves all five categories remain advertised. The next mischief attempt
+completed safely through the neutral deterministic fallback, but artifact inspection proved the
+game was still running the stale July 26 archive. The installer now rebuilds source checkouts
+before copying; the corrected archive is installed and requires a game restart plus one new
+mischief row. The
+funny classifier now recognizes the observed `funniest` and `jokes` forms and automated coverage
+proves that reply is recategorized to relationship-neutral `funny`. A rebuilt-backend live retest
+then returned a joke without any explicit funny marker, kept category `friendly`, and again applied
+positive friendship. Hermes now makes `friendly` or `funny` responses to incoming funny
+interactions relationship-neutral and actionless while preserving their dialogue and response
+category. Automated regression and rebuilt-backend live confirmation both pass.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files
@@ -140,4 +158,5 @@ The packaged mod currently requires the backend at `127.0.0.1:8765`.
 - `ts4script/ai_sims_agent.py`: Sims 4 interaction, autonomy bridge, and diagnostic commands
 - `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning
 - `build_mod.py`: builds `Empneon_TheSims4.ts4script` and `Empneon_TheSims4.package`
+- `install_mod.ps1`: rebuilds source checkouts, installs both artifacts, and removes legacy copies
 - `test.py`: smoke test for `/chat`

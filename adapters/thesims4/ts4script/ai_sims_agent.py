@@ -41,7 +41,7 @@ NATIVE_SOCIAL_TUNINGS = {
     "social.funny": "mixer_social_TellJoke_targeted_Funny_alwaysOn",
     "social.romance": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
     "social.mean": "mixer_social_Insult_targeted_mean_alwaysOn",
-    "social.mischief": "mixer_social_LieAboutCareer_targeted_mischief_alwaysOn",
+    "social.mischief": "mixer_social_LieAboutCareer_group_mischief_skills",
     "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
     "apologize": "mixer_social_Apologize_targeted_friendly_lowScore",
     "flirt": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",

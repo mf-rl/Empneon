@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from empneon.core.contracts import (
+    ActionResult,
     AgentStateSnapshot,
     CognitiveRequest,
     Decision,
@@ -1678,6 +1679,95 @@ def test_disabled_response_rejection_accepts_first_normalized_response(
 
     assert calls == ["called"]
     assert response["dialogue"] == provider_response["dialogue"]
+
+
+def test_dialogue_fallback_carries_only_exhausted_rejection_reasons(
+    monkeypatch,
+) -> None:
+    replies = iter(
+        (
+            json.dumps(_social_provider_response("RAW-FIRST", "funny")),
+            json.dumps(_social_provider_response("RAW-SECOND", "mischief")),
+        )
+    )
+    monkeypatch.setattr(
+        ai_sims_server, "llm_chat", lambda *_args, **_kwargs: next(replies)
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "response_grounding_issue",
+        lambda _payload, response, _context: {
+            "RAW-FIRST": "first normalized reason",
+            "RAW-SECOND": "second normalized reason",
+        }.get(response["dialogue"], ""),
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "response_has_role_confusion",
+        lambda _response, _context: False,
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Tell me something funny.",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["_response_rejections"] == [
+        {"attempt": 1, "reason": "first normalized reason"},
+        {"attempt": 2, "reason": "second normalized reason"},
+    ]
+    assert "RAW-FIRST" not in json.dumps(response["_response_rejections"])
+    assert "RAW-SECOND" not in json.dumps(response["_response_rejections"])
+
+
+def test_accepted_dialogue_retry_carries_no_rejection_diagnostic(
+    monkeypatch,
+) -> None:
+    replies = iter(
+        (
+            json.dumps(_social_provider_response("RAW-FIRST", "funny")),
+            json.dumps(_social_provider_response("Accepted reply.", "funny")),
+        )
+    )
+    monkeypatch.setattr(
+        ai_sims_server, "llm_chat", lambda *_args, **_kwargs: next(replies)
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "response_grounding_issue",
+        lambda _payload, response, _context: (
+            "first normalized reason"
+            if response["dialogue"] == "RAW-FIRST"
+            else ""
+        ),
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "response_has_role_confusion",
+        lambda _response, _context: False,
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Tell me something funny.",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["dialogue"] == "Accepted reply."
+    assert "_response_rejections" not in response
 
 
 def test_supported_recall_is_relationship_and_action_neutral(
@@ -3974,7 +4064,8 @@ def test_explicit_category_contradiction_is_recategorized_without_retry(
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     provider_response = dict(
         _social_provider_response(
-            "Oh, here's one! A llama became a comedian. It was hilarious.",
+            "Here is one of my funniest llama jokes! It's about a very grumpy "
+            "llama who loves to eat hay.",
             "friendly",
         ),
         relationship_outcome="romance_positive",
@@ -4004,6 +4095,48 @@ def test_explicit_category_contradiction_is_recategorized_without_retry(
     assert response["response_category"] == "funny"
     assert response["relationship_outcome"] == "none"
     assert response["suggested_action"] == "none"
+
+
+def test_funny_incoming_friendly_reply_is_state_neutral(monkeypatch) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
+    provider_response = {
+        "dialogue": (
+            "Here's one! It's about a llama who decided to become an artist "
+            "and paint with its own wool."
+        ),
+        "expressed_emotion": "playful",
+        "intent": "accept_playfully",
+        "response_category": "friendly",
+        "tone_tags": ["playful", "friendly"],
+        "trust_delta": 1,
+        "relationship_outcome": "friendship_positive",
+        "memory": {"importance": 0.5, "summary": ""},
+    }
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: json.dumps(provider_response),
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Tell me your funniest llama joke.",
+        "incoming_category": "funny",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert response["dialogue"] == provider_response["dialogue"]
+    assert response["response_category"] == "friendly"
+    assert response["trust_delta"] == 0
+    assert response["relationship_outcome"] == "none"
+    assert response["suggested_action"] == "none"
+    assert response["animation"] == "none"
 
 
 def test_hesitant_non_romantic_reply_falls_back_without_relationship_action(
@@ -5108,6 +5241,176 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
     assert record is None
     assert diagnostics["agent_state"]["agent_id"] == "bella"
     assert json.loads(observed.description)["agent_state"]["agent_id"] == "bella"
+
+
+def test_exhausted_rejections_persist_on_completed_timeline_decision(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(
+        ai_sims_server.HERMES,
+        "dialogue",
+        lambda _payload, _context: {
+            "dialogue": "Here is a harmless llama joke.",
+            "emotion": "neutral",
+            "intent": "respond",
+            "response_category": "funny",
+            "tone_tags": ["light"],
+            "trust_delta": 0,
+            "relationship_outcome": "none",
+            "memory": {"importance": 0.0, "summary": ""},
+            "suggested_action": "none",
+            "animation": "none",
+            "_response_rejections": [
+                {
+                    "attempt": 1,
+                    "reason": "first normalized reason",
+                    "raw_reply": "RAW-FIRST",
+                },
+                {
+                    "attempt": 2,
+                    "reason": "second normalized reason",
+                    "raw_reply": "RAW-SECOND",
+                },
+            ],
+        },
+    )
+
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "bella", "name": "Bella"},
+            "listener": {"id": "mortimer", "name": "Mortimer"},
+            "conversation_id": "rejection-diagnostics",
+            "message": "Tell me something funny.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+        }
+    )
+
+    assert "_response_rejections" not in result
+    ai_sims_server.confirm_dialogue_delivery(
+        {"decision_id": result["decision_id"], "status": "displayed"}
+    )
+
+    with open_db(core_db) as conn:
+        stored = DocumentMemoryStore(conn).get(
+            "thesims4.response-rejections", result["decision_id"]
+        )
+        timeline = ai_sims_server.sims_timeline(conn, "bella")
+    assert stored == {
+        "response_rejections": [
+            {"attempt": 1, "reason": "first normalized reason"},
+            {"attempt": 2, "reason": "second normalized reason"},
+        ]
+    }
+    decision = next(
+        entry for entry in timeline["entries"] if entry["id"] == result["decision_id"]
+    )
+    assert decision["data"]["diagnostics"] == stored
+    assert "RAW-" not in json.dumps(stored)
+
+
+@pytest.mark.parametrize(
+    "rejections",
+    (
+        [
+            {"attempt": 2, "reason": "second reason"},
+            {"attempt": 1, "reason": "first reason"},
+        ],
+        [
+            {"attempt": 1.0, "reason": "first reason"},
+            {"attempt": 2.0, "reason": "second reason"},
+        ],
+    ),
+)
+def test_sims_timeline_ignores_malformed_rejection_diagnostics(
+    tmp_path, rejections
+) -> None:
+    with open_db(tmp_path / "core.sqlite3") as conn:
+        AgentStore(conn).create(Agent("bella", "Bella"))
+        event = EpisodicMemoryStore(conn).create(
+            Event("Bella heard a joke", ["bella"], id="event-1")
+        )
+        decision = Decision("bella", "respond", evidence_ids=(event.id,), id="decision-1")
+        ActionRecordStore(conn).record(
+            event.id,
+            decision,
+            ActionResult(decision.id, "succeeded"),
+        )
+        DocumentMemoryStore(conn).set(
+            "thesims4.response-rejections",
+            decision.id,
+            {"response_rejections": rejections},
+        )
+
+        timeline = ai_sims_server.sims_timeline(conn, "bella")
+
+    entry = next(item for item in timeline["entries"] if item["id"] == decision.id)
+    assert "diagnostics" not in entry["data"]
+
+
+def test_sims_timeline_projects_reason_only_diagnostics(tmp_path) -> None:
+    with open_db(tmp_path / "core.sqlite3") as conn:
+        AgentStore(conn).create(Agent("bella", "Bella"))
+        event = EpisodicMemoryStore(conn).create(
+            Event("Bella heard a joke", ["bella"], id="event-1")
+        )
+        decision = Decision("bella", "respond", evidence_ids=(event.id,), id="decision-1")
+        ActionRecordStore(conn).record(
+            event.id,
+            decision,
+            ActionResult(decision.id, "succeeded"),
+        )
+        DocumentMemoryStore(conn).set(
+            "thesims4.response-rejections",
+            decision.id,
+            {
+                "response_rejections": [
+                    {"attempt": 1, "reason": "first reason", "raw_reply": "RAW-FIRST"},
+                    {"attempt": 2, "reason": "second reason", "prompt": "PRIVATE"},
+                ]
+            },
+        )
+
+        timeline = ai_sims_server.sims_timeline(conn, "bella")
+
+    entry = next(item for item in timeline["entries"] if item["id"] == decision.id)
+    assert entry["data"]["diagnostics"] == {
+        "response_rejections": [
+            {"attempt": 1, "reason": "first reason"},
+            {"attempt": 2, "reason": "second reason"},
+        ]
+    }
+
+
+def test_sims_timeline_ignores_corrupt_rejection_document(tmp_path) -> None:
+    with open_db(tmp_path / "core.sqlite3") as conn:
+        AgentStore(conn).create(Agent("bella", "Bella"))
+        event = EpisodicMemoryStore(conn).create(
+            Event("Bella heard a joke", ["bella"], id="event-1")
+        )
+        decision = Decision("bella", "respond", evidence_ids=(event.id,), id="decision-1")
+        ActionRecordStore(conn).record(
+            event.id,
+            decision,
+            ActionResult(decision.id, "succeeded"),
+        )
+        DocumentMemoryStore(conn).set(
+            "thesims4.response-rejections",
+            decision.id,
+            {"response_rejections": []},
+        )
+        conn.execute(
+            "UPDATE memory_documents SET value=? WHERE namespace=? AND key=?",
+            ("not-json", "thesims4.response-rejections", decision.id),
+        )
+        conn.commit()
+
+        timeline = ai_sims_server.sims_timeline(conn, "bella")
+
+    entry = next(item for item in timeline["entries"] if item["id"] == decision.id)
+    assert "diagnostics" not in entry["data"]
 
 
 def test_confirmed_exchange_ignores_generated_memory_summary(

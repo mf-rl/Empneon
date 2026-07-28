@@ -48,12 +48,20 @@ feature promise.
 - The Sims 4 15-section in-game acceptance suite passes provider-backed and provider-free
   cognition, save-slot isolation, grounded owner-aware recall, neutral factual outcomes, action
   confirmation, replay, cancellation, and persistence
+- Exhausted Sims dialogue attempts persist only their normalized rejection reasons and expose
+  them on the matching completed timeline decision; prompts and raw model replies are not stored
+- Funny interactions remain relationship-neutral even when marker-free provider dialogue is
+  independently categorized as friendly
+- Exact Sims tuning discovery uses the live
+  `mixer_social_LieAboutCareer_group_mischief_skills` mapping for mischief
+- Source-checkout mod installation always rebuilds current source before copying artifacts;
+  prebuilt-only release installation remains supported
 
 ## Next gates
 
-- Identify and expose the rejection reason when otherwise valid LM Studio funny or mischief
-  dialogue exhausts both model attempts. The live deterministic fallbacks are category-correct
-  and relationship-neutral, but they do not prove normal provider-response acceptance.
+- Restart the game and repeat the provider-backed mischief row with the newly rebuilt and installed
+  script mod. Decision `42a9156c-7b54-4b49-b43d-21fa1f826bff` safely reached fallback, but it ran
+  from the stale July 26 archive and therefore did not validate the corrected tuning mapping.
 - A more consistently neutral waiting animation remains optional polish.
 
 ### Core integration

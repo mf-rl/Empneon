@@ -2,12 +2,11 @@ $ErrorActionPreference = "Stop"
 
 $scriptSource = Join-Path $PSScriptRoot "dist\Empneon_TheSims4.ts4script"
 $tuningSource = Join-Path $PSScriptRoot "dist\Empneon_TheSims4.package"
-if (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource))) {
-    $builder = Join-Path $PSScriptRoot "build_mod.py"
-    if (-not (Test-Path $builder)) {
-        throw "Prebuilt Empneon mod files are missing. Download the complete release ZIP."
-    }
+$builder = Join-Path $PSScriptRoot "build_mod.py"
+if (Test-Path $builder) {
     python $builder
+} elseif (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource))) {
+    throw "Prebuilt Empneon mod files are missing. Download the complete release ZIP."
 }
 
 $game = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "Electronic Arts\The Sims 4"

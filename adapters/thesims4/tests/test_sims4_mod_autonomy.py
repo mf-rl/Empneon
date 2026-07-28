@@ -34,6 +34,7 @@ def test_empneon_social_posts_its_conversation_id() -> None:
 def test_build_and_installer_use_empneon_artifact_names() -> None:
     root = Path(__file__).parents[1]
     installer = (root / "install_mod.ps1").read_text(encoding="utf-8")
+    installer_lines = {line.strip() for line in installer.splitlines()}
 
     assert build_mod.TARGET.name == "Empneon_TheSims4.ts4script"
     assert build_mod.TUNING_TARGET.name == "Empneon_TheSims4.package"
@@ -41,7 +42,15 @@ def test_build_and_installer_use_empneon_artifact_names() -> None:
     assert '"Empneon_TheSims4.package"' in installer
     assert '"AI_Sims_Agent.ts4script"' in installer
     assert '"AI_Sims_Agent.package"' in installer
-    assert "if (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource)))" in installer
+    assert "if (Test-Path $builder) {" in installer_lines
+    assert (
+        "} elseif (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource))) {"
+        in installer_lines
+    )
+    assert (
+        "if (-not ((Test-Path $scriptSource) -and (Test-Path $tuningSource))) {"
+        not in installer_lines
+    )
 
 
 def test_tuning_package_uses_interaction_resource_type() -> None:
@@ -1522,7 +1531,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     )
     mean = type("mixer_social_Insult_targeted_mean_alwaysOn", (), {})
     mischief = type(
-        "mixer_social_LieAboutCareer_targeted_mischief_alwaysOn", (), {}
+        "mixer_social_LieAboutCareer_group_mischief_skills", (), {}
     )
     apologize = type("mixer_social_Apologize_targeted_friendly_lowScore", (), {})
     monkeypatch.setattr(
@@ -1552,7 +1561,7 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         "social.funny": "mixer_social_TellJoke_targeted_Funny_alwaysOn",
         "social.romance": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",
         "social.mean": "mixer_social_Insult_targeted_mean_alwaysOn",
-        "social.mischief": "mixer_social_LieAboutCareer_targeted_mischief_alwaysOn",
+        "social.mischief": "mixer_social_LieAboutCareer_group_mischief_skills",
         "friendly_chat": "mixer_social_AskAboutDay_targeted_Friendly_alwaysOn",
         "apologize": "mixer_social_Apologize_targeted_friendly_lowScore",
         "flirt": "mixer_social_ComplimentAppearance_targeted_romance_alwaysOn",

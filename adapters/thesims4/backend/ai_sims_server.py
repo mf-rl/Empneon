@@ -2053,7 +2053,7 @@ def explicit_social_category(message):
             "mischief",
             r"\b(prank|trick|scare|deceive|pretend|lie|lies|lied|lying|mess with)\b",
         ),
-        ("funny", r"\b(joke|funny|hilarious|laugh|pun|comedy)\b"),
+        ("funny", r"\b(jokes?|funn(?:y|ier|iest)|hilarious|laugh|pun|comedy)\b"),
     )
     return next(
         (category for category, pattern in patterns if re.search(pattern, value)),
@@ -2668,6 +2668,25 @@ def reasoning_fallback_response(payload, context):
     raise RuntimeError("could not build a grounded dialogue fallback")
 
 
+def _response_rejection_diagnostics(value):
+    if not isinstance(value, list) or len(value) != 2:
+        return []
+    diagnostics = []
+    for expected_attempt, item in enumerate(value, start=1):
+        if (
+            not isinstance(item, dict)
+            or type(item.get("attempt")) is not int
+            or item["attempt"] != expected_attempt
+            or not isinstance(item.get("reason"), str)
+            or not item["reason"].strip()
+        ):
+            return []
+        diagnostics.append(
+            {"attempt": expected_attempt, "reason": item["reason"].strip()}
+        )
+    return diagnostics
+
+
 class HermesRuntime:
     def dialogue(self, payload, context):
         configured_categories = payload.get("available_response_categories")
@@ -2680,6 +2699,7 @@ class HermesRuntime:
         supported_facts = _supported_recall_facts(
             payload.get("message"), context
         )
+        rejections = []
         for attempt in range(2):
             try:
                 content = llm_chat(
@@ -2712,6 +2732,13 @@ class HermesRuntime:
                     response
                 )
                 response["suggested_action"] = response["animation"] = "none"
+            if (
+                payload.get("incoming_category") == "funny"
+                and response["response_category"] in ("friendly", "funny")
+            ):
+                response["trust_delta"] = 0
+                response["relationship_outcome"] = "none"
+                response["suggested_action"] = response["animation"] = "none"
             if supported_facts:
                 response["relationship_outcome"] = "none"
                 response["suggested_action"] = response["animation"] = "none"
@@ -2728,11 +2755,13 @@ class HermesRuntime:
                 role_confusion = False
             if not role_confusion and not issue and not category_issue:
                 return response
+            reason = issue or category_issue or "speaker/listener confusion"
             PROVIDER_LOG.warning(
                 "model response failed grounding (%s); retrying=%s",
-                issue or category_issue or "speaker/listener confusion",
+                reason,
                 attempt == 0,
             )
+            rejections.append({"attempt": attempt + 1, "reason": reason})
             if RESPONSE_REJECTION_ENABLED:
                 prompt += (
                     "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
@@ -2763,6 +2792,7 @@ class HermesRuntime:
                 )
         fallback = reasoning_fallback_response(payload, context)
         fallback["suggested_action"] = fallback["animation"] = "none"
+        fallback["_response_rejections"] = rejections
         return fallback
 
     def story_beat(self, prompt):
@@ -2881,6 +2911,7 @@ def chat(payload):
             deadline_ms=int(model_config.get("latency_ms") or 3000),
         )
         selected = {"clod": 1, "task": "core-rules"}
+        response_rejections = []
 
         def resolver(task):
             async def resolve_dialogue(current):
@@ -2900,6 +2931,11 @@ def chat(payload):
                 except RuntimeError as exc:
                     raise ProviderError("Sims dialogue provider failed") from exc
                 selected.update(clod=current.preferred_clod, task=task)
+                response_rejections.extend(
+                    _response_rejection_diagnostics(
+                        response.pop("_response_rejections", [])
+                    )
+                )
                 return adapter.decision_from_response(response, event.id)
 
             return resolve_dialogue
@@ -2932,6 +2968,12 @@ def chat(payload):
             if event.agent_state is not None:
                 save_agent_state(conn, event.agent_state)
             actions.propose(event.id, decision, action)
+            if response_rejections:
+                DocumentMemoryStore(conn).set(
+                    "thesims4.response-rejections",
+                    decision.id,
+                    {"response_rejections": response_rejections},
+                )
             usage = UsageStore(conn)
             if generations:
                 for task, config, generation in generations:
@@ -3280,6 +3322,27 @@ def diagnostic_identifier(query, name):
     return value
 
 
+def sims_timeline(conn, agent_id):
+    timeline = agent_timeline(conn, agent_id)
+    documents = DocumentMemoryStore(conn)
+    for entry in timeline["entries"]:
+        if entry["type"] != "decision":
+            continue
+        try:
+            stored = documents.get("thesims4.response-rejections", entry["id"])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(stored, dict):
+            continue
+        rejections = _response_rejection_diagnostics(
+            stored.get("response_rejections")
+        )
+        if not rejections:
+            continue
+        entry["data"]["diagnostics"] = {"response_rejections": rejections}
+    return timeline
+
+
 class EmpneonHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
@@ -3417,7 +3480,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/diagnostics/sim":
                     body = empneon_state.sim_diagnostics(conn, identifier)
                 elif path == "/diagnostics/timeline":
-                    body = agent_timeline(conn, identifier)
+                    body = sims_timeline(conn, identifier)
                 elif path == "/diagnostics/usage":
                     body = UsageStore(conn).telemetry(identifier)
                 elif path == "/identity/export":

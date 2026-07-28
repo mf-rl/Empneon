@@ -141,6 +141,11 @@ no linked social group. The July 27 funny and mischief rows used deterministic c
 fallbacks, so accepted provider dialogue for those categories remains a quality/diagnostic gate
 rather than a Test 5 safety blocker.
 
+The live tuning probe subsequently corrected mischief discovery to
+`mixer_social_LieAboutCareer_group_mischief_skills`. The first follow-up still ran the stale
+packaged script; the installer now rebuilds source checkouts before copying. Restart the game
+before repeating the mischief row so the corrected archive is loaded.
+
 Warm, playful, or romantic reception in the `romance` response category now receives the existing
 mild `romance_positive` outcome when the model returns `none`, provided the response is not
 hesitant, neutral, uncertain, hostile, or an explicit rejection.

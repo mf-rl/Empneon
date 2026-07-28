@@ -38,14 +38,13 @@ Python 3.12 may be replaced with any installed Python version supported by
 To test the current worktree without creating a release, run from `adapters/thesims4`:
 
 ```powershell
-py -3.12 .\build_mod.py
 .\install_mod.ps1
 $env:PYTHONPATH='..\..\core\src;src'
 py -3.12 .\backend\ai_sims_server.py
 ```
 
-`build_mod.py` creates the current `Empneon_TheSims4.ts4script` and
-`Empneon_TheSims4.package`; `install_mod.ps1` installs those source-built artifacts. The explicit
+When `build_mod.py` is present, `install_mod.ps1` always rebuilds the current
+`Empneon_TheSims4.ts4script` and `Empneon_TheSims4.package` before installing them. The explicit
 `PYTHONPATH` makes the backend import Core and the adapter from this worktree. This workflow does
 not build or install a release archive.
 
@@ -63,8 +62,9 @@ handoff so the next manual run cannot connect to a stale process.
    .\adapters\thesims4\install_mod.ps1
    ```
 
-   The script uses the prebuilt release files when present. In a source checkout it builds them
-   with Python 3.7, copies `Empneon_TheSims4.ts4script` and
+   Close The Sims 4 before installing so it does not lock the package. In a source checkout the
+   script always rebuilds with Python 3.7; a release ZIP without `build_mod.py` uses its bundled
+   prebuilt files. It copies `Empneon_TheSims4.ts4script` and
    `Empneon_TheSims4.package` into the game's `Mods` directory, removes legacy
    `AI_Sims_Agent.*` files, and clears the Sims thumbnail cache.
 3. Start the backend from the repository root:
@@ -184,6 +184,15 @@ breadth run safely handled friendship, mean, funny, and mischief. Mean returned 
 funny returned an actual joke; mischief proposed a harmless trick. Every final mean/funny/mischief
 decision was relationship-neutral and actionless. Funny and mischief used deterministic fallback,
 which remains visible as a provider-acceptance gap rather than a safety failure.
+
+Later July 27 diagnostics captured only the two normalized rejection reasons for exhausted funny
+and mischief attempts. Funny state safety then passed live with zero trust, relationship outcome,
+animation, or applied changes even when the provider categorized marker-free joke dialogue as
+friendly. The live tuning probe identified
+`mixer_social_LieAboutCareer_group_mischief_skills`; source and automated discovery now use that
+exact name. The first attempted retest still loaded a stale July 26 archive. Source installation
+now rebuilds unconditionally, and the corrected archive has been installed for the next
+game-restart mischief row.
 
 On July 26, automated regression covered a later game-driven waiting-task cancellation that had
 discarded completed backend answers during Test 14. Non-user finishes now requeue the same session,
