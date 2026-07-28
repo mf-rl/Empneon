@@ -17,6 +17,8 @@ Tests 4 through 15 have passed their live acceptance retests:
 - Test 5 resolves relationship display names to numeric Sim IDs, recognizes common romantic
   phrases, rejects copied or recycled dialogue, supports explicit acceptance or rejection, maps
   accepted invitations to `flirt`, and reads native friendship and romance tracks separately.
+  July 27 breadth testing also aligned explicit response categories, preserved repeated-prompt
+  relevance, and produced safe category-specific funny, mean, and mischief fallbacks.
 - Test 6 persists confirmed identifier facts, rejects denial or contradiction when evidence is
   available, and rejects fabricated answers when the queried pair has no matching evidence.
 - Test 7 ranks the complete observable memory set, filters it by the exact Sim pair, excludes
@@ -110,8 +112,9 @@ restarted both the game and backend before the final verification.
 
 **Status:** PASS / FINAL LIVE RECALL, PERSISTENCE, CONSEQUENCE, AND UI FLOW VERIFIED
 
-Historical `PARTIAL` and `FAIL` statements below record the state at each retest. The final July 24
-closeout is authoritative for the current Test 5 result.
+Historical `PARTIAL` and `FAIL` statements below record the state at each retest. The July 24
+closeout is authoritative for the accepted relationship/recall flow; the July 27 breadth section
+is authoritative for the current social-category result.
 
 **Retest evidence (2026-07-20):**
 
@@ -833,8 +836,55 @@ log remain documented defects for the next session.
 - Final automated verification after the last compatibility correction passed `224` Core tests
   and `233` Sims adapter tests. Focused Ruff and mypy checks, backend byte-compilation,
   `git diff --check`, and the Sims mod build also passed.
-- Test 5 is closed as **PASS**. Positive friendship, mean, funny, and mischief interactions remain
-  optional breadth coverage rather than blockers for this accepted flow.
+- At the July 24 closeout, positive friendship, mean, funny, and mischief interactions remained
+  optional breadth coverage rather than blockers for the accepted flow. The July 27 section below
+  records their later live coverage.
+
+### July 27 social-category breadth remediation and live retest
+
+**Status:** PASS FOR SAFE TERMINAL BEHAVIOR / PROVIDER ACCEPTANCE PARTIAL
+
+- The initial four-row run exposed model/category contradictions. A friendly llama response and a
+  prank response were labeled `romance_positive`, while `I hate you. Go away.` produced a
+  hesitant positive-romance response. Empneon's existing outcome validator prevented every
+  incompatible romance mutation.
+- Positive friendship already passed end to end in decision
+  `c117d5c7-80da-4afd-bbc3-ecca195dca27`: `friendship_positive` produced
+  `relationship.friendship +8` with consequence integrity preserved. A later friendly retest was
+  valid but model-selected `relationship_outcome=none`, so it applied no relationship change.
+- The first remediation aligns an explicit dialogue category when broad response rejection is
+  enabled, revalidates the relationship outcome, and keeps that corrected response actionless.
+  Plain `lie`, `lies`, `lied`, and `lying` now classify as mischief. Hesitant, uncertain, or
+  hostile non-romantic dialogue cannot remain categorized as romance. Rejection-disabled behavior
+  and valid friendly/romance outcomes remain unchanged.
+- The next live run proved the mean repair. Decision
+  `3c9c68e4-6dec-4f27-a88a-6199ab710b4f` returned
+  `I won't continue this conversation while you speak to me that way.`, category `mean`, tone
+  `firm`, `relationship_outcome=none`, `animation=none`, and `applied_changes=[]`.
+- That run still returned generic fallback text for funny and mischief. Timeline and source
+  reproduction found that the historical-reply guard reported “different message” even when the
+  player repeated the exact same prompt. The deterministic fallback also lacked funny/mischief
+  dialogue branches and deliberately downgraded mischief to friendly.
+- The second remediation exempts only an exact repeated prompt from historical-reply rejection;
+  copying the current input or reusing a reply for a different prompt remains blocked.
+  Deterministic funny now tells a llama joke, while deterministic mischief proposes a harmless
+  trick. Both remain relationship-neutral and executable-action-free.
+- Final funny decision `15153862-e660-48a8-ac97-e4c28712596e` returned
+  `Here's a llama joke: What do llamas call a rushed vacation? An alpaca-to-go.`, category
+  `funny`, tone `light`, `relationship_outcome=none`, `animation=none`, and
+  `applied_changes=[]`.
+- Final mischief decision `317b595c-c25c-4839-be05-7c0656f545de` returned
+  `How about a harmless trick: tell them the llama council promoted them to Chief Snack Officer?`,
+  category `mischief`, tone `wary`, `relationship_outcome=none`, `animation=none`, and
+  `applied_changes=[]`.
+- Both final decisions succeeded with `consequence_integrity=true`. Their exact wording identifies
+  them as deterministic fallbacks, which confirms safe terminal category behavior but not normal
+  LM Studio response acceptance. The backend currently logs rejection reasons to its console but
+  does not retain the per-attempt reason in timeline replay; diagnosing and exposing that reason
+  is the next social-quality gate.
+- Automated compatibility verification after both remediations passed `278` Sims adapter tests,
+  `225` Core tests, `4` Godot tests, and `18` release tests. Python byte-compilation and
+  `git diff --check` also passed.
 
 ## Test 6: Private observations and beliefs
 

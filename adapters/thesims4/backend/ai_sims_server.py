@@ -2049,7 +2049,10 @@ def explicit_social_category(message):
             r"gorgeous|handsome|hot|sexy|love you|feelings for|like you romantically)\b",
         ),
         ("mean", r"\b(hate|despise|idiot|stupid|insufferable|leave me alone|go away)\b"),
-        ("mischief", r"\b(prank|trick|scare|deceive|pretend|lie about|mess with)\b"),
+        (
+            "mischief",
+            r"\b(prank|trick|scare|deceive|pretend|lie|lies|lied|lying|mess with)\b",
+        ),
         ("funny", r"\b(joke|funny|hilarious|laugh|pun|comedy)\b"),
     )
     return next(
@@ -2068,6 +2071,22 @@ def response_category_issue(response):
     explicit = explicit_social_category(dialogue)
     if explicit is not None and explicit != category:
         return "explicit {}".format(explicit)
+    tone = {
+        str(tag).casefold() for tag in response.get("tone_tags") or []
+    }
+    tone.add(
+        str(
+            response.get("expressed_emotion")
+            or response.get("emotion")
+            or ""
+        ).casefold()
+    )
+    if (
+        category == "romance"
+        and explicit is None
+        and tone & {"hesitant", "uncertain", "hostile"}
+    ):
+        return "non-romantic tone"
     return ""
 
 
@@ -2122,6 +2141,7 @@ def response_grounding_issue(payload, response, context):
         if (
             len(previous_reply) >= 4
             and len(dialogue_words) >= 4
+            and previous_message != message_words
             and _dialogue_similarity(dialogue_words, previous_reply) >= 0.72
         ):
             return "do not reuse a previous reply for a different message"
@@ -2502,7 +2522,7 @@ def reasoning_fallback_response(payload, context):
     fallback_category, tone_tag = {
         "romance": ("friendly", "reserved"),
         "mean": ("mean", "firm"),
-        "mischief": ("friendly", "wary"),
+        "mischief": ("mischief", "wary"),
         "funny": ("funny", "light"),
         "friendly": ("friendly", "neutral"),
     }.get(incoming_category, ("friendly", "neutral"))
@@ -2553,6 +2573,24 @@ def reasoning_fallback_response(payload, context):
         intent = "accept_apology"
         animation = "apologize"
         trust_delta = 1
+    elif incoming_category == "funny":
+        dialogue = (
+            "Here's a llama joke: What do llamas call a rushed vacation? "
+            "An alpaca-to-go."
+        )
+        emotion = "playful"
+        intent = "tell_joke"
+        animation = "funny_chat"
+        trust_delta = 0
+    elif incoming_category == "mischief":
+        dialogue = (
+            "How about a harmless trick: tell them the llama council promoted "
+            "them to Chief Snack Officer?"
+        )
+        emotion = "playful"
+        intent = "suggest_prank"
+        animation = "mischief_chat"
+        trust_delta = 0
     elif interaction_kind == "hostile":
         dialogue = "I won't continue this conversation while you speak to me that way."
         emotion = "tense"
@@ -2663,6 +2701,17 @@ class HermesRuntime:
                 )
             except (ValueError, json.JSONDecodeError):
                 response = fallback_response(content, categories)
+            explicit_category = explicit_social_category(response["dialogue"])
+            if (
+                RESPONSE_REJECTION_ENABLED
+                and explicit_category in categories
+                and explicit_category != response["response_category"]
+            ):
+                response["response_category"] = explicit_category
+                response["relationship_outcome"] = validated_relationship_outcome(
+                    response
+                )
+                response["suggested_action"] = response["animation"] = "none"
             if supported_facts:
                 response["relationship_outcome"] = "none"
                 response["suggested_action"] = response["animation"] = "none"

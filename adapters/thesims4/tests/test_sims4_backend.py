@@ -3362,6 +3362,24 @@ def test_grounding_rejects_current_and_historical_dialogue_mirroring() -> None:
     ) == ""
 
 
+def test_grounding_allows_repeated_reply_for_repeated_message() -> None:
+    message = "Tell me your funniest llama joke."
+    dialogue = "A llama became a comedian. It was hilarious."
+    context = {
+        "speaker": {"name": "Karmine"},
+        "listener": {"name": "Bernard"},
+        "conversation": [{"message": message, "dialogue": dialogue}],
+    }
+
+    issue = ai_sims_server.response_grounding_issue(
+        {"message": message},
+        {"dialogue": dialogue},
+        context,
+    )
+
+    assert issue == ""
+
+
 def test_natural_date_reply_survives_non_romantic_action_metadata() -> None:
     context = ai_sims_server.build_context(
         {"speaker": {}, "listener": {}},
@@ -3783,6 +3801,7 @@ def test_common_social_classifier(message: str, expected: str) -> None:
         ("That was hilarious!", "funny"),
         ("Go away, you insufferable idiot.", "mean"),
         ("Let's prank them and pretend we know nothing.", "mischief"),
+        ("What kind of lie are you thinking of?", "mischief"),
         ("I appreciate you asking.", None),
     ],
 )
@@ -3826,13 +3845,15 @@ def test_prompt_separates_incoming_category_from_state_grounded_response() -> No
         ("No, I don't want to date you.", "friendly", "explicit romance"),
         ("Go away, idiot.", "friendly", "explicit mean"),
         ("That was hilarious!", "funny", ""),
+        ("What exactly is so tense about?", "romance", "non-romantic tone"),
         ("I need time to think.", "friendly", ""),
     ],
 )
 def test_response_category_issue(dialogue: str, category: str, issue: str) -> None:
-    assert ai_sims_server.response_category_issue(
-        {"dialogue": dialogue, "response_category": category}
-    ) == issue
+    response = {"dialogue": dialogue, "response_category": category}
+    if issue == "non-romantic tone":
+        response.update(expressed_emotion="hesitant", tone_tags=["hesitant"])
+    assert ai_sims_server.response_category_issue(response) == issue
 
 
 @pytest.mark.parametrize(
@@ -3947,25 +3968,28 @@ def _social_provider_response(dialogue: str, category: str) -> dict:
     }
 
 
-def test_category_contradiction_retries_once(monkeypatch) -> None:
+def test_explicit_category_contradiction_is_recategorized_without_retry(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
-    responses = iter(
-        (
-            _social_provider_response("Yes, I would love to date you.", "friendly"),
-            _social_provider_response("Yes, I would love to date you.", "romance"),
-        )
+    provider_response = dict(
+        _social_provider_response(
+            "Oh, here's one! A llama became a comedian. It was hilarious.",
+            "friendly",
+        ),
+        relationship_outcome="romance_positive",
     )
     calls = []
     monkeypatch.setattr(
         ai_sims_server,
         "llm_chat",
-        lambda *_args, **_kwargs: calls.append(1) or json.dumps(next(responses)),
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(provider_response),
     )
     payload = {
         "speaker": {},
         "listener": {},
-        "message": "Would you go on a date with me?",
-        "incoming_category": "romance",
+        "message": "Tell me your funniest llama joke.",
+        "incoming_category": "funny",
         "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
     }
     context = ai_sims_server.build_context(
@@ -3975,11 +3999,78 @@ def test_category_contradiction_retries_once(monkeypatch) -> None:
 
     response = ai_sims_server.HERMES.dialogue(payload, context)
 
-    assert len(calls) == 2
-    assert response["suggested_action"] == "social.romance"
+    assert calls == [1]
+    assert response["dialogue"] == provider_response["dialogue"]
+    assert response["response_category"] == "funny"
+    assert response["relationship_outcome"] == "none"
+    assert response["suggested_action"] == "none"
 
 
-def test_persistent_category_contradiction_is_dialogue_only(monkeypatch) -> None:
+def test_hesitant_non_romantic_reply_falls_back_without_relationship_action(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
+    provider_response = {
+        "dialogue": "If things are tense between us? What exactly is so tense about?",
+        "expressed_emotion": "hesitant",
+        "intent": "accept_playfully",
+        "response_category": "romance",
+        "tone_tags": ["hesitant"],
+        "trust_delta": 1,
+        "relationship_outcome": "romance_positive",
+        "memory": {"importance": 0.5, "summary": ""},
+    }
+    calls = []
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append(1) or json.dumps(provider_response),
+    )
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "I hate you. Go away.",
+        "incoming_category": "mean",
+        "available_response_categories": list(ai_sims_server.SOCIAL_CATEGORIES),
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.HERMES.dialogue(payload, context)
+
+    assert calls == [1, 1]
+    assert response["response_category"] == "mean"
+    assert response["relationship_outcome"] == "none"
+    assert response["suggested_action"] == "none"
+
+
+@pytest.mark.parametrize(
+    ("dialogue", "category", "outcome"),
+    [
+        ("I enjoy talking with you too.", "friendly", "friendship_positive"),
+        ("Yes, I would love to date you.", "romance", "romance_positive"),
+    ],
+)
+def test_valid_social_category_and_outcome_remain_unchanged(
+    dialogue: str,
+    category: str,
+    outcome: str,
+) -> None:
+    response = ai_sims_server.normalize_response(
+        {
+            "dialogue": dialogue,
+            "response_category": category,
+            "relationship_outcome": outcome,
+        }
+    )
+
+    assert response["response_category"] == category
+    assert response["relationship_outcome"] == outcome
+
+
+def test_recategorized_category_contradiction_is_dialogue_only(monkeypatch) -> None:
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", True)
     response = _social_provider_response("Yes, I would love to date you.", "friendly")
     monkeypatch.setattr(
@@ -4163,6 +4254,8 @@ def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
         ("I hate you. Leave me alone.", "mean"),
         ("How do you feel about gardening?", "friendly"),
         ("The weather changed today.", "friendly"),
+        ("Tell me your funniest llama joke.", "funny"),
+        ("Let's prank another Sim by lying about their career.", "mischief"),
     )
 
     responses = [
@@ -4178,6 +4271,8 @@ def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
         for response in responses
     )
     assert responses[1]["intent"] == "set_boundary"
+    assert ai_sims_server.explicit_social_category(responses[4]["dialogue"]) == "funny"
+    assert ai_sims_server.explicit_social_category(responses[5]["dialogue"]) == "mischief"
 
 
 @pytest.mark.parametrize(

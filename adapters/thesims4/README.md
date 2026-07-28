@@ -86,6 +86,15 @@ py -3.12 -m pip install -e ..\..\core -e .
    at read time, and an uninformed pair discloses neither the preference nor conflict fact. All
    authoritative factual decisions remain relationship-neutral and apply no executable changes.
 
+   The July 27 social-category retest also exercised friendly, funny, mean, and mischief player
+   messages. Explicit dialogue/category mismatches are corrected conservatively, incompatible
+   relationship outcomes become `none`, hesitant non-romantic replies cannot remain positive
+   romance, and an exact repeated prompt may receive a relevant repeated answer without weakening
+   the guard against recycling replies for different prompts. Mean, funny, and mischief terminal
+   behavior passed live with no relationship mutation. The final funny and mischief replies came
+   from deterministic category-specific fallbacks, so normal LM Studio acceptance for those two
+   categories remains an open quality/diagnostic gate.
+
    The existing diagnostic commands remain available through the cheat console:
 
 ```text
@@ -119,7 +128,9 @@ Use the [in-game Core feature test plan](docs/in-game-core-feature-test-plan.md)
 implemented identity, memory, cognition, confirmation, portability, and persistence capability.
 All 15 sections of that plan passed live acceptance on 2026-07-26. The expanded July 27 semantic
 category matrix also passed informed recall, uninformed-pair privacy, neutral outcomes, and final
-backend/game restart persistence.
+backend/game restart persistence. The July 27 social breadth retest established safe live terminal
+behavior for all five social categories; provider-backed funny and mischief acceptance remains
+pending because their accepted final replies were deterministic fallbacks.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files

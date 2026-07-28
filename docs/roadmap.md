@@ -21,6 +21,10 @@ feature promise.
   and bounded game-observed relationship outcomes; live cancellation suppresses late effects and
   preserves zero-change failed records across backend restart; non-user queue finishes now requeue
   the visible waiting interaction without duplicating the backend request
+- The Sims dialogue boundary aligns explicit generated wording with friendly, funny, romance,
+  mean, and mischief categories, neutralizes incompatible relationship outcomes, permits a
+  relevant reply when the player repeats the same prompt, and supplies actionless category-specific
+  funny, mean, and mischief fallbacks; all five categories have safe live terminal behavior
 - Bounded, pair-scoped semantic memory selection with deterministic fallback and shared recall
   constraints; live date-plan recall succeeds across paraphrasing and save/reload while preserving
   exact time and attributed location ownership in fresh wording
@@ -47,8 +51,10 @@ feature promise.
 
 ## Next gates
 
-- Expand live social-category coverage beyond the passed romance and relationship-neutral
-  friendship branches; a more consistently neutral waiting animation is optional polish.
+- Identify and expose the rejection reason when otherwise valid LM Studio funny or mischief
+  dialogue exhausts both model attempts. The live deterministic fallbacks are category-correct
+  and relationship-neutral, but they do not prove normal provider-response acceptance.
+- A more consistently neutral waiting animation remains optional polish.
 
 ### Core integration
 

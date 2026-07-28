@@ -273,6 +273,7 @@ Implemented and tested behavior includes:
 - Save/reload persistence
 - Pair-scoped confirmed-memory selection
 - Deterministic recall fallback
+- Category-aligned Sims dialogue safety for friendly, funny, romance, mean, and mischief
 - Belief provenance, contradiction, revision, and trust-decayed propagation
 - Provider-free CLOD 1 telemetry
 - Provider-backed CLOD 3 usage and latency accounting
@@ -293,6 +294,7 @@ Current priorities:
 
 - Simplify Sims 4 installation and diagnostics
 - Validate the experience with external testers
+- Diagnose provider-response rejection when valid social dialogue reaches deterministic fallback
 - Decompose large Sims adapter modules
 - Improve typed application boundaries
 - Document third-party adapter development

@@ -117,7 +117,7 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-24): PASS** — The single-turn queue, cancelable waiting phase,
+**Current status (2026-07-27): PASS** — The single-turn queue, cancelable waiting phase,
 conversation animation, directed confirmed consequences, save/reload persistence, grounded recall,
 portrait layout, and romance feedback all passed live testing. The final post-reload date question
 retrieved Bernard's attributed `Tonight, 7pm, at my place` fact. Empneon rejected an incomplete
@@ -134,11 +134,12 @@ relationship effects, UI bridge, and animation fallback. Provider usage now incl
 selection and dialogue attempts; `empneon.usage` requests global telemetry while the HTTP
 diagnostic can still be filtered by actor.
 
-Live coverage includes positive romance, a relationship-neutral friendly introduction, correct
-two-portrait ordering, floating romance icons, continuous persistence, save/reload recall, and the
-initiator-only waiting visual when EA provides no linked social group. Positive friendship, mean,
-funny, and mischief rows remain useful breadth testing, but are no longer blockers for the accepted
-Test 5 flow.
+Live coverage includes positive friendship and romance, relationship-neutral friendly, funny,
+mean, and mischief terminal behavior, correct two-portrait ordering, floating relationship icons,
+continuous persistence, save/reload recall, and the initiator-only waiting visual when EA provides
+no linked social group. The July 27 funny and mischief rows used deterministic category-specific
+fallbacks, so accepted provider dialogue for those categories remains a quality/diagnostic gate
+rather than a Test 5 safety blocker.
 
 Warm, playful, or romantic reception in the `romance` response category now receives the existing
 mild `romance_positive` outcome when the model returns `none`, provided the response is not
@@ -146,21 +147,22 @@ hesitant, neutral, uncertain, hostile, or an explicit rejection.
 
 - Prerequisite: use a disposable save with Karmine and another Sim, install the source build, and
   start the source backend as documented in `setup.md` with
-  `response_rejection_enabled` set to `false`.
+  `response_rejection_enabled` set to `true`.
 - Run this matrix and capture every row:
 
   | Incoming message | Expected incoming category | Acceptable response categories |
   |---|---|---|
-  | “How was your day?” | `friendly` | any normalized category |
-  | “Tell me a joke.” | `funny` | any normalized category |
+  | “I really enjoy talking with you. You're a good friend.” | `friendly` | `friendly`, or an intentional boundary |
+  | “Tell me your funniest llama joke.” | `funny` | `funny`, or an intentional boundary |
   | “Would you go on a date with me?” | `romance` | any normalized category |
-  | “I hate you. Go away.” | `mean` | any normalized category |
-  | “Let's prank another Sim.” | `mischief` | any normalized category |
+  | “I hate you. Go away.” | `mean` | `mean`, or an intentional boundary |
+  | “Let's prank another Sim by lying about their career.” | `mischief` | `mischief`, or an intentional boundary |
 
   For each row record both actor snapshots, incoming and response category, tone tags, bounded
   `relationship_outcome`, displayed notifications, and relationship values before and after. The
   response category may differ from the incoming category. `none` is a valid relationship-neutral
-  result.
+  result. Record whether the final dialogue came from the model or deterministic fallback; a
+  category-correct fallback verifies safety and availability but not provider acceptance.
 - Attraction evidence: capture `ai.relationship Karmine` in both directions before dialogue. The
   command must show either `Sims attraction <normalized> (<source>: <label>)` or explicit
   `unavailable`. With supported WickedWhims attraction enabled, source must be `wickedwhims`; with

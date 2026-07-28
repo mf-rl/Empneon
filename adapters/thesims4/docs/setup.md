@@ -141,6 +141,15 @@ privacy and epistemic-recall acceptance tests: unsupported answers are rejected 
 an uncertainty fallback. Restart the backend after changing this setting; the game does not need
 to restart.
 
+When response rejection is enabled, explicit wording may correct a mismatched model category
+without executing a social action. Relationship outcomes are revalidated after correction.
+Identical repeated prompts may reuse a relevant prior-shaped reply, while a reply recycled for a
+different prompt is still rejected. After two rejected or failed model attempts, deterministic
+fallbacks remain actionless: funny returns a light llama joke, mean sets a firm boundary, and
+mischief suggests a harmless prank. Live July 27 validation confirmed these terminal behaviors
+with `relationship_outcome=none`, `animation=none`, and no applied game changes. The funny and
+mischief live rows reached fallback, so they do not yet demonstrate accepted provider dialogue.
+
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
 and `models.large` may override `provider`, `endpoint`, `model`, `temperature`, and
@@ -169,6 +178,12 @@ introduction correctly displayed no icon. The waiting animation also completed a
 through its initiator-only visual fallback when no linked social group was available. Stronger
 `+++` feedback and relationship milestones such as best friends, first kisses, and proposals are
 deferred and must not be triggered by this implementation.
+
+On July 27, positive friendship had already been observed with a native `+8` result. A new social
+breadth run safely handled friendship, mean, funny, and mischief. Mean returned a firm boundary;
+funny returned an actual joke; mischief proposed a harmless trick. Every final mean/funny/mischief
+decision was relationship-neutral and actionless. Funny and mischief used deterministic fallback,
+which remains visible as a provider-acceptance gap rather than a safety failure.
 
 On July 26, automated regression covered a later game-driven waiting-task cancellation that had
 discarded completed backend answers during Test 14. Non-user finishes now requeue the same session,
