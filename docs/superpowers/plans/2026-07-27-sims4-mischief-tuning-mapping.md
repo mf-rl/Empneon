@@ -2,7 +2,7 @@
 
 > **For Codex:** Use the executing-plans skill to implement this plan task by task.
 
-**Status:** Completed, rebuilt, and installed; corrected live retest pending
+**Status:** Completed, rebuilt, installed, and live-verified
 
 **Goal:** Restore provider-backed mischief responses by matching the tuning name
 reported by the live game.
@@ -38,4 +38,7 @@ Do not commit or push; the user will request that separately.
 **Result:** The regression failed with only `mischief` absent, passed after the
 one-value correction, and all `520` repository tests plus scoped static checks
 pass. The next request used a stale archive and therefore did not validate the
-mapping. A fresh corrected archive is installed for the next game restart.
+mapping. After a fresh corrected install and game restart, decision
+`0f649c50-8e69-44c5-8fe4-a103b9582cc5` used LM Studio at CLOD 2 and CLOD 3,
+accepted a `mischief` response without retries, and completed with zero applied
+changes.

@@ -95,9 +95,8 @@ py -3.12 -m pip install -e ..\..\core -e .
    relationship outcomes become `none`, hesitant non-romantic replies cannot remain positive
    romance, and an exact repeated prompt may receive a relevant repeated answer without weakening
    the guard against recycling replies for different prompts. Mean, funny, and mischief terminal
-   behavior passed live with no relationship mutation. The final funny and mischief replies came
-   from deterministic category-specific fallbacks, so normal LM Studio acceptance for those two
-   categories remains an open quality/diagnostic gate.
+   behavior passed live with no relationship mutation. Later rebuilt-package tests accepted normal
+   LM Studio funny and mischief dialogue while preserving relationship-neutral outcomes.
 
    The existing diagnostic commands remain available through the cheat console:
 
@@ -134,15 +133,16 @@ All 15 sections of that plan passed live acceptance on 2026-07-26. The expanded 
 category matrix also passed informed recall, uninformed-pair privacy, neutral outcomes, and final
 backend/game restart persistence. The July 27 social breadth retest established safe live terminal
 behavior for all five social categories. A later provider-backed funny response was accepted but
-remained categorized as friendly and applied positive friendship; both provider-backed mischief
-attempts were rejected for `explicit mischief` before the neutral deterministic fallback. The
-live tuning probe later confirmed the mischief mapping was stale: the game loads
+remained categorized as friendly and applied positive friendship; both initial provider-backed
+mischief attempts were rejected for `explicit mischief` before the neutral deterministic
+fallback. The live tuning probe then confirmed the mischief mapping was stale: the game loads
 `mixer_social_LieAboutCareer_group_mischief_skills`. Empneon now maps that exact tuning, and the
-discovery regression proves all five categories remain advertised. The next mischief attempt
-completed safely through the neutral deterministic fallback, but artifact inspection proved the
-game was still running the stale July 26 archive. The installer now rebuilds source checkouts
-before copying; the corrected archive is installed and requires a game restart plus one new
-mischief row. The
+discovery regression proves all five categories remain advertised. An intermediate mischief
+attempt completed safely through the neutral deterministic fallback, but artifact inspection
+proved the game was still running the stale July 26 archive. The installer now rebuilds source
+checkouts before copying. After a fresh install and game restart, provider-backed decision
+`0f649c50-8e69-44c5-8fe4-a103b9582cc5` used CLOD 2 semantic selection and CLOD 3 dialogue,
+returned an accepted `mischief` response, and applied no relationship changes. The
 funny classifier now recognizes the observed `funniest` and `jokes` forms and automated coverage
 proves that reply is recategorized to relationship-neutral `funny`. A rebuilt-backend live retest
 then returned a joke without any explicit funny marker, kept category `friendly`, and again applied

@@ -94,4 +94,6 @@ required.
 **Result:** The installer regression failed on the old branch, then passed.
 All `520` repository tests and scoped static checks pass. After closing the
 game, the corrected installer rebuilt and installed hash-matching artifacts
-that contain the live mischief tuning and exclude the stale one.
+that contain the live mischief tuning and exclude the stale one. The later
+fresh-package provider-backed mischief retest passed at CLOD 2 and CLOD 3 with
+zero applied changes.

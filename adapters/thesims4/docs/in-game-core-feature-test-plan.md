@@ -117,7 +117,7 @@ coexistence, and persistence pass on a clean database.
 
 ## 5. Directed relationships and confirmed consequences
 
-**Current status (2026-07-27): PASS** — The single-turn queue, cancelable waiting phase,
+**Current status (2026-07-29): PASS** — The single-turn queue, cancelable waiting phase,
 conversation animation, directed confirmed consequences, save/reload persistence, grounded recall,
 portrait layout, and romance feedback all passed live testing. The final post-reload date question
 retrieved Bernard's attributed `Tonight, 7pm, at my place` fact. Empneon rejected an incomplete
@@ -137,14 +137,14 @@ diagnostic can still be filtered by actor.
 Live coverage includes positive friendship and romance, relationship-neutral friendly, funny,
 mean, and mischief terminal behavior, correct two-portrait ordering, floating relationship icons,
 continuous persistence, save/reload recall, and the initiator-only waiting visual when EA provides
-no linked social group. The July 27 funny and mischief rows used deterministic category-specific
-fallbacks, so accepted provider dialogue for those categories remains a quality/diagnostic gate
-rather than a Test 5 safety blocker.
+no linked social group. Later rebuilt-package tests accepted provider-backed funny and mischief
+dialogue while preserving safe terminal behavior.
 
 The live tuning probe subsequently corrected mischief discovery to
 `mixer_social_LieAboutCareer_group_mischief_skills`. The first follow-up still ran the stale
-packaged script; the installer now rebuilds source checkouts before copying. Restart the game
-before repeating the mischief row so the corrected archive is loaded.
+packaged script, so the installer now rebuilds source checkouts before copying. The July 29
+fresh-package retest used CLOD 2 semantic selection and CLOD 3 dialogue, accepted a `mischief`
+response without retry diagnostics, and completed with zero applied changes.
 
 Warm, playful, or romantic reception in the `romance` response category now receives the existing
 mild `romance_positive` outcome when the model returns `none`, provided the response is not

@@ -888,7 +888,7 @@ log remain documented defects for the next session.
 
 ### July 27 response-rejection diagnostic handoff
 
-**Status:** LIVE CAPTURE COMPLETE / FUNNY SAFETY PASSED / CORRECTED MISCHIEF RETEST PENDING
+**Status:** PASS / FUNNY SAFETY AND CORRECTED PROVIDER-BACKED MISCHIEF LIVE-VERIFIED
 
 - Each exhausted model attempt now carries only its one-based attempt number and normalized
   rejection reason into request-local fallback metadata. Accepted first or second attempts carry
@@ -964,7 +964,15 @@ log remain documented defects for the next session.
 - With The Sims 4 closed, the corrected installer rebuilt and installed both artifacts
   successfully. Built and installed hashes match; both script archives contain
   `mixer_social_LieAboutCareer_group_mischief_skills` and exclude the stale targeted name.
-  Restart the game and repeat the provider-backed mischief row.
+- The authoritative July 29 provider-backed retest is decision
+  `0f649c50-8e69-44c5-8fe4-a103b9582cc5`. For
+  `Let's prank another Sim by lying about their career.`, LM Studio ran one CLOD 2 semantic
+  selection and one CLOD 3 dialogue generation. The accepted response was
+  `Prank another Sim? What kind of lie are you thinking about? Something totally ridiculous.`,
+  with intent `accept_playfully`, category `mischief`, and tones `playful` and `teasing`.
+- The response required no retry and stored no rejection diagnostic. Delivery and confirmation
+  succeeded with `relationship_outcome=none`, `animation=none`, and `applied_changes=[]`.
+  This closes the corrected-package mischief gate.
 
 ## Test 6: Private observations and beliefs
 

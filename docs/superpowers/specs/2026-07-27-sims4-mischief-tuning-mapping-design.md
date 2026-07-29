@@ -1,6 +1,6 @@
 # Sims 4 Mischief Tuning Mapping Design
 
-**Status:** Implemented, rebuilt, and installed; corrected live retest pending
+**Status:** Implemented, rebuilt, installed, and live-verified
 
 ## Problem
 
@@ -28,5 +28,7 @@ diff checks.
 The focused test failed with only `mischief` missing, then passed after the
 mapping correction. All `520` repository tests and the scoped static checks
 pass. The next live request completed safely but used a stale archive, so it did
-not validate this correction. The fresh archive is now installed for a
-game-restart retest.
+not validate this correction. After the fresh archive was installed and the
+game restarted, decision `0f649c50-8e69-44c5-8fe4-a103b9582cc5` used LM Studio
+at CLOD 2 and CLOD 3, accepted a `mischief` response without retries, and
+completed with zero applied changes.

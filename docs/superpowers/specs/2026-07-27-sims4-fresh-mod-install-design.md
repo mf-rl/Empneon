@@ -30,4 +30,5 @@ and have identical hashes.
 The regression failed against the old branch and passed after the correction.
 All `520` repository tests and scoped static checks pass. With the game closed,
 the installer rebuilt and installed matching artifacts containing only the live
-mischief tuning name.
+mischief tuning name. The later fresh-package provider-backed mischief retest
+passed at CLOD 2 and CLOD 3 with zero applied changes.

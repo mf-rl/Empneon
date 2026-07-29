@@ -295,7 +295,6 @@ Current priorities:
 
 - Simplify Sims 4 installation and diagnostics
 - Validate the experience with external testers
-- Complete the corrected-package provider-backed mischief retest
 - Decompose large Sims adapter modules
 - Improve typed application boundaries
 - Document third-party adapter development

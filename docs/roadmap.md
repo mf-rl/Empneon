@@ -53,15 +53,14 @@ feature promise.
 - Funny interactions remain relationship-neutral even when marker-free provider dialogue is
   independently categorized as friendly
 - Exact Sims tuning discovery uses the live
-  `mixer_social_LieAboutCareer_group_mischief_skills` mapping for mischief
+  `mixer_social_LieAboutCareer_group_mischief_skills` mapping for mischief; a fresh-package live
+  retest accepted provider dialogue through CLOD 2 selection and CLOD 3 generation, preserved the
+  `mischief` category, and applied no relationship changes
 - Source-checkout mod installation always rebuilds current source before copying artifacts;
   prebuilt-only release installation remains supported
 
 ## Next gates
 
-- Restart the game and repeat the provider-backed mischief row with the newly rebuilt and installed
-  script mod. Decision `42a9156c-7b54-4b49-b43d-21fa1f826bff` safely reached fallback, but it ran
-  from the stale July 26 archive and therefore did not validate the corrected tuning mapping.
 - A more consistently neutral waiting animation remains optional polish.
 
 ### Core integration
