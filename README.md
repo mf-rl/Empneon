@@ -143,6 +143,11 @@ Optional AI providers
 
 SQLite is currently the only database backend. The Godot adapter is a portability proof. The Sims 4 integration is a reference adapter, not a replacement for the game’s complete autonomy system.
 
+The Sims 4 local backend keeps `ai_sims_server.py` as its executable compatibility façade and
+separates configuration, database/session compatibility, agent scheduling, cognition processing,
+and HTTP dispatch into five inert modules. Importing those modules does not start workers, open a
+database, or bind a socket.
+
 ## Cognitive Level of Detail
 
 Empneon assigns work to a bounded cognitive level rather than sending every decision to the largest available model.
@@ -305,7 +310,7 @@ Current priorities:
 
 - Simplify Sims 4 installation and diagnostics
 - Validate the experience with external testers
-- Decompose large Sims adapter modules
+- Continue narrowing the Sims compatibility façade where measured maintenance needs justify it
 - Improve typed application boundaries
 - Document third-party adapter development
 - Publish gameplay demonstrations and reproducible examples

@@ -4,7 +4,7 @@
 
 **Goal:** Prevent friendly or funny provider replies to funny interactions from mutating relationship state.
 
-**Architecture:** Add one bounded guard inside `HermesRuntime.dialogue`, the
+**Architecture:** Add one bounded guard inside `CognitionRuntime.dialogue`, the
 existing boundary that holds both incoming and outgoing social categories.
 Leave normalization, category independence, and adapter mappings unchanged.
 
@@ -70,7 +70,7 @@ $env:PYTHONPATH='..\..\core\src;src'; py -3.12 -m pytest -q -p no:cacheprovider 
 Expected: FAIL because trust remains `1` and the outcome remains
 `friendship_positive`.
 
-- [x] **Step 3: Add the bounded Hermes guard**
+- [x] **Step 3: Add the bounded runtime guard**
 
 After explicit response recategorization:
 

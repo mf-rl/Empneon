@@ -22,7 +22,7 @@ reviewed. No Critical or Important issue remained after the final review.
 | F06 | The reported deadlock was false because a zero-capacity governor rejects work immediately. Zero concurrency is nevertheless invalid configuration and is now rejected at construction. |
 | F07 | Repeated `asyncio.run()` calls created avoidable loops. Backend worker threads now reuse a thread-local event loop. |
 | F08 | A failed legacy database open silently redirected writes to a temporary database. The fallback was removed; the configured path and original failure are reported instead. |
-| F09 | Importing the backend started cognition worker threads. Workers now start lazily on the first submitted request. The proposed large module split was deferred because it would add refactoring risk without fixing another demonstrated defect. |
+| F09 | Real as a responsibility and import-side-effect concentration issue, but the audit incorrectly claimed that importing the backend started cognition workers and opened the database. Workers were already lazy and database work already occurred only in `run()` or explicit calls. Configuration/logging, database/session compatibility, agent scheduling, cognition/response processing, and HTTP dispatch now live in five inert modules: `config.py`, `db.py`, `agent_manager.py`, `cognition.py`, and `server.py`. `ai_sims_server.py` remains the executable compatibility façade with late-bound monkeypatch targets. The cognition runtime is exposed as `CognitionRuntime` / `COGNITION_RUNTIME`. |
 | F10 | The audit incorrectly described `Event` as frozen, but store insertion did mutate caller-owned timestamps. Stores now persist copies and leave caller objects unchanged. |
 | F11 | The audit incorrectly described lineage as a list append, but belief insertion still mutated caller-owned lineage. Stored beliefs are now copied with derived lineage. |
 | F12 | Document-memory timestamps used nanoseconds while the rest of Core used Unix seconds. Schema 12 migrates legacy nanosecond values transactionally and new records use seconds. |
@@ -45,21 +45,28 @@ reviewed. No Critical or Important issue remained after the final review.
 
 ## Verification
 
-The final source state passed:
+The Phase 3 decomposition verification on 2026-07-30 produced:
 
 - Core: `231` tests
-- The Sims 4 adapter: `317` tests
+- The Sims 4 adapter: `333` tests
 - Godot adapter: `4` tests
 - Shared and release tests: `23` tests
 - CLOD regression scenario: `1/1`
-- Ruff over the CI-scoped source and test paths
+- Ruff over the six decomposition backend modules and the modified Sims backend test
 - mypy over `52` source files
-- Python compilation of changed production modules
+- Python compilation of the façade and all five extracted modules
 - `git diff --check`
+- no conflicting cognition-runtime name in tracked Python or Markdown
+
+The broader planned command, `py -3.12 -m ruff check core adapters tests scripts`, still reports
+`50` findings, all in unchanged baseline files: `backend/empneon_state.py`, the Sims smoke client,
+and the Python 3.7 game script. Those unrelated files were not rewritten as part of the
+behavior-preserving decomposition, so repository-wide Ruff is not recorded as passing.
 
 Focused regressions cover hostile SQL identifiers, connection closure, failed database opens,
 optional API authentication and client propagation, event-loop reuse, lazy worker startup,
 caller-object immutability, schema 11-to-12 timestamp migration, bounded timeline queries with
 timestamp ties, and bounded recall with an old relevant fact behind 150 newer events and a query
 containing more than 1,000 terms. Phase 2 adds self-test coverage proving current response and
-memory shapes while observing that database globals remain unchanged throughout the run.
+memory shapes while observing that database globals remain unchanged throughout the run. Phase 3
+adds inert-import, façade-surface, and late-bound callback coverage for the five extracted modules.

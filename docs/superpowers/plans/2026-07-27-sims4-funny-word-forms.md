@@ -31,7 +31,7 @@ this plan's lexical scope.
 
 **Interfaces:**
 - Consumes: `explicit_social_category(message) -> str | None`
-- Produces: Existing Hermes recategorization for `jokes` and `funniest`
+- Produces: Existing runtime recategorization for `jokes` and `funniest`
 
 - [x] **Step 1: Change the existing recategorization test dialogue**
 

@@ -184,7 +184,7 @@ candidate-string selection with:
         dialogue = _recalled_fact_dialogue(supported_facts[0], context)
 ```
 
-In `HermesRuntime.dialogue()`, replace the bare correction join with:
+In `CognitionRuntime.dialogue()`, replace the bare correction join with:
 
 ```python
                     "\nCorrection: Answer the recall question using this "

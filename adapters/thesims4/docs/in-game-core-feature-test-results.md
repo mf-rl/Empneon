@@ -426,9 +426,9 @@ backend ran from source with LM Studio on its native `/api/v1/chat` endpoint.
 
 - Empneon now keeps one durable actor identity per stable Sim ID. Duplicate display names do not
   merge actors, and changing a display name does not discard that Sim's stored identity or memory.
-- The lightweight local `HermesRuntime` wakes the roleplayed Sim for a request and returns it to a
+- The lightweight local `CognitionRuntime` wakes the roleplayed Sim for a request and returns it to a
   dormant state afterward; `AgentManager` bounds simultaneously active actors without introducing
-  the external Hermes Agent framework.
+  the external agent framework.
 - Static profile/personality data and confirmed long-term memory live in Core SQLite rather than
   being recreated as a complete transcript on every request. Dynamic Sims state such as mood,
   needs, relationship, attraction, and current social category is refreshed per interaction.
@@ -919,7 +919,7 @@ log remain documented defects for the next session.
   and `friendly`, and produced `friendship_positive`. Native confirmation applied
   `relationship.friendship +8`; no rejection diagnostic was stored. This demonstrates that the
   lexical word-form fix works only when the response itself contains a recognized funny marker.
-- Hermes now neutralizes trust, relationship outcome, suggested action, and animation when an
+- The runtime now neutralizes trust, relationship outcome, suggested action, and animation when an
   incoming funny interaction receives a `friendly` or `funny` response. The exact marker-free live
   reply is covered while its dialogue and `friendly` response category remain unchanged. Automated
   verification passed `286` Sims adapter tests, `225` Core tests, `4` Godot tests, and `5` shared
@@ -941,7 +941,7 @@ log remain documented defects for the next session.
   not retain the model's discarded category or raw reply.
 - The in-game `ai.socialtunings lieaboutcareer` probe found
   `mixer_social_LieAboutCareer_group_mischief_skills`. Empneon's stale targeted tuning caused
-  `available_social_categories()` to omit mischief, preventing Hermes from recategorizing explicit
+  `available_social_categories()` to omit mischief, preventing the runtime from recategorizing explicit
   mischief dialogue. The mapping now uses the live exact name; its regression failed before the
   correction and passes afterward while retaining all five categories.
 - Automated verification passed `286` Sims adapter tests, `225` Core tests, `4` Godot tests, and

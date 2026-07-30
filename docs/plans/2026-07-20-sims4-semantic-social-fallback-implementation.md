@@ -147,7 +147,7 @@ git commit -m "fix(sims4): classify social interactions"
 **Interfaces:**
 - Consumes: `_dialogue_words(value, context) -> list[str]`.
 - Produces: `_dialogue_similarity(left, right) -> float` using `difflib.SequenceMatcher`.
-- Changes: `HermesRuntime.dialogue` rebuilds only the repetition retry prompt with `conversation=[]`.
+- Changes: `CognitionRuntime.dialogue` rebuilds only the repetition retry prompt with `conversation=[]`.
 
 - [x] **Step 1: Add failing near-copy and clean-retry tests**
 
@@ -201,7 +201,7 @@ def test_repetition_retry_removes_conversation_history(monkeypatch) -> None:
         ],
     )
 
-    result = ai_sims_server.HERMES.dialogue(payload, context)
+    result = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert result["dialogue"] == "That means a lot to me."
     assert "You have a very kind presence." in prompts[0]
@@ -226,7 +226,7 @@ def _dialogue_similarity(left, right):
 ```
 
 For at least six meaningful message words, reject similarity `>= 0.8`. Use the same comparison for
-prior replies of at least four words. In `HermesRuntime.dialogue`, if the first issue contains
+prior replies of at least four words. In `CognitionRuntime.dialogue`, if the first issue contains
 `copy` or `previous reply`, rebuild the retry prompt with `dict(context, conversation=[])`, then
 append the correction. Continue validating the second response against the original context.
 

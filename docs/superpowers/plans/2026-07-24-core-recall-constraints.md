@@ -477,7 +477,7 @@ Expected: both commands exit zero.
 
 **Interfaces:**
 - Consumes all public interfaces from Task 1.
-- Preserves: `recall_candidates(...)`, `recalled_memories(...)`, `_supported_recall_facts(...)`, `_supported_recall_issue(...)`, and `HermesRuntime.dialogue(...)`.
+- Preserves: `recall_candidates(...)`, `recalled_memories(...)`, `_supported_recall_facts(...)`, `_supported_recall_issue(...)`, and `CognitionRuntime.dialogue(...)`.
 - Removes duplicated adapter-only temporal and possessive validation after callers use Core.
 
 - [ ] **Step 1: Add a failing retrieval regression for `what time`**
@@ -559,7 +559,7 @@ def test_invented_time_uses_attributed_fallback(monkeypatch) -> None:
         "I'm happy you remember. What time are we having our date?"
     )
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] == (

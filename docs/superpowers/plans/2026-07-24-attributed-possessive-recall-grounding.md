@@ -106,7 +106,7 @@ def test_supported_recall_uses_attributed_fallback_after_location_inversion(
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
     payload, context = _supported_date_recall_context()
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] == (
