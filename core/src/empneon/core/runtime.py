@@ -131,12 +131,18 @@ class ActionRecordStore:
         ).fetchone()
         return None if row is None else _action_record_from_row(row)
 
-    def get_for_agent(self, agent_id: str) -> list[ActionRecord]:
-        rows = self._conn.execute(
+    def get_for_agent(
+        self, agent_id: str, limit: int | None = None
+    ) -> list[ActionRecord]:
+        query = (
             "SELECT * FROM action_results WHERE actor_id=?"
-            " ORDER BY completed_at DESC, decision_id",
-            (agent_id,),
-        ).fetchall()
+            " ORDER BY completed_at DESC, decision_id DESC"
+        )
+        args: tuple[str | int, ...] = (agent_id,)
+        if limit is not None:
+            query += " LIMIT ?"
+            args = (agent_id, limit)
+        rows = self._conn.execute(query, args).fetchall()
         return [_action_record_from_row(row) for row in rows]
 
 

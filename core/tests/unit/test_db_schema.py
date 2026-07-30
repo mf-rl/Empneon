@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from empneon.db.connection import _apply_schema, open_db
+from empneon.db.connection import _apply_schema, db_session, open_db
 from empneon.db.schema import ALL_DDL, SCHEMA_VERSION
 
 EXPECTED_TABLES = frozenset(
@@ -42,6 +42,34 @@ EXPECTED_INDEXES = frozenset(
         "idx_belief_single_revision",
     }
 )
+
+
+def test_db_session_closes_connection() -> None:
+    with db_session(":memory:") as conn:
+        conn.execute("SELECT 1")
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        conn.execute("SELECT 1")
+
+
+def test_schema_migration_normalizes_document_nanoseconds() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+    conn.execute("INSERT INTO schema_version VALUES (11)")
+    conn.execute(
+        "CREATE TABLE memory_documents ("
+        "namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,"
+        "updated_at INTEGER NOT NULL, PRIMARY KEY (namespace, key))"
+    )
+    conn.execute(
+        "INSERT INTO memory_documents VALUES (?,?,?,?)",
+        ("adapter.profile", "bella", "{}", 1_785_383_805_000_000_000),
+    )
+    conn.commit()
+    _apply_schema(conn)
+    updated_at = conn.execute("SELECT updated_at FROM memory_documents").fetchone()[0]
+
+    assert updated_at == 1_785_383_805
 
 EXPECTED_TRIGGERS = frozenset(
     {

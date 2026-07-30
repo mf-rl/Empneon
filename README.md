@@ -283,6 +283,11 @@ Implemented and tested behavior includes:
 - Provider-free CLOD 1 telemetry
 - Provider-backed CLOD 3 usage and latency accounting
 - Request-scoped live resource capture with a documented conservative hold decision
+- Optional shared-token protection for the loopback Sims API and token-aware shipped clients
+- Transaction-scoped SQLite sessions, schema 12 timestamp normalization, and explicit database
+  open failures instead of silent temporary-state fallback
+- SQL-bounded timeline and pair-recall result windows, including old relevant-fact and
+  large-query compatibility regressions
 - Timeline, replay, regression fixtures, and package builds
 - Stable repeated Sims identity import
 
@@ -342,6 +347,7 @@ Get-FileHash -Algorithm SHA256 .\empneon-X.Y.Z-py3-none-any.whl
 - [Adapter development](core/docs/adapter-development.md)
 - [Research hypotheses and evidence](core/docs/innovations.md)
 - [Open-source roadmap](docs/roadmap.md)
+- [July 29 technical audit remediation](docs/technical-audit-2026-07-29.md)
 - [The Sims 4 setup and privacy](adapters/thesims4/docs/setup.md)
 - [In-game Core feature test plan](adapters/thesims4/docs/in-game-core-feature-test-plan.md)
 - [In-game Core feature test results](adapters/thesims4/docs/in-game-core-feature-test-results.md)

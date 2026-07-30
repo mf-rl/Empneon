@@ -65,6 +65,11 @@ feature promise.
 - The conservative baseline resource proposal retains one concurrent request and the existing
   incremental RAM and latency estimates without changing runtime settings; route-attributable
   VRAM remains unknown under Windows WDDM
+- The July 29 technical audit remediation adds allowlisted legacy SQL, transaction-scoped closing
+  database sessions, optional loopback API authentication, lazy cognition workers, reusable
+  worker event loops, schema 12 timestamp normalization, caller-object-safe memory persistence,
+  SQL-bounded timeline and recall result windows, and adversarial regressions for large recall
+  queries without changing existing local defaults
 
 ## Next gates
 

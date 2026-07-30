@@ -259,6 +259,31 @@ def test_belief_records_source_confidence_interpretation_and_lineage() -> None:
     assert carol_belief.lineage == (alice_belief.id, bob_belief.id)
 
 
+def test_memory_stores_do_not_mutate_caller_records() -> None:
+    conn = open_db(":memory:")
+    agent = AgentStore(conn).create(Agent.new("Alice"))
+    event = Event("Alice arrived", [agent.id], created_at=123)
+    stored_event = EpisodicMemoryStore(conn).create(event)
+    observation = ObservationStore(conn).create(
+        Observation(stored_event.id, agent.id, "Alice saw the room")
+    )
+    belief = Belief(
+        agent.id,
+        "The room was occupied",
+        "observation",
+        observation.id,
+        1.0,
+        "Direct sight",
+        lineage=("caller-owned",),
+    )
+    stored_belief = BeliefStore(conn).create(belief)
+
+    assert event.created_at == 123
+    assert stored_event.created_at != 123
+    assert belief.lineage == ("caller-owned",)
+    assert stored_belief.lineage == ()
+
+
 def test_belief_rejects_missing_source_and_invalid_confidence() -> None:
     conn = open_db(":memory:")
     alice = AgentStore(conn).create(Agent.new("Alice"))

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import sqlite3
 import time
 import urllib.parse
@@ -34,10 +35,14 @@ def request_json(
     timeout: int = 120,
 ) -> dict[str, Any]:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Content-Type": "application/json"}
+    api_token = os.environ.get("AI_SIM_API_TOKEN")
+    if api_token:
+        headers["X-Empneon-Token"] = api_token
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method=method,
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:

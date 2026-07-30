@@ -28,10 +28,14 @@ payload = {
     "message": "Why have you been avoiding me?",
 }
 
+headers = {"Content-Type": "application/json"}
+api_token = os.environ.get("AI_SIM_API_TOKEN")
+if api_token:
+    headers["X-Empneon-Token"] = api_token
 request = urllib.request.Request(
     os.environ.get("AI_SIM_TEST_URL", "http://127.0.0.1:8765/chat"),
     data=json.dumps(payload).encode("utf-8"),
-    headers={"Content-Type": "application/json"},
+    headers=headers,
     method="POST",
 )
 

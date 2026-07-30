@@ -8,6 +8,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import re
+import secrets
 import sqlite3
 import sys
 import tempfile
@@ -51,7 +52,7 @@ from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineEx
 from empneon.core.scheduler.selection import CognitionRoute
 from empneon.core.scheduler.usage import UsageStore
 from empneon.core.state import save_agent_state
-from empneon.db.connection import open_db
+from empneon.db.connection import db_session, open_db
 from empneon.providers.llm import (
     ConfiguredProviderRouter,
     GenerationResult,
@@ -175,11 +176,13 @@ ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 1)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
 RESPONSE_REJECTION_ENABLED = CONFIG["response_rejection_enabled"]
+API_TOKEN = str(os.environ.get("AI_SIM_API_TOKEN") or "")
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
 ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 GENERATION_CONTEXT = threading.local()
+ASYNC_LOOP = threading.local()
 MIGRATION_STATUS = empneon_state.MigrationStatus(
     os.path.abspath(MEMORY_DB_PATH), completed=False, error="not started"
 )
@@ -352,24 +355,19 @@ DIRECTOR_SCHEMA = {
 
 def connect_db():
     global ACTIVE_DB_PATH
-    paths = [ACTIVE_DB_PATH] if ACTIVE_DB_PATH else [DB_PATH]
-    if not os.environ.get("AI_SIM_DB"):
-        paths.append(os.path.join(tempfile.gettempdir(), "ai_sims_memory.sqlite3"))
-
-    last_error = None
-    for path in paths:
-        if not path:
-            continue
-        try:
-            conn = sqlite3.connect(path)
-            conn.row_factory = sqlite3.Row
-            init_db(conn)
-            conn.commit()
-            ACTIVE_DB_PATH = path
-            return conn
-        except sqlite3.Error as exc:
-            last_error = exc
-    raise last_error
+    path = ACTIVE_DB_PATH or DB_PATH
+    conn = None
+    try:
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        conn.commit()
+        ACTIVE_DB_PATH = path
+        return conn
+    except sqlite3.Error as exc:
+        if conn is not None:
+            conn.close()
+        raise RuntimeError("Cannot open legacy database at {}: {}".format(path, exc)) from exc
 
 
 def memory_session_paths():
@@ -457,7 +455,7 @@ def start_memory_session(session_id, save_slot_id=""):
             if os.path.exists(legacy_saved) and (
                 not previous_slot or previous_slot == save_slot_id
             ):
-                with open_db(database) as conn:
+                with db_session(database) as conn:
                     empneon_state.import_legacy_adapter(conn, legacy_saved)
                 backup_memory_database(database, saved)
             elif not previous:
@@ -493,7 +491,22 @@ def save_memory_session(session_id, save_slot_id=""):
     return {"enabled": True, "status": "saved"}
 
 
+_LEGACY_COLUMNS = frozenset(
+    {
+        ("memories", "sim_id", "text"),
+        ("memories", "target_id", "text"),
+        ("memories", "event", "text"),
+        ("memories", "emotion", "text"),
+        ("memories", "category", "text not null default 'short_term'"),
+        ("memories", "topic", "text"),
+        ("memories", "location", "text"),
+    }
+)
+
+
 def ensure_column(conn, table, name, definition):
+    if (table, name, definition.casefold()) not in _LEGACY_COLUMNS:
+        raise ValueError("unknown legacy schema column")
     rows = conn.execute("pragma table_info({})".format(table)).fetchall()
     if name not in [row["name"] for row in rows]:
         conn.execute("alter table {} add column {} {}".format(table, name, definition))
@@ -744,7 +757,7 @@ def default_profile(sim):
 
 def save_profile(profile):
     identity = profile.get("identity") or {}
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.sync_sim(
             conn,
             {
@@ -759,22 +772,22 @@ def save_profile(profile):
 
 def get_profile(sim_or_id):
     sid = sim_id(sim_or_id) if isinstance(sim_or_id, dict) else str(sim_or_id)
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.profile_for(conn, sid) or empneon_state.profile_by_name(conn, sid)
 
 
 def get_profile_by_name(name):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.profile_by_name(conn, str(name or ""))
 
 
 def list_profiles(limit=100):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.profiles(conn, int(limit))
 
 
 def upsert_profile(sim):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.sync_sim(conn, sim)
 
 
@@ -792,31 +805,31 @@ def default_relationship():
 
 
 def get_relationship(sim_id_value, target_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.relationship_view(conn, sim_id_value, target_id_value)
 
 
 def get_relationship_diagnostic(sim_id_value, target_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.relationship_diagnostic(conn, sim_id_value, target_id_value)
 
 
 def save_relationship(sim_id_value, target_id_value, relationship):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.save_relationship(
             conn, sim_id_value, target_id_value, relationship or {}
         )
 
 
 def apply_relationship_delta(sim_id_value, target_id_value, deltas):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.apply_relationship_deltas(
             conn, sim_id_value, target_id_value, deltas or {}
         )
 
 
 def relationship_with_payload(sim_id_value, target_id_value, payload_relationship):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         relationship = empneon_state.save_relationship(
             conn, sim_id_value, target_id_value, payload_relationship or {}
         )
@@ -842,12 +855,12 @@ def default_emotion(mood="neutral"):
 
 
 def get_emotion(sim_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.emotion_view(conn, sim_id_value)
 
 
 def save_emotion(sim_id_value, emotion):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.save_emotion(conn, sim_id_value, emotion or {})
 
 
@@ -875,7 +888,7 @@ def update_emotion_from_response(sim_id_value, label):
 
 
 def memories_for_sim(speaker_id, limit=10):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.relevant_memories(conn, speaker_id, "", int(limit))
 
 
@@ -883,7 +896,7 @@ def add_memory(speaker_id, listener_id, summary, importance, emotion="", categor
     summary = str(summary or "").strip()
     if not summary:
         return
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         empneon_state.add_experience(
             conn, speaker_id, listener_id, summary, location=str(location or "")
         )
@@ -900,7 +913,7 @@ def memory_summary(sim_id_value, target_id_value):
 
 def memories_for_pair(sim_id_value, target_id_value, limit=20, query=""):
     pair = {str(sim_id_value), str(target_id_value)}
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         selected = [
             item
             for item in empneon_state.relevant_memories(
@@ -1140,13 +1153,7 @@ class CognitionQueue:
         self._states = {}
         self._recent = deque(maxlen=64)
         self._condition = threading.Condition()
-        for index in range(self._worker_limit):
-            worker = threading.Thread(
-                target=self._work,
-                name="empneon-cognition-{}".format(index),
-                daemon=True,
-            )
-            worker.start()
+        self._workers_started = False
 
     def __len__(self):
         return len(self._scheduler)
@@ -1193,6 +1200,7 @@ class CognitionQueue:
             }
 
     def run(self, request, work):
+        self._start_workers()
         job = {"work": work, "done": threading.Event(), "result": None, "error": None}
         with self._condition:
             self._jobs[request.id] = job
@@ -1216,6 +1224,18 @@ class CognitionQueue:
         if job["error"] is not None:
             raise job["error"]
         return job["result"]
+
+    def _start_workers(self):
+        with self._condition:
+            if self._workers_started:
+                return
+            self._workers_started = True
+            for index in range(self._worker_limit):
+                threading.Thread(
+                    target=self._work,
+                    name="empneon-cognition-{}".format(index),
+                    daemon=True,
+                ).start()
 
     def _work(self):
         while True:
@@ -1414,6 +1434,14 @@ def configured_model(task="large"):
     return str(task_model_config(task)["model"])
 
 
+def run_async(awaitable):
+    loop = getattr(ASYNC_LOOP, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        ASYNC_LOOP.loop = loop
+    return loop.run_until_complete(awaitable)
+
+
 def llm_chat(messages, temperature=None, schema=None, schema_name="response", task="large"):
     del schema_name  # Core providers use the schema itself, not an adapter label.
     task = str(getattr(GENERATION_CONTEXT, "task", task) or task)
@@ -1423,7 +1451,7 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
     )
     router = provider_router()
     if hasattr(router, "generate_result"):
-        result = asyncio.run(
+        result = run_async(
             router.generate_result(
                 task,
                 core_messages,
@@ -1433,7 +1461,7 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
         )
     else:
         result = GenerationResult(
-            asyncio.run(
+            run_async(
                 router.generate(
                     task,
                     core_messages,
@@ -2843,7 +2871,7 @@ def chat(payload):
             emotions = save_emotion(speaker_id, default_emotion(speaker.get("current_mood")))
         relationship = relationship_with_payload(speaker_id, listener_id, payload.get("relationship") or {})
         query = str(payload.get("message") or "")
-        with open_db(CORE_DB_PATH) as conn:
+        with db_session(CORE_DB_PATH) as conn:
             deterministic_recalled = empneon_state.recalled_memories(
                 conn,
                 speaker_id,
@@ -2941,12 +2969,12 @@ def chat(payload):
             return resolve_dialogue
 
         resolvers = {task: resolver(task) for task in ("small", "large", "deep")}
-        with open_db(CORE_DB_PATH) as conn:
+        with db_session(CORE_DB_PATH) as conn:
             actions = ActionRecordStore(conn)
             runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
             decision = COGNITION_QUEUE.run(
                 request,
-                lambda: asyncio.run(
+                lambda: run_async(
                     runtime.decide_dynamic(
                         request,
                         cognition_routes(resolvers),
@@ -3054,11 +3082,11 @@ def autonomous_action(payload):
     async def unused_resolver(_request: CognitiveRequest) -> Decision:
         raise AssertionError("CLOD 1 must not call a provider")
 
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
         decision = COGNITION_QUEUE.run(
-            request, lambda: asyncio.run(runtime.decide(request, unused_resolver))
+            request, lambda: run_async(runtime.decide(request, unused_resolver))
         )
         action = adapter.action_for(decision)
         if action is None:
@@ -3178,7 +3206,7 @@ def confirm_action(payload):
     elif payload.get("changes"):
         raise ValueError("unsuccessful action cannot apply consequences")
     result = ActionResult(decision_id, status, tuple(changes), reason)
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(decision_id)
         if proposal is None:
@@ -3221,7 +3249,7 @@ def confirm_dialogue_delivery(payload):
     decision_id = str(payload.get("decision_id") or "").strip()
     if not decision_id or payload.get("status") != "displayed":
         raise ValueError("displayed dialogue decision_id is required")
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
             documents = DocumentMemoryStore(conn)
@@ -3266,14 +3294,14 @@ def confirm_dialogue_delivery(payload):
 
 
 def voice_profile(sim_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.voice_view(conn, sim_id_value)
 
 
 def save_voice_profile(sim_id_value, voice):
     values = dict(voice or {})
     values.setdefault("provider", CONFIG.get("tts", {}).get("provider") or "")
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.save_voice(conn, sim_id_value, values)
 
 
@@ -3323,7 +3351,7 @@ def diagnostic_identifier(query, name):
 
 
 def sims_timeline(conn, agent_id):
-    timeline = agent_timeline(conn, agent_id)
+    timeline = agent_timeline(conn, agent_id, limit=100)
     documents = DocumentMemoryStore(conn)
     for entry in timeline["entries"]:
         if entry["type"] != "decision":
@@ -3367,7 +3395,15 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
+    def is_authorized(self):
+        return not API_TOKEN or secrets.compare_digest(
+            str(self.headers.get("X-Empneon-Token") or ""), API_TOKEN
+        )
+
     def do_GET(self):
+        if not self.is_authorized():
+            self.send_json(401, {"error": "unauthorized"})
+            return
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
         if parsed.path.startswith("/diagnostics/") or parsed.path == "/identity/export":
@@ -3450,7 +3486,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/diagnostics/migration":
             body = MIGRATION_STATUS.as_dict()
-            with open_db(CORE_DB_PATH) as conn:
+            with db_session(CORE_DB_PATH) as conn:
                 body["completion_markers"] = [
                     document.key
                     for document in DocumentMemoryStore(conn).list(
@@ -3462,13 +3498,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/diagnostics/usage" and not str(
             query.get("sim_id", [""])[0]
         ).strip():
-            with open_db(CORE_DB_PATH) as conn:
+            with db_session(CORE_DB_PATH) as conn:
                 body = UsageStore(conn).telemetry()
             self.send_json(200, body)
             return
         name = "decision_id" if path == "/diagnostics/replay" else "sim_id"
         identifier = diagnostic_identifier(query, name)
-        with open_db(CORE_DB_PATH) as conn:
+        with db_session(CORE_DB_PATH) as conn:
             if path == "/diagnostics/replay":
                 try:
                     body = replay_action_record(conn, identifier)
@@ -3490,6 +3526,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, body)
 
     def do_POST(self):
+        if not self.is_authorized():
+            self.send_json(401, {"error": "unauthorized"})
+            return
         try:
             payload = self.read_json()
             parsed = urllib.parse.urlparse(self.path)
@@ -3498,7 +3537,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(400, {"error": "identity must be a JSON object"})
                     return
                 try:
-                    with open_db(CORE_DB_PATH) as conn:
+                    with db_session(CORE_DB_PATH) as conn:
                         agent = empneon_state.import_identity(conn, payload)
                 except (KeyError, TypeError, ValueError) as exc:
                     self.send_json(400, {"error": str(exc)})
@@ -3632,7 +3671,7 @@ def run():
         raise RuntimeError(
             "Empneon memory migration failed: {}".format(MIGRATION_STATUS.error)
         )
-    with open_db(MEMORY_DB_PATH) as conn:
+    with db_session(MEMORY_DB_PATH) as conn:
         empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
     server = EmpneonHTTPServer((HOST, PORT), Handler)

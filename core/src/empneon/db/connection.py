@@ -1,6 +1,8 @@
 """SQLite connection factory with schema initialization."""
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from empneon.db.schema import ALL_DDL, MIGRATIONS, SCHEMA_VERSION
@@ -17,6 +19,16 @@ def open_db(path: str | Path) -> sqlite3.Connection:
     except Exception:
         conn.close()
         raise
+
+
+@contextmanager
+def db_session(path: str | Path) -> Iterator[sqlite3.Connection]:
+    conn = open_db(path)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _apply_schema(conn: sqlite3.Connection) -> None:

@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import io
 import json
@@ -36,6 +37,107 @@ from empneon.db.connection import open_db
 from empneon.providers.llm import GenerationResult, ModelCapabilities
 
 from backend import ai_sims_server
+
+
+def test_legacy_import_rejects_unknown_table() -> None:
+    with open_db(":memory:") as conn, pytest.raises(ValueError, match="unknown legacy table"):
+        ai_sims_server.empneon_state._rows(conn, "events; DROP TABLE events")
+
+
+@pytest.mark.parametrize(
+    ("table", "name", "definition"),
+    [
+        ("memories; DROP TABLE memories", "topic", "text"),
+        ("memories", "topic) TEXT; DROP TABLE memories", "text"),
+        ("memories", "topic", "text; DROP TABLE memories"),
+    ],
+)
+def test_legacy_schema_rejects_unknown_identifiers(table, name, definition) -> None:
+    with contextlib.closing(sqlite3.connect(":memory:")) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE memories (id INTEGER PRIMARY KEY)")
+        with pytest.raises(ValueError, match="legacy schema"):
+            ai_sims_server.ensure_column(conn, table, name, definition)
+
+
+def test_legacy_database_does_not_fall_back_to_temp(monkeypatch) -> None:
+    attempts = []
+
+    class Connection:
+        row_factory = None
+
+        def commit(self):
+            pass
+
+    def connect(path):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise sqlite3.OperationalError("cannot open")
+        return Connection()
+
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", "configured.sqlite3")
+    monkeypatch.delenv("AI_SIM_DB", raising=False)
+    monkeypatch.setattr(ai_sims_server.sqlite3, "connect", connect)
+    monkeypatch.setattr(ai_sims_server, "init_db", lambda _conn: None)
+
+    with pytest.raises(RuntimeError, match="configured.sqlite3"):
+        ai_sims_server.connect_db()
+
+    assert attempts == ["configured.sqlite3"]
+
+
+def test_http_auth_rejects_missing_or_wrong_token(monkeypatch) -> None:
+    handler = object.__new__(ai_sims_server.Handler)
+    monkeypatch.setattr(ai_sims_server, "API_TOKEN", "secret")
+    responses = []
+    handler.path = "/health"
+    handler.send_json = lambda status, body: responses.append((status, body))
+
+    handler.headers = {}
+    assert handler.is_authorized() is False
+    handler.do_GET()
+    assert responses == [(401, {"error": "unauthorized"})]
+    handler.headers = {"X-Empneon-Token": "wrong"}
+    assert handler.is_authorized() is False
+    handler.headers = {"X-Empneon-Token": "secret"}
+    assert handler.is_authorized() is True
+
+
+def test_llm_calls_reuse_the_worker_event_loop(monkeypatch) -> None:
+    loops = []
+
+    class Router:
+        async def generate_result(self, *_args, **_kwargs):
+            loops.append(asyncio.get_running_loop())
+            return GenerationResult("ok")
+
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
+
+    ai_sims_server.llm_chat([{"role": "user", "content": "one"}])
+    ai_sims_server.llm_chat([{"role": "user", "content": "two"}])
+
+    assert loops[0] is loops[1]
+
+
+def test_import_does_not_start_cognition_workers() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import threading; from backend import ai_sims_server; "
+                "print(sum(t.name.startswith('empneon-cognition-') "
+                "for t in threading.enumerate()))"
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "0"
 
 
 def test_conversation_id_is_preserved_in_world_event() -> None:
@@ -1065,6 +1167,80 @@ def test_recalled_memories_deduplicate_facts_and_cap_results(tmp_path) -> None:
 
     assert len(recalled) == 3
     assert sum(len(item["facts"]) for item in recalled) == 1
+
+
+def test_recall_uses_bounded_sql_and_finds_old_relevant_fact(tmp_path, monkeypatch) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    pair = ["karmine", "bernard"]
+    with open_db(database) as conn:
+        AgentStore(conn).create(Agent("karmine", "Karmine"))
+        AgentStore(conn).create(Agent("bernard", "Bernard"))
+        store = EpisodicMemoryStore(conn)
+        store.create(
+            Event(
+                json.dumps(
+                    {
+                        "kind": "confirmed_interaction",
+                        "speaker_id": "bernard",
+                        "listener_id": "karmine",
+                        "message": "PRIVATE-GARDEN-731 rose is under the blue bench.",
+                        "dialogue": "I will remember.",
+                        "facts": [
+                            {
+                                "actor_id": "bernard",
+                                "statement": "PRIVATE-GARDEN-731 rose is under the blue bench.",
+                            }
+                        ],
+                    }
+                ),
+                pair,
+                happened_at=1,
+                id="relevant-old",
+            )
+        )
+        for index in range(150):
+            store.create(
+                Event(
+                    json.dumps(
+                        {
+                            "kind": "confirmed_interaction",
+                            "speaker_id": "bernard",
+                            "listener_id": "karmine",
+                            "message": f"Unrelated recent chat {index}.",
+                            "dialogue": "Nothing memorable.",
+                            "facts": [],
+                        }
+                    ),
+                    pair,
+                    happened_at=index + 2,
+                    id=f"distractor-{index:03}",
+                )
+            )
+        queries = []
+        conn.set_trace_callback(queries.append)
+        monkeypatch.setattr(
+            EpisodicMemoryStore,
+            "get_for_agent",
+            lambda *_args, **_kwargs: pytest.fail("recall loaded complete event history"),
+        )
+
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Where is PRIVATE-GARDEN-731?"
+        )
+        large_query_recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn,
+            "karmine",
+            "bernard",
+            " ".join(
+                [f"irrelevantterm{index}" for index in range(1001)] + ["rose"]
+            ),
+        )
+
+    assert [item["event_id"] for item in recalled] == ["relevant-old"]
+    assert [item["event_id"] for item in large_query_recalled] == ["relevant-old"]
+    recall_queries = [query for query in queries if "FROM events" in query]
+    assert recall_queries
+    assert all("LIMIT 100" in query for query in recall_queries)
 
 
 def test_displayed_dialogue_archives_attributed_durable_facts(

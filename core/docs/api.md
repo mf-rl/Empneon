@@ -30,7 +30,7 @@ The names exported by `empneon.__all__` are the supported top-level API:
 | Contracts | `WorldEvent`, `CognitiveRequest`, `Decision`, `StateDelta`, `ActionResult` |
 | Runtime | `CognitiveRuntime`, `ActionRecordStore`, `GameAdapter` |
 | Resources | `ResourceBudget`, `ResourceEstimate`, `ResourceGovernor`, `UsageStore` |
-| Persistence and inspection | `open_db`, `agent_timeline`, `replay_action_record` |
+| Persistence and inspection | `open_db`, `db_session`, `agent_timeline`, `replay_action_record` |
 
 Provider integrations use the supported `empneon.providers.llm` namespace. Its
 `__all__` declares the provider protocol, request/result types, capabilities,
@@ -60,9 +60,11 @@ source used by the build configuration.
 
 ## Database migrations
 
-`open_db` automatically applies known schema upgrades in one transaction. If any statement
-fails, the transaction rolls back and the connection is closed. A database created by a newer
-runtime is rejected instead of being modified.
+`open_db` returns a caller-owned connection and automatically applies known schema upgrades in one
+transaction. Call `close()` when retaining that connection, or use `with db_session(path) as conn`
+for a transaction-scoped connection that always closes. If any migration statement fails, the
+transaction rolls back and the connection is closed. A database created by a newer runtime is
+rejected instead of being modified.
 
 Before upgrading a persistent world, stop all Empneon processes and back up its database plus
 the SQLite `-wal` and `-shm` files when present. Empneon does not automatically downgrade or run

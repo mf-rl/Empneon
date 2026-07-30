@@ -1857,10 +1857,14 @@ def post_json(path, payload, timeout=90):
     payload["_empneon_session_id"] = _GAME_SESSION_ID
     payload["_empneon_save_slot_id"] = current_save_slot_id()
     data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    api_token = os.environ.get("AI_SIM_API_TOKEN")
+    if api_token:
+        headers["X-Empneon-Token"] = api_token
     request = urllib.request.Request(
         BACKEND_URL + path,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -1870,7 +1874,12 @@ def post_json(path, payload, timeout=90):
 def get_json(path, timeout=10):
     import urllib.request
 
-    with urllib.request.urlopen(BACKEND_URL + path, timeout=timeout) as response:
+    headers = {}
+    api_token = os.environ.get("AI_SIM_API_TOKEN")
+    if api_token:
+        headers["X-Empneon-Token"] = api_token
+    request = urllib.request.Request(BACKEND_URL + path, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

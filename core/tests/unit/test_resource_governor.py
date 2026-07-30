@@ -46,6 +46,11 @@ def test_releases_after_request_failure() -> None:
     assert governor.snapshot == ResourceSnapshot(0, 0, 0)
 
 
+def test_rejects_zero_concurrent_request_budget() -> None:
+    with pytest.raises(ValueError, match="concurrent"):
+        ResourceBudget(1_000, 500, 0)
+
+
 @pytest.mark.parametrize(
     "estimate",
     [

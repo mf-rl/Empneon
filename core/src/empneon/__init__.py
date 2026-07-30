@@ -15,7 +15,7 @@ from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, R
 from empneon.core.scheduler.usage import UsageStore
 from empneon.core.state import load_agent_state, save_agent_state
 from empneon.core.timeline import agent_timeline
-from empneon.db.connection import open_db
+from empneon.db.connection import db_session, open_db
 
 __version__ = "0.3.0"
 
@@ -34,6 +34,7 @@ __all__ = [
     "UsageStore",
     "WorldEvent",
     "agent_timeline",
+    "db_session",
     "load_agent_state",
     "open_db",
     "replay_action_record",

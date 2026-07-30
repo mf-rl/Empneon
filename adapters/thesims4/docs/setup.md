@@ -124,7 +124,11 @@ JSON file. Environment variables override the loaded file.
 | `AI_SIM_LLM_BASE_URL` | Override the selected provider endpoint | provider endpoint |
 | `AI_SIM_MODEL` | Override both task model IDs | provider model |
 | `AI_SIM_API_KEY` | Authorization bearer token | unset |
+| `AI_SIM_API_TOKEN` | Optional shared token required by the loopback Empneon API | unset |
 | `debug` | Verbose backend logging | `true` |
+
+When `AI_SIM_API_TOKEN` is set, launch both the backend and The Sims 4 from environments carrying
+the same value; requests without the `X-Empneon-Token` header receive HTTP 401.
 
 Relative database paths resolve from the backend process's working directory. Both former
 database paths are read-only migration sources. All current state is written to the single active

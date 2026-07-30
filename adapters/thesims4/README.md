@@ -158,6 +158,15 @@ justify a hardware recommendation or higher concurrency. The accepted
 retains one concurrent request and the existing incremental RAM and latency estimates; no runtime
 setting changed, and provider-attributable VRAM remains unknown.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
+Set `AI_SIM_API_TOKEN` in both the backend and game launch environments to require the shipped
+clients to authenticate with the loopback API. Leaving it unset preserves the existing local
+development behavior.
+
+Confirmed pair recall now retrieves capped SQL relevance and first/latest windows instead of
+materializing complete agent history in Python. Deterministic ranking still preserves old
+relevant facts, first/last questions, attributed evidence, and large multi-term queries. SQLite
+term matching remains a pair-history scan; add an FTS index only if measured databases make that
+scan a latency bottleneck.
 
 ## Files
 

@@ -22,8 +22,10 @@ class ResourceBudget:
     max_latency_ms: int | None = None
 
     def __post_init__(self) -> None:
-        if min(self.max_ram_mb, self.max_vram_mb, self.max_concurrent_requests) < 0:
+        if self.max_ram_mb < 0 or self.max_vram_mb < 0:
             raise ValueError("resource budget values must not be negative")
+        if self.max_concurrent_requests < 1:
+            raise ValueError("max concurrent requests must be positive")
         optional_limits = (
             self.max_context_tokens,
             self.max_completion_tokens,
