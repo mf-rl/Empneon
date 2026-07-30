@@ -4,8 +4,9 @@ The Sims 4 adapter, script mod, and local bridge for Empneon Core.
 
 ## Install a release
 
-Download `Empneon-TheSims4-X.Y.Z.zip` from GitHub Releases and extract it. From the extracted
-directory:
+Download the `thesims4-vX.Y.Z` release and extract `Empneon-TheSims4-X.Y.Z.zip`. The archive
+contains the adapter wheel, matching Core wheel, mod artifacts, and `SHA256SUMS.txt`. From the
+extracted directory:
 
 ```powershell
 .\install_mod.ps1
@@ -127,7 +128,7 @@ sim-only and scheduled speaker/listener payloads.
 ## Configuration
 
 See the complete [installation, configuration, privacy, and hardware guide](docs/setup.md).
-Use the [in-game Core feature test plan](docs/in-game-core-feature-test-plan.md) to validate every
+Use the [in-game Core tests and results](docs/in-game-core-feature-tests.md) to validate every
 implemented identity, memory, cognition, confirmation, portability, and persistence capability.
 All 15 sections of that plan passed live acceptance on 2026-07-26. The expanded July 27 semantic
 category matrix also passed informed recall, uninformed-pair privacy, neutral outcomes, and final
@@ -153,10 +154,9 @@ The July 29 request-scoped resource capture now records system, Sims, backend, p
 PresentMon evidence without retaining conversation content or Sim identity. One initial run and a
 three-request thinking-disabled neutral/recall matrix are published in the
 [benchmark results](docs/benchmark-results.md); they establish baseline evidence but do not yet
-justify a hardware recommendation or higher concurrency. The accepted
-[conservative resource proposal](../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md)
-retains one concurrent request and the existing incremental RAM and latency estimates; no runtime
-setting changed, and provider-attributable VRAM remains unknown.
+justify a hardware recommendation or higher concurrency. The accepted conservative resource
+decision retains one concurrent request and the existing incremental RAM and latency estimates;
+no runtime setting changed, and provider-attributable VRAM remains unknown.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 Set `AI_SIM_API_TOKEN` in both the backend and game launch environments to require the shipped
 clients to authenticate with the loopback API. Leaving it unset preserves the existing local
@@ -167,6 +167,32 @@ materializing complete agent history in Python. Deterministic ranking still pres
 relevant facts, first/last questions, attributed evidence, and large multi-term queries. SQLite
 term matching remains a pair-history scan; add an FTS index only if measured databases make that
 scan a latency bottleneck.
+
+## Current status and validation
+
+The adapter is an experimental alpha reference integration. It supports contextual player
+dialogue, persistent identity and relationships, pair-scoped confirmed-memory recall, grounded
+action proposals with game-confirmed results, save-aware database checkpoints, and provider-free
+deterministic autonomy at lower cognitive levels.
+
+The primary local validation machine is:
+
+- Ryzen 7 4800H
+- RTX 2060 Laptop GPU with 6 GB VRAM
+- 16 GB RAM
+- The Sims 4 running concurrently
+
+Request-scoped captures showed significant RAM, GPU, latency, and frame-time pressure while the
+game and a local model ran together. The default remains one concurrent agent request. These
+measurements are baseline evidence, not a general hardware recommendation or proof of production
+scalability.
+
+Evidence and operating guidance:
+
+- [Installation, configuration, privacy, and compatibility](docs/setup.md)
+- [Benchmark results](docs/benchmark-results.md)
+- [In-game Core feature tests and results](docs/in-game-core-feature-tests.md)
+- [Captured artifact manifest](output/README.md)
 
 ## Backend architecture
 
@@ -202,3 +228,15 @@ migration/opening remains in `run()` or explicit database calls.
 - `install_mod.ps1`: rebuilds source checkouts, installs both artifacts, and removes legacy copies
 - `scripts/capture_live_resources.py`: captures one request-scoped live resource and frame trace
 - `test.py`: smoke test for `/chat`
+
+## Affiliation
+
+Empneon is an independent open-source project. It is not affiliated with, endorsed by, or
+sponsored by Electronic Arts or Maxis.
+
+Users are responsible for complying with game terms, provider terms, applicable laws, and the
+policies of communities where the adapter is distributed.
+
+## License
+
+Licensed under the [Apache License 2.0](../../LICENSE).
