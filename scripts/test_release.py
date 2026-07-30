@@ -213,8 +213,9 @@ def test_release_documentation_matches_artifacts() -> None:
     sims_runner = (ROOT / "adapters/thesims4/run_backend.ps1").read_text(encoding="utf-8")
     godot_readme = (ROOT / "adapters/godot/README.md").read_text(encoding="utf-8")
 
-    for tag in ("core-vX.Y.Z", "thesims4-vX.Y.Z", "godot-vX.Y.Z"):
-        assert tag in root_readme
+    assert "core-vX.Y.Z" in root_readme
+    assert "thesims4-vX.Y.Z" in sims_readme
+    assert "godot-vX.Y.Z" in godot_readme
     assert "pip install" in root_readme
     assert "SHA256SUMS.txt" in root_readme
     assert "Empneon-TheSims4-X.Y.Z.zip" in sims_readme
