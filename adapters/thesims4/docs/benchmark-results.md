@@ -219,5 +219,4 @@ passed with 306 tests after implementation. The conservative baseline proposal r
 single-request limit, Core `256 MiB` incremental RAM ceiling, `64/128 MiB` small/large route
 estimates, and `30/90` second latency estimates. It leaves VRAM admission unknown and unenforced
 because the captures report total device use rather than provider-attributable memory. These are
-advisory hold values, not measured safe limits, and no runtime setting changed. See the
-[resource budget proposal](../../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md).
+advisory hold values, not measured safe limits, and no runtime setting changed.

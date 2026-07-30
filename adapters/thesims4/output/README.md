@@ -142,8 +142,7 @@ Repository copies use normalized LF line endings. Neither failed evidence nor pa
 contain prompts, replies, Sim names, or API credentials. The successful reports retain request
 UUIDs and machine-specific process IDs.
 
-The accepted
-[conservative resource proposal](../../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md)
-uses this matrix to retain the existing single-request and incremental route estimates without
-changing runtime settings. It does not treat the measurements as safe limits or attribute total
+The accepted conservative resource decision uses this matrix to retain the existing single-request
+and incremental route estimates without changing runtime settings. It does not treat the
+measurements as safe limits or attribute total
 device GPU memory to the provider.

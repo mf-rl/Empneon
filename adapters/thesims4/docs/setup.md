@@ -97,8 +97,8 @@ handoff so the next manual run cannot connect to a stale process.
    changes also update Core's actor-to-target relationship strength.
 
 For cognitive-state inspection, use `empneon.status`, `empneon.timeline`,
-`empneon.beliefs`, `empneon.goals`, and `empneon.usage`. The complete verification procedure is
-the [in-game Core feature test plan](in-game-core-feature-test-plan.md).
+`empneon.beliefs`, `empneon.goals`, and `empneon.usage`. The complete verification procedure and
+recorded evidence are in the [in-game Core tests and results](in-game-core-feature-tests.md).
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `ts4script/ai_sims_agent.py` and rebuilding
@@ -287,8 +287,8 @@ capture below records those values for a controlled request. Increase concurrenc
 observing the game and provider together. Do not increase the default limit of one without a new
 concurrent in-game measurement.
 
-The accepted [conservative resource proposal](../../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md)
-therefore retains `active_agent_limit: 1`, the Core `256 MiB` incremental RAM ceiling,
+The accepted conservative resource decision therefore retains `active_agent_limit: 1`, the Core
+`256 MiB` incremental RAM ceiling,
 `64/128 MiB` small/large route estimates, and `30/90` second latency estimates. VRAM admission
 remains unknown and unenforced because the published captures report total device use rather than
 provider-attributable memory.
