@@ -140,6 +140,40 @@ def test_import_does_not_start_cognition_workers() -> None:
     assert result.stdout.strip() == "0"
 
 
+def test_self_test_does_not_mutate_database_globals(monkeypatch, capsys) -> None:
+    expected = (
+        ai_sims_server.DB_PATH,
+        ai_sims_server.CORE_DB_PATH,
+        ai_sims_server.ACTIVE_DB_PATH,
+    )
+    observed = []
+    sync_sim = ai_sims_server.empneon_state.sync_sim
+
+    def observe_globals(conn, sim):
+        observed.append(
+            (
+                ai_sims_server.DB_PATH,
+                ai_sims_server.CORE_DB_PATH,
+                ai_sims_server.ACTIVE_DB_PATH,
+            )
+        )
+        return sync_sim(conn, sim)
+
+    monkeypatch.setattr(ai_sims_server.empneon_state, "sync_sim", observe_globals)
+
+    ai_sims_server.self_test()
+
+    assert observed
+    assert all(paths == expected for paths in observed)
+    assert capsys.readouterr().out == "ok\n"
+
+
+def test_self_test_matches_current_response_and_memory_shapes(capsys) -> None:
+    ai_sims_server.self_test()
+
+    assert capsys.readouterr().out == "ok\n"
+
+
 def test_conversation_id_is_preserved_in_world_event() -> None:
     event = ai_sims_server.Sims4Adapter(
         {

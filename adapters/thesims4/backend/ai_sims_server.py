@@ -3683,13 +3683,12 @@ def run():
 
 
 def self_test():
-    global DB_PATH, CORE_DB_PATH, ACTIVE_DB_PATH
     parsed = extract_json('```json\n{"dialogue":"hi","relationship":{"friendship_delta":12},"memory":"met"}\n```')
     result = normalize_response(parsed)
     assert result["dialogue"] == "hi"
-    assert result["relationship"]["friendship_delta"] == 10
+    assert result["relationship_outcome"] == "none"
     assert result["memory"]["summary"] == "met"
-    assert result["animation"] == "friendly_chat"
+    assert result["animation"] == "social.friendly"
     assert extract_json("{dialogue: \"ok\"}")["dialogue"] == "ok"
     assert fallback_response("plain text")["dialogue"] == "plain text"
     role_context = {
@@ -3698,44 +3697,59 @@ def self_test():
     }
     assert response_has_role_confusion({"dialogue": "Sure, Sri."}, role_context)
     assert not response_has_role_confusion({"dialogue": "Sure, Robin."}, role_context)
-    old_db = DB_PATH
-    old_core_db = CORE_DB_PATH
-    old_active = ACTIVE_DB_PATH
     fd, path = tempfile.mkstemp(prefix="ai_sims_self_test_", suffix=".sqlite3")
     os.close(fd)
     try:
-        DB_PATH = path
-        CORE_DB_PATH = path + ".core"
-        ACTIVE_DB_PATH = None
-        sim = {"id": "bella-goth", "name": "Bella Goth", "traits": ["romantic", "family-oriented"]}
-        target = {"id": "mauricio", "name": "Mauricio", "traits": ["loyal"]}
-        profile = upsert_profile(sim)
-        assert profile["personality"]["empathy"] >= 50
-        upsert_profile(target)
-        relationship = apply_relationship_delta("bella-goth", "mauricio", {"trust_delta": 5, "respect_delta": 2})
-        assert relationship["trust"] == 55
-        emotion = update_emotion_from_response("bella-goth", "angry")
-        assert emotion["anger"] > 0
-        add_memory("bella-goth", "mauricio", "Mauricio helped Bella", 0.9, emotion="grateful")
-        assert memories_for_pair("bella-goth", "mauricio")[0]["category"] == "long_term"
+        with db_session(path) as conn:
+            sim = {
+                "id": "bella-goth",
+                "name": "Bella Goth",
+                "traits": ["romantic", "family-oriented"],
+            }
+            target = {"id": "mauricio", "name": "Mauricio", "traits": ["loyal"]}
+            profile = empneon_state.sync_sim(conn, sim)
+            assert profile["name"] == "Bella Goth"
+            empneon_state.sync_sim(conn, target)
+            relationship = empneon_state.apply_relationship_deltas(
+                conn,
+                "bella-goth",
+                "mauricio",
+                {"trust_delta": 5, "respect_delta": 2},
+            )
+            assert relationship["trust"] == 55
+            emotion = empneon_state.emotion_view(conn, "bella-goth")
+            for key, delta in emotion_from_label("angry").items():
+                emotion[key] = clamp_int(emotion.get(key, 0) + delta, 0, 100)
+            emotion["current_mood"] = "angry"
+            emotion = empneon_state.save_emotion(conn, "bella-goth", emotion)
+            assert emotion["anger"] > 0
+            empneon_state.add_experience(
+                conn,
+                "bella-goth",
+                "mauricio",
+                "Mauricio helped Bella",
+            )
+            memories = empneon_state.relevant_memories(
+                conn, "bella-goth", "Mauricio", 20
+            )
+            assert memories[0]["summary"] == "Mauricio helped Bella"
         fallback = reasoning_fallback_response(
             {"message": "why have you been avoiding me?"},
-            {"emotions": {"current_mood": "tense"}},
+            {
+                "emotions": {"current_mood": "tense"},
+                "speaker": {"name": "Bella Goth"},
+                "listener": {"name": "Mauricio"},
+                "speaker_id": "bella-goth",
+                "listener_id": "mauricio",
+                "recalled_memories": [],
+            },
         )
         assert fallback["dialogue"] != "..."
-        assert fallback["animation"] == "awkward_chat"
+        assert fallback["animation"] == "none"
     finally:
-        DB_PATH = old_db
-        core_path = CORE_DB_PATH
-        CORE_DB_PATH = old_core_db
-        ACTIVE_DB_PATH = old_active
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
         for suffix in ("", "-wal", "-shm"):
             try:
-                os.unlink(core_path + suffix)
+                os.unlink(path + suffix)
             except OSError:
                 pass
     print("ok")

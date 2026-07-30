@@ -7,8 +7,8 @@ and a reproducible regression supported them.
 
 ## Outcome
 
-The review found thirteen actionable issues or narrower variants of issues described by the audit.
-Four findings were false, outdated, or proposed a change that would have broken existing
+The review found fourteen actionable issues or narrower variants of issues described by the audit.
+Three findings were false, outdated, or proposed a change that would have broken existing
 transaction behavior. The accepted work was implemented in remediation-plan order and independently
 reviewed. No Critical or Important issue remained after the final review.
 
@@ -28,7 +28,7 @@ reviewed. No Critical or Important issue remained after the final review.
 | F12 | Document-memory timestamps used nanoseconds while the rest of Core used Unix seconds. Schema 12 migrates legacy nanosecond values transactionally and new records use seconds. |
 | F13 | Recall loaded an agent's complete event history into Python. Recall now performs exact confirmed-pair filtering in SQL and combines capped 100-row relevance and first/latest boundary windows. Terms are passed as one JSON parameter through SQLite `json_each`, so queries with more than 1,000 normalized terms retain all terms without exceeding expression or variable limits. Relevant old facts, first/last recall, and existing deterministic ranking remain covered. SQLite still scans pair history for term relevance; an FTS index is the documented upgrade if measured latency warrants it. |
 | F14 | Timeline assembly loaded every event, action, and belief before applying its limit. Limits now reach each store query, with descending ID tie-breaks consistent with the final timeline ordering. |
-| F15 | False. The self-test and server paths are mutually exclusive CLI modes, so the described concurrent global mutation does not occur. |
+| F15 | The reported server race was false because self-test and server execution are mutually exclusive CLI modes. The Phase 2 follow-up nevertheless removed the temporary `DB_PATH`, `CORE_DB_PATH`, and `ACTIVE_DB_PATH` mutation: self-test now operates through one explicit temporary `db_session()` and validates current response and memory shapes. |
 | F16 | False. Caught errors return before report rendering and uncaught errors propagate; the reported undefined-variable path is unreachable. |
 | F17 | Outdated. Current dialogue name matching already tokenizes whole words rather than using substring matching. |
 
@@ -48,7 +48,7 @@ reviewed. No Critical or Important issue remained after the final review.
 The final source state passed:
 
 - Core: `231` tests
-- The Sims 4 adapter: `315` tests
+- The Sims 4 adapter: `317` tests
 - Godot adapter: `4` tests
 - Shared and release tests: `23` tests
 - CLOD regression scenario: `1/1`
@@ -61,4 +61,5 @@ Focused regressions cover hostile SQL identifiers, connection closure, failed da
 optional API authentication and client propagation, event-loop reuse, lazy worker startup,
 caller-object immutability, schema 11-to-12 timestamp migration, bounded timeline queries with
 timestamp ties, and bounded recall with an old relevant fact behind 150 newer events and a query
-containing more than 1,000 terms.
+containing more than 1,000 terms. Phase 2 adds self-test coverage proving current response and
+memory shapes while observing that database globals remain unchanged throughout the run.
