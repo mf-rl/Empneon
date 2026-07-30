@@ -93,3 +93,51 @@ py -3.12 -m empneon.benchmarks.believability score `
   they are not a separately timed adaptive execution.
 - Its consistency arm has one target claim per agent and cannot establish longitudinal
   contradiction resistance.
+
+## Live resource captures
+
+Run one request-scoped capture from `adapters/thesims4` with:
+
+```powershell
+$env:PYTHONPATH='..\..\core\src;src'
+py -3.12 .\scripts\capture_live_resources.py
+```
+
+The July 29 baseline measurement was derived from these published raw files:
+
+| File | SHA-256 |
+|---|---|
+| `live-resource-capture-20260730T004648Z.json` | `41816d7467880d07a484de22092d719fd0fb015f47026117d941d48e9e5c9b9b` |
+| `live-resource-capture-20260730T004648Z.presentmon.csv` | `c9c309c3a42c08bc959ac70e71f17b27c2eb763edce49200e441db3843479df1` |
+
+The initial JSON was sanitized before publication by removing its deprecated live-Sim identifier.
+Its embedded summary was normalized to its 32 request-window resource samples and 218
+request-window frame samples, its telemetry tool versions were added, and the pre-submission armed
+interval was excluded. It still includes machine-specific process IDs for diagnostic correlation.
+
+The thinking-disabled three-request matrix uses the corrected request-window and identifier-free
+JSON format:
+
+| File | SHA-256 |
+|---|---|
+| `live-resource-capture-20260730T010628Z.json` | `d542b3c598bcdbe317cd1a7e2a7c7f496e8cbbc5c72d06a1c1b67b98af0d564a` |
+| `live-resource-capture-20260730T010628Z.presentmon.csv` | `ebdebe142a2d4b70056edbf849f7a7d788d573b519cad88391116fea15915369` |
+| `live-resource-capture-20260730T010847Z.json` | `44e69435ff73df41dfb8f2a5b77cdb3d5a8e866c717a932cc4c5713a6b7b5584` |
+| `live-resource-capture-20260730T010847Z.presentmon.csv` | `a2e5c1231d16a27cb3710cf8bfcdade9845db61f6f9e586e3f3856a2cd019eb3` |
+| `live-resource-capture-20260730T020334Z.json` | `130983f849c11affeffca4288a0573acbd7713ad3b92279dbd0a8570e2c7375c` |
+| `live-resource-capture-20260730T020334Z.presentmon.csv` | `c056357367b02fe64766c9efee14575646ba80a43ce991a5be06bd9019756cab` |
+
+The failed attempts are also retained because they verify evidence preservation on process
+ambiguity and operator-timeout paths:
+
+| UTC stem | Result |
+|---|---|
+| `20260730T002419Z` | Multiple backend processes found before capture |
+| `20260730T002440Z` | No Empneon Social observed before timeout |
+| `20260730T003238Z` | No Empneon Social observed before timeout; partial PresentMon CSV retained |
+| `20260730T003721Z` | No Empneon Social observed before timeout; partial PresentMon CSV retained |
+| `20260730T004924Z` | No Empneon Social observed before timeout; partial PresentMon CSV retained |
+
+Repository copies use normalized LF line endings. Neither failed evidence nor passing reports
+contain prompts, replies, Sim names, or API credentials. The successful reports retain request
+UUIDs and machine-specific process IDs.

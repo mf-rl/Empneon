@@ -157,3 +157,64 @@ the paired 20-call evidence; they are not a separately timed adaptive execution.
 formatting violations also remained visible in several candidates. The packet, key, and
 scored result are published in the
 [artifact manifest](../output/README.md).
+
+## Live single-request resource capture: 2026-07-29
+
+One normal player-triggered Empneon Social was captured on the baseline Ryzen 7 4800H,
+RTX 2060 Laptop 6 GB, and 16 GB RAM machine with The Sims 4 running. LM Studio served
+`gemma-4-e2b-uncensored-hauhaucs-aggressive` (4.6B, Q2_K_P), the adapter retained its
+single-request limit, and NVIDIA driver 610.88 plus PresentMon 2.5.1 provided telemetry. The
+request window is the matching cognition-queue request from its first observed submitted/started
+record through its completed record; the 31-second player delay before submission is excluded
+from these summaries.
+
+| Measurement | Result |
+|---|---:|
+| Request duration | 10,984 ms |
+| Resource samples at 250 ms target interval | 32 |
+| Peak system CPU / RAM used | 51.1% / 13,755.02 MiB |
+| Peak Sims process CPU / RAM | 238.2% / 2,486.31 MiB |
+| Peak backend process CPU / RAM | 8.3% / 44.38 MiB |
+| Peak provider process CPU / RAM | 107.9% / 2,468.32 MiB |
+| Peak total GPU memory / utilization | 4,587 MiB / 99% |
+| Displayed Sims frames | 218 |
+| Sims frame time p50 / p95 / peak | 48.67 / 64.73 / 68.12 ms |
+
+This is initial measured evidence, not a safe-budget calibration. Windows WDDM reported
+per-process GPU memory as unavailable, so 4,587 MiB is total device use rather than provider-only
+VRAM. `psutil` process CPU is summed across logical processors and can exceed 100%. The run is one
+request with one prompt, model, game state, and background workload; it does not establish normal
+variance, acceptable performance, scalability, or a reason to increase concurrency. The published
+repository copy removes the deprecated live-Sim identifier from the first capture; the aggregate
+and raw evidence contain no conversation content or Sim identity. Process IDs remain as
+machine-specific diagnostic metadata.
+
+### Thinking-disabled request matrix
+
+After restarting LM Studio, reloading the same model with thinking disabled, and restarting the
+backend, three additional player-triggered requests used the corrected request-window capture.
+The first two were ordinary neutral dialogue; the third recalled the confirmed synthetic fact
+`BASELINE-KEY-829 is under the blue bench`. The recall completed successfully and remained
+grounded in that retained evidence.
+
+| Measurement | Neutral 1 | Neutral 2 | Recall |
+|---|---:|---:|---:|
+| Request duration (ms) | 19,015 | 25,328 | 18,422 |
+| Peak system CPU | 91.9% | 97.8% | 95.9% |
+| Peak system RAM used (MiB) | 14,899.73 | 14,985.24 | 14,903.37 |
+| Peak total GPU memory (MiB) | 4,681 | 4,693 | 4,678 |
+| Peak GPU utilization | 94% | 95% | 90% |
+| Peak provider RAM (MiB) | 2,972.82 | 2,982.83 | 2,787.71 |
+| Sims frame time p50 (ms) | 11.97 | 41.48 | 48.64 |
+| Sims frame time p95 (ms) | 55.71 | 61.69 | 65.35 |
+
+Across these three requests, duration ranged from 18.42 to 25.33 seconds with a 19.02-second
+median. Total GPU memory stayed within 4,678-4,693 MiB, while frame-time p95 ranged from
+55.71-65.35 ms. The stable GPU range is useful initial evidence for this loaded model, but the
+wide frame-time and duration variation still prevents treating any single run as a safe operating
+budget. Per-process VRAM remains unavailable under Windows WDDM.
+
+The capture implementation and its 20 focused tests are complete. The full Sims adapter suite
+passed with 306 tests after implementation. The next engineering gate is a conservative resource
+budget proposal based on this matrix; runtime budgets, routing, and the single-request concurrency
+limit remain unchanged.

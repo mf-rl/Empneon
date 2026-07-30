@@ -58,6 +58,10 @@ feature promise.
   `mischief` category, and applied no relationship changes
 - Source-checkout mod installation always rebuilds current source before copying artifacts;
   prebuilt-only release installation remains supported
+- Request-scoped Sims resource capture records system and process CPU/RAM, total NVIDIA GPU
+  pressure, durable cognition lifecycle, and PresentMon frame timing while excluding dialogue and
+  Sim identity; one baseline and a three-request thinking-disabled neutral/recall matrix are
+  published
 
 ## Next gates
 
@@ -72,8 +76,11 @@ feature promise.
 
 ### Resource evidence
 
-- Measure process RAM, provider VRAM, latency, and Sims frame time for the current single-request
-  default on the stated baseline.
+- Formulate a conservative resource-budget proposal from the initial thinking-disabled
+  neutral/recall matrix without changing runtime settings.
+- Extend the initial thinking-disabled neutral/recall matrix across additional game states only
+  if the proposal exposes a specific evidence gap. Establish provider-attributable VRAM
+  separately; Windows WDDM reports per-process GPU memory as unavailable.
 - Define safe budgets from measurements before increasing concurrency or claiming scalability.
 
 ### Portability

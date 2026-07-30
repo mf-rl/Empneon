@@ -273,10 +273,33 @@ These are conservative operating profiles, not benchmark results:
 | Baseline validation target | Small local model | `active_agent_limit: 1`, default token limits | Ryzen 7 4800H, RTX 2060 Laptop 6 GB, 16 GB RAM with The Sims 4 running |
 | Remote-provider test | OpenAI-compatible remote endpoint | `active_agent_limit: 1` | Reduce local model pressure while accepting network privacy, latency, and cost |
 
-No recommended hardware profile exists yet. The Core governor has initial admission
-structures, but the Sims integration does not yet measure actual process RAM, VRAM, CPU,
-or frame time. Increase concurrency only after observing the game and provider together.
-Do not increase the default limit of one without a new concurrent in-game measurement.
+No recommended hardware profile exists yet. The Core governor has initial admission structures
+but does not continuously measure actual process RAM, VRAM, CPU, or frame time. The on-demand
+capture below records those values for a controlled request. Increase concurrency only after
+observing the game and provider together. Do not increase the default limit of one without a new
+concurrent in-game measurement.
+
+### Live resource capture
+
+With The Sims 4, the Empneon backend, and LM Studio already running, capture one normal
+player-triggered Empneon Social from `adapters/thesims4`:
+
+```powershell
+$env:PYTHONPATH='..\..\core\src;src'
+py -3.12 .\scripts\capture_live_resources.py
+```
+
+The command also requires `nvidia-smi` and PresentMon and must run from an elevated terminal so
+PresentMon can capture The Sims 4. The backend must be idle and configured with
+`active_agent_limit: 1`. After the script prints `ARMED`, start exactly one Empneon Social,
+submit a representative message, and wait for its reply. The script stops when the matching
+cognition-queue request completes and writes JSON resource samples plus raw PresentMon CSV
+evidence under `output/`. Failed attempts retain `.failed.json` and, when available,
+`.failed.presentmon.csv` evidence for diagnosis.
+
+The evidence contains machine-specific process IDs and is not committed automatically. Successful
+reports retain only the request UUID, not the Sim identifier, prompt, or response. One run does not
+define a safe budget, justify higher concurrency, or establish acceptable performance.
 
 ## Stage 2 Exit-Gate Test
 

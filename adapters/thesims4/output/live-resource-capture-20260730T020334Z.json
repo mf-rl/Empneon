@@ -1,0 +1,1523 @@
+{
+  "status": "passed",
+  "captured_at": "2026-07-30T02:03:57.548606+00:00",
+  "configuration": {
+    "base_url": "http://127.0.0.1:8765",
+    "sample_interval_seconds": 0.25,
+    "timeout_seconds": 180,
+    "provider": "lmstudio",
+    "model": "local-model",
+    "active_agent_limit": 1
+  },
+  "processes": {
+    "sims": {
+      "pid": 24664,
+      "name": "TS4_x64.exe"
+    },
+    "backend": {
+      "pid": 12836,
+      "name": "python.exe"
+    },
+    "provider": {
+      "pid": 1556,
+      "name": "llama-server.exe"
+    }
+  },
+  "request": {
+    "request_id": "2c77b6c4-eaa6-406d-9825-f4e33494e6dd",
+    "started_ms": 4078.0,
+    "completed_ms": 22500.0,
+    "duration_ms": 18422.0
+  },
+  "samples": [
+    {
+      "system": {
+        "cpu_percent": 32.7,
+        "ram_mb": 14722.73828125
+      },
+      "gpu": {
+        "memory_used_mb": 4680.0,
+        "utilization_percent": 59.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 358.3,
+          "ram_mb": 2816.4375
+        },
+        "backend": {
+          "cpu_percent": 5.9,
+          "ram_mb": 35.24609375
+        },
+        "provider": {
+          "cpu_percent": 0.0,
+          "ram_mb": 2752.3515625
+        }
+      },
+      "elapsed_ms": 219.0
+    },
+    {
+      "system": {
+        "cpu_percent": 37.1,
+        "ram_mb": 14738.23828125
+      },
+      "gpu": {
+        "memory_used_mb": 4680.0,
+        "utilization_percent": 59.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 496.2,
+          "ram_mb": 2816.4375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.25
+        },
+        "provider": {
+          "cpu_percent": 0.0,
+          "ram_mb": 2752.3515625
+        }
+      },
+      "elapsed_ms": 578.0
+    },
+    {
+      "system": {
+        "cpu_percent": 40.9,
+        "ram_mb": 14724.83203125
+      },
+      "gpu": {
+        "memory_used_mb": 4680.0,
+        "utilization_percent": 65.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 342.9,
+          "ram_mb": 2816.4375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.25
+        },
+        "provider": {
+          "cpu_percent": 0.0,
+          "ram_mb": 2752.3515625
+        }
+      },
+      "elapsed_ms": 938.0
+    },
+    {
+      "system": {
+        "cpu_percent": 41.6,
+        "ram_mb": 14725.18359375
+      },
+      "gpu": {
+        "memory_used_mb": 4680.0,
+        "utilization_percent": 65.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 287.3,
+          "ram_mb": 2816.4375
+        },
+        "backend": {
+          "cpu_percent": 4.4,
+          "ram_mb": 35.25
+        },
+        "provider": {
+          "cpu_percent": 0.0,
+          "ram_mb": 2752.3515625
+        }
+      },
+      "elapsed_ms": 1297.0
+    },
+    {
+      "system": {
+        "cpu_percent": 41.0,
+        "ram_mb": 14739.71875
+      },
+      "gpu": {
+        "memory_used_mb": 4681.0,
+        "utilization_percent": 65.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 426.5,
+          "ram_mb": 2816.44140625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.25
+        },
+        "provider": {
+          "cpu_percent": 0.0,
+          "ram_mb": 2752.3515625
+        }
+      },
+      "elapsed_ms": 1656.0
+    },
+    {
+      "system": {
+        "cpu_percent": 30.7,
+        "ram_mb": 14733.265625
+      },
+      "gpu": {
+        "memory_used_mb": 4685.0,
+        "utilization_percent": 62.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 425.0,
+          "ram_mb": 2816.44921875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.25
+        },
+        "provider": {
+          "cpu_percent": 0.0,
+          "ram_mb": 2752.3515625
+        }
+      },
+      "elapsed_ms": 2031.0
+    },
+    {
+      "system": {
+        "cpu_percent": 44.9,
+        "ram_mb": 14740.3828125
+      },
+      "gpu": {
+        "memory_used_mb": 4685.0,
+        "utilization_percent": 62.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 403.1,
+          "ram_mb": 2816.65625
+        },
+        "backend": {
+          "cpu_percent": 11.5,
+          "ram_mb": 35.7578125
+        },
+        "provider": {
+          "cpu_percent": 38.4,
+          "ram_mb": 2815.55078125
+        }
+      },
+      "elapsed_ms": 2438.0
+    },
+    {
+      "system": {
+        "cpu_percent": 66.5,
+        "ram_mb": 14855.2578125
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 62.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 316.5,
+          "ram_mb": 2816.65625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.76171875
+        },
+        "provider": {
+          "cpu_percent": 96.2,
+          "ram_mb": 2820.2734375
+        }
+      },
+      "elapsed_ms": 2828.0
+    },
+    {
+      "system": {
+        "cpu_percent": 71.9,
+        "ram_mb": 14896.7421875
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 60.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 262.9,
+          "ram_mb": 2816.65625
+        },
+        "backend": {
+          "cpu_percent": 3.7,
+          "ram_mb": 35.76171875
+        },
+        "provider": {
+          "cpu_percent": 514.7,
+          "ram_mb": 2833.48046875
+        }
+      },
+      "elapsed_ms": 3250.0
+    },
+    {
+      "system": {
+        "cpu_percent": 96.3,
+        "ram_mb": 14917.3125
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 60.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 259.2,
+          "ram_mb": 2816.6875
+        },
+        "backend": {
+          "cpu_percent": 3.7,
+          "ram_mb": 35.76171875
+        },
+        "provider": {
+          "cpu_percent": 336.9,
+          "ram_mb": 2833.48046875
+        }
+      },
+      "elapsed_ms": 3672.0
+    },
+    {
+      "system": {
+        "cpu_percent": 94.2,
+        "ram_mb": 14870.0546875
+      },
+      "gpu": {
+        "memory_used_mb": 4657.0,
+        "utilization_percent": 36.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 250.2,
+          "ram_mb": 2817.95703125
+        },
+        "backend": {
+          "cpu_percent": 3.8,
+          "ram_mb": 35.80078125
+        },
+        "provider": {
+          "cpu_percent": 377.2,
+          "ram_mb": 2743.421875
+        }
+      },
+      "elapsed_ms": 4078.0
+    },
+    {
+      "system": {
+        "cpu_percent": 72.5,
+        "ram_mb": 14841.1484375
+      },
+      "gpu": {
+        "memory_used_mb": 4657.0,
+        "utilization_percent": 36.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 154.4,
+          "ram_mb": 2818.1875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.80078125
+        },
+        "provider": {
+          "cpu_percent": 240.7,
+          "ram_mb": 2743.42578125
+        }
+      },
+      "elapsed_ms": 4422.0
+    },
+    {
+      "system": {
+        "cpu_percent": 46.6,
+        "ram_mb": 14849.70703125
+      },
+      "gpu": {
+        "memory_used_mb": 4657.0,
+        "utilization_percent": 36.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 200.2,
+          "ram_mb": 2819.296875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.80859375
+        },
+        "provider": {
+          "cpu_percent": 100.1,
+          "ram_mb": 2743.4296875
+        }
+      },
+      "elapsed_ms": 4781.0
+    },
+    {
+      "system": {
+        "cpu_percent": 48.4,
+        "ram_mb": 14839.1953125
+      },
+      "gpu": {
+        "memory_used_mb": 4657.0,
+        "utilization_percent": 73.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 199.8,
+          "ram_mb": 2826.5546875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8125
+        },
+        "provider": {
+          "cpu_percent": 95.9,
+          "ram_mb": 2743.4296875
+        }
+      },
+      "elapsed_ms": 5172.0
+    },
+    {
+      "system": {
+        "cpu_percent": 50.6,
+        "ram_mb": 14860.9296875
+      },
+      "gpu": {
+        "memory_used_mb": 4667.0,
+        "utilization_percent": 73.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 121.9,
+          "ram_mb": 2832.23828125
+        },
+        "backend": {
+          "cpu_percent": 4.4,
+          "ram_mb": 35.8125
+        },
+        "provider": {
+          "cpu_percent": 104.5,
+          "ram_mb": 2743.4375
+        }
+      },
+      "elapsed_ms": 5531.0
+    },
+    {
+      "system": {
+        "cpu_percent": 36.5,
+        "ram_mb": 14890.08203125
+      },
+      "gpu": {
+        "memory_used_mb": 4672.0,
+        "utilization_percent": 73.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 117.2,
+          "ram_mb": 2845.5703125
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8125
+        },
+        "provider": {
+          "cpu_percent": 99.8,
+          "ram_mb": 2743.4921875
+        }
+      },
+      "elapsed_ms": 5891.0
+    },
+    {
+      "system": {
+        "cpu_percent": 59.2,
+        "ram_mb": 14880.02734375
+      },
+      "gpu": {
+        "memory_used_mb": 4675.0,
+        "utilization_percent": 87.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 161.0,
+          "ram_mb": 2850.046875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8125
+        },
+        "provider": {
+          "cpu_percent": 95.8,
+          "ram_mb": 2743.4921875
+        }
+      },
+      "elapsed_ms": 6250.0
+    },
+    {
+      "system": {
+        "cpu_percent": 48.5,
+        "ram_mb": 14869.87109375
+      },
+      "gpu": {
+        "memory_used_mb": 4676.0,
+        "utilization_percent": 87.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 125.0,
+          "ram_mb": 2832.09375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8125
+        },
+        "provider": {
+          "cpu_percent": 100.0,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 6625.0
+    },
+    {
+      "system": {
+        "cpu_percent": 62.3,
+        "ram_mb": 14771.296875
+      },
+      "gpu": {
+        "memory_used_mb": 4674.0,
+        "utilization_percent": 79.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 126.2,
+          "ram_mb": 2833.65625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8125
+        },
+        "provider": {
+          "cpu_percent": 100.1,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 6984.0
+    },
+    {
+      "system": {
+        "cpu_percent": 65.2,
+        "ram_mb": 14743.76171875
+      },
+      "gpu": {
+        "memory_used_mb": 4624.0,
+        "utilization_percent": 79.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 208.3,
+          "ram_mb": 2833.6875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 108.3,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 7359.0
+    },
+    {
+      "system": {
+        "cpu_percent": 45.0,
+        "ram_mb": 14756.60546875
+      },
+      "gpu": {
+        "memory_used_mb": 4624.0,
+        "utilization_percent": 79.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 104.2,
+          "ram_mb": 2833.6953125
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 95.8,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 7734.0
+    },
+    {
+      "system": {
+        "cpu_percent": 40.8,
+        "ram_mb": 14735.90234375
+      },
+      "gpu": {
+        "memory_used_mb": 4624.0,
+        "utilization_percent": 86.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 95.5,
+          "ram_mb": 2833.69921875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 99.8,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 8094.0
+    },
+    {
+      "system": {
+        "cpu_percent": 30.3,
+        "ram_mb": 14707.62890625
+      },
+      "gpu": {
+        "memory_used_mb": 4624.0,
+        "utilization_percent": 86.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 118.1,
+          "ram_mb": 2833.765625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 104.5,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 8438.0
+    },
+    {
+      "system": {
+        "cpu_percent": 29.4,
+        "ram_mb": 14703.33984375
+      },
+      "gpu": {
+        "memory_used_mb": 4624.0,
+        "utilization_percent": 86.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 68.3,
+          "ram_mb": 2833.765625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 100.2,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 8781.0
+    },
+    {
+      "system": {
+        "cpu_percent": 29.1,
+        "ram_mb": 14704.00390625
+      },
+      "gpu": {
+        "memory_used_mb": 4624.0,
+        "utilization_percent": 87.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 125.9,
+          "ram_mb": 2835.0546875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 99.8,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 9141.0
+    },
+    {
+      "system": {
+        "cpu_percent": 46.3,
+        "ram_mb": 14700.296875
+      },
+      "gpu": {
+        "memory_used_mb": 4626.0,
+        "utilization_percent": 87.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 150.0,
+          "ram_mb": 2835.04296875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.81640625
+        },
+        "provider": {
+          "cpu_percent": 100.0,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 9516.0
+    },
+    {
+      "system": {
+        "cpu_percent": 46.6,
+        "ram_mb": 14781.42578125
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 87.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 161.6,
+          "ram_mb": 2813.62890625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 100.1,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 9922.0
+    },
+    {
+      "system": {
+        "cpu_percent": 51.2,
+        "ram_mb": 14792.7578125
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 84.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 131.9,
+          "ram_mb": 2811.65234375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 95.9,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 10313.0
+    },
+    {
+      "system": {
+        "cpu_percent": 54.6,
+        "ram_mb": 14786.65625
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 84.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 156.7,
+          "ram_mb": 2811.65234375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 95.8,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 10672.0
+    },
+    {
+      "system": {
+        "cpu_percent": 43.1,
+        "ram_mb": 14760.66015625
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 88.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 87.5,
+          "ram_mb": 2811.671875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 100.0,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 11047.0
+    },
+    {
+      "system": {
+        "cpu_percent": 53.3,
+        "ram_mb": 14786.9765625
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 88.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 165.4,
+          "ram_mb": 2811.75
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 100.1,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 11406.0
+    },
+    {
+      "system": {
+        "cpu_percent": 43.2,
+        "ram_mb": 14809.12109375
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 88.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 117.2,
+          "ram_mb": 2811.75
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 104.2,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 11766.0
+    },
+    {
+      "system": {
+        "cpu_percent": 38.2,
+        "ram_mb": 14783.2734375
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 89.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 148.2,
+          "ram_mb": 2811.11328125
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 96.2,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 12156.0
+    },
+    {
+      "system": {
+        "cpu_percent": 37.1,
+        "ram_mb": 14759.875
+      },
+      "gpu": {
+        "memory_used_mb": 4666.0,
+        "utilization_percent": 89.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 216.7,
+          "ram_mb": 2811.14453125
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 95.8,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 12531.0
+    },
+    {
+      "system": {
+        "cpu_percent": 45.5,
+        "ram_mb": 14761.78125
+      },
+      "gpu": {
+        "memory_used_mb": 4658.0,
+        "utilization_percent": 89.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 168.9,
+          "ram_mb": 2811.14453125
+        },
+        "backend": {
+          "cpu_percent": 3.8,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 103.7,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 12938.0
+    },
+    {
+      "system": {
+        "cpu_percent": 73.1,
+        "ram_mb": 14791.265625
+      },
+      "gpu": {
+        "memory_used_mb": 4659.0,
+        "utilization_percent": 89.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 212.5,
+          "ram_mb": 2813.16015625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 91.7,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 13313.0
+    },
+    {
+      "system": {
+        "cpu_percent": 49.6,
+        "ram_mb": 14903.37109375
+      },
+      "gpu": {
+        "memory_used_mb": 4659.0,
+        "utilization_percent": 89.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 195.8,
+          "ram_mb": 2813.40625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 95.8,
+          "ram_mb": 2743.49609375
+        }
+      },
+      "elapsed_ms": 13688.0
+    },
+    {
+      "system": {
+        "cpu_percent": 41.9,
+        "ram_mb": 14782.59375
+      },
+      "gpu": {
+        "memory_used_mb": 4659.0,
+        "utilization_percent": 90.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 108.8,
+          "ram_mb": 2813.4140625
+        },
+        "backend": {
+          "cpu_percent": 4.4,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 100.1,
+          "ram_mb": 2743.50390625
+        }
+      },
+      "elapsed_ms": 14047.0
+    },
+    {
+      "system": {
+        "cpu_percent": 65.7,
+        "ram_mb": 14783.48828125
+      },
+      "gpu": {
+        "memory_used_mb": 4659.0,
+        "utilization_percent": 90.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 159.2,
+          "ram_mb": 2812.0390625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.8203125
+        },
+        "provider": {
+          "cpu_percent": 88.9,
+          "ram_mb": 2749.51953125
+        }
+      },
+      "elapsed_ms": 14469.0
+    },
+    {
+      "system": {
+        "cpu_percent": 59.6,
+        "ram_mb": 14808.69921875
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 90.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 175.0,
+          "ram_mb": 2812.0390625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.82421875
+        },
+        "provider": {
+          "cpu_percent": 100.0,
+          "ram_mb": 2755.52734375
+        }
+      },
+      "elapsed_ms": 14844.0
+    },
+    {
+      "system": {
+        "cpu_percent": 46.4,
+        "ram_mb": 14821.23828125
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 86.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 165.5,
+          "ram_mb": 2812.0390625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.82421875
+        },
+        "provider": {
+          "cpu_percent": 307.9,
+          "ram_mb": 2787.70703125
+        }
+      },
+      "elapsed_ms": 15250.0
+    },
+    {
+      "system": {
+        "cpu_percent": 92.6,
+        "ram_mb": 14863.12109375
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 86.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 239.0,
+          "ram_mb": 2812.0390625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.82421875
+        },
+        "provider": {
+          "cpu_percent": 449.5,
+          "ram_mb": 2761.3515625
+        }
+      },
+      "elapsed_ms": 15688.0
+    },
+    {
+      "system": {
+        "cpu_percent": 95.8,
+        "ram_mb": 14869.38671875
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 43.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 222.7,
+          "ram_mb": 2812.0625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 446.9,
+          "ram_mb": 2761.3515625
+        }
+      },
+      "elapsed_ms": 16125.0
+    },
+    {
+      "system": {
+        "cpu_percent": 95.9,
+        "ram_mb": 14850.90625
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 43.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 224.7,
+          "ram_mb": 2812.08203125
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 470.2,
+          "ram_mb": 2761.3515625
+        }
+      },
+      "elapsed_ms": 16547.0
+    },
+    {
+      "system": {
+        "cpu_percent": 89.5,
+        "ram_mb": 14853.5703125
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 43.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 211.0,
+          "ram_mb": 2812.0859375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 472.0,
+          "ram_mb": 2761.3515625
+        }
+      },
+      "elapsed_ms": 16984.0
+    },
+    {
+      "system": {
+        "cpu_percent": 92.7,
+        "ram_mb": 14852.84375
+      },
+      "gpu": {
+        "memory_used_mb": 4658.0,
+        "utilization_percent": 44.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 185.1,
+          "ram_mb": 2813.3359375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 511.0,
+          "ram_mb": 2761.3515625
+        }
+      },
+      "elapsed_ms": 17406.0
+    },
+    {
+      "system": {
+        "cpu_percent": 91.1,
+        "ram_mb": 14863.26953125
+      },
+      "gpu": {
+        "memory_used_mb": 4654.0,
+        "utilization_percent": 44.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 222.2,
+          "ram_mb": 2813.3359375
+        },
+        "backend": {
+          "cpu_percent": 3.7,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 485.0,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 17828.0
+    },
+    {
+      "system": {
+        "cpu_percent": 85.3,
+        "ram_mb": 14863.92578125
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 45.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 188.8,
+          "ram_mb": 2813.33984375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 540.6,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 18250.0
+    },
+    {
+      "system": {
+        "cpu_percent": 87.0,
+        "ram_mb": 14879.33984375
+      },
+      "gpu": {
+        "memory_used_mb": 4656.0,
+        "utilization_percent": 45.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 227.1,
+          "ram_mb": 2813.34765625
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 519.6,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 18656.0
+    },
+    {
+      "system": {
+        "cpu_percent": 85.7,
+        "ram_mb": 14859.1484375
+      },
+      "gpu": {
+        "memory_used_mb": 4657.0,
+        "utilization_percent": 45.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 231.1,
+          "ram_mb": 2814.68359375
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 527.7,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 19109.0
+    },
+    {
+      "system": {
+        "cpu_percent": 86.3,
+        "ram_mb": 14863.94140625
+      },
+      "gpu": {
+        "memory_used_mb": 4659.0,
+        "utilization_percent": 45.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 185.1,
+          "ram_mb": 2814.69140625
+        },
+        "backend": {
+          "cpu_percent": 3.7,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 573.9,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 19531.0
+    },
+    {
+      "system": {
+        "cpu_percent": 86.4,
+        "ram_mb": 14870.609375
+      },
+      "gpu": {
+        "memory_used_mb": 4659.0,
+        "utilization_percent": 45.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 262.9,
+          "ram_mb": 2814.69921875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 540.6,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 19953.0
+    },
+    {
+      "system": {
+        "cpu_percent": 90.4,
+        "ram_mb": 14860.734375
+      },
+      "gpu": {
+        "memory_used_mb": 4657.0,
+        "utilization_percent": 46.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 244.4,
+          "ram_mb": 2814.69921875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 499.9,
+          "ram_mb": 2761.35546875
+        }
+      },
+      "elapsed_ms": 20375.0
+    },
+    {
+      "system": {
+        "cpu_percent": 87.8,
+        "ram_mb": 14858.62890625
+      },
+      "gpu": {
+        "memory_used_mb": 4649.0,
+        "utilization_percent": 46.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 181.4,
+          "ram_mb": 2814.69921875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 518.4,
+          "ram_mb": 2761.359375
+        }
+      },
+      "elapsed_ms": 20797.0
+    },
+    {
+      "system": {
+        "cpu_percent": 90.4,
+        "ram_mb": 14877.5
+      },
+      "gpu": {
+        "memory_used_mb": 4649.0,
+        "utilization_percent": 46.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 196.7,
+          "ram_mb": 2814.70703125
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 511.3,
+          "ram_mb": 2761.359375
+        }
+      },
+      "elapsed_ms": 21234.0
+    },
+    {
+      "system": {
+        "cpu_percent": 88.2,
+        "ram_mb": 14874.5859375
+      },
+      "gpu": {
+        "memory_used_mb": 4649.0,
+        "utilization_percent": 46.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 160.5,
+          "ram_mb": 2814.71875
+        },
+        "backend": {
+          "cpu_percent": 0.0,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 520.8,
+          "ram_mb": 2761.359375
+        }
+      },
+      "elapsed_ms": 21672.0
+    },
+    {
+      "system": {
+        "cpu_percent": 95.6,
+        "ram_mb": 14839.99609375
+      },
+      "gpu": {
+        "memory_used_mb": 4658.0,
+        "utilization_percent": 46.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 213.9,
+          "ram_mb": 2814.72265625
+        },
+        "backend": {
+          "cpu_percent": 6.9,
+          "ram_mb": 35.828125
+        },
+        "provider": {
+          "cpu_percent": 393.2,
+          "ram_mb": 2761.359375
+        }
+      },
+      "elapsed_ms": 22125.0
+    },
+    {
+      "system": {
+        "cpu_percent": 83.4,
+        "ram_mb": 14850.8203125
+      },
+      "gpu": {
+        "memory_used_mb": 4678.0,
+        "utilization_percent": 46.0
+      },
+      "processes": {
+        "sims": {
+          "cpu_percent": 162.5,
+          "ram_mb": 2814.73046875
+        },
+        "backend": {
+          "cpu_percent": 4.2,
+          "ram_mb": 35.9921875
+        },
+        "provider": {
+          "cpu_percent": 512.5,
+          "ram_mb": 2761.37109375
+        }
+      },
+      "elapsed_ms": 22500.0
+    }
+  ],
+  "summary": {
+    "sample_count": 48,
+    "system": {
+      "peak_cpu_percent": 95.9,
+      "peak_ram_mb": 14903.37109375
+    },
+    "gpu": {
+      "peak_memory_used_mb": 4678.0,
+      "peak_utilization_percent": 90.0
+    },
+    "processes": {
+      "sims": {
+        "peak_cpu_percent": 262.9,
+        "peak_ram_mb": 2850.046875
+      },
+      "backend": {
+        "peak_cpu_percent": 6.9,
+        "peak_ram_mb": 35.9921875
+      },
+      "provider": {
+        "peak_cpu_percent": 573.9,
+        "peak_ram_mb": 2787.70703125
+      }
+    },
+    "frames": {
+      "sample_count": 367,
+      "p50_ms": 48.636,
+      "p95_ms": 65.34703,
+      "peak_ms": 77.04350000000001
+    }
+  },
+  "artifacts": {
+    "presentmon_csv": "output\\live-resource-capture-20260730T020334Z.presentmon.csv"
+  },
+  "tools": {
+    "presentmon": "PresentMon 2.5.1",
+    "nvidia_driver": "610.88",
+    "psutil": "7.2.2"
+  }
+}

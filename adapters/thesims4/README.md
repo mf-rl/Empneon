@@ -149,6 +149,11 @@ then returned a joke without any explicit funny marker, kept category `friendly`
 positive friendship. Hermes now makes `friendly` or `funny` responses to incoming funny
 interactions relationship-neutral and actionless while preserving their dialogue and response
 category. Automated regression and rebuilt-backend live confirmation both pass.
+The July 29 request-scoped resource capture now records system, Sims, backend, provider, GPU, and
+PresentMon evidence without retaining conversation content or Sim identity. One initial run and a
+three-request thinking-disabled neutral/recall matrix are published in the
+[benchmark results](docs/benchmark-results.md); they establish baseline evidence but do not yet
+justify a hardware recommendation or higher concurrency.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files
@@ -159,4 +164,5 @@ The packaged mod currently requires the backend at `127.0.0.1:8765`.
 - `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning
 - `build_mod.py`: builds `Empneon_TheSims4.ts4script` and `Empneon_TheSims4.package`
 - `install_mod.ps1`: rebuilds source checkouts, installs both artifacts, and removes legacy copies
+- `scripts/capture_live_resources.py`: captures one request-scoped live resource and frame trace
 - `test.py`: smoke test for `/chat`
