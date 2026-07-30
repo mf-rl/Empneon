@@ -41,6 +41,54 @@ from backend import ai_sims_server
 from backend import config as backend_config
 
 
+def test_run_handles_keyboard_interrupt_and_closes_server(
+    monkeypatch, capsys
+) -> None:
+    calls = []
+
+    class Status:
+        completed = True
+        error = None
+
+    class Connection:
+        def close(self):
+            calls.append("database closed")
+
+    class Server:
+        def __init__(self, address, handler):
+            calls.append(("server created", address, handler))
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            calls.append("server closed")
+
+    monkeypatch.setattr(ai_sims_server, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        ai_sims_server.empneon_state,
+        "prepare_database",
+        lambda *_args: Status(),
+    )
+    monkeypatch.setattr(
+        ai_sims_server.empneon_state,
+        "import_legacy_adapter",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "db_session",
+        lambda *_args: contextlib.nullcontext(object()),
+    )
+    monkeypatch.setattr(ai_sims_server, "open_db", lambda *_args: Connection())
+    monkeypatch.setattr(ai_sims_server, "EmpneonHTTPServer", Server)
+
+    ai_sims_server.run()
+
+    assert "Empneon backend stopped by keyboard interrupt." in capsys.readouterr().out
+    assert calls[-1] == "server closed"
+
+
 def test_server_module_import_is_inert(tmp_path) -> None:
     adapter_root = Path(__file__).resolve().parents[1]
     environment = os.environ.copy()

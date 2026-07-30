@@ -1278,7 +1278,12 @@ def run():
     print(f"Provider: {PRIMARY_PROVIDER}")
     print("Endpoint: {}".format(task_model_config("large").get("endpoint")))
     print("Model: {}".format(configured_model("large")))
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Empneon backend stopped by keyboard interrupt.")
+    finally:
+        server.server_close()
 
 
 def self_test():
