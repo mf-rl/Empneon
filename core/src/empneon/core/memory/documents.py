@@ -23,7 +23,7 @@ class DocumentMemoryStore:
     ) -> MemoryDocument:
         if not namespace.strip() or not key.strip():
             raise ValueError("memory document namespace and key are required")
-        updated_at = time.time_ns()
+        updated_at = int(time.time())
         self._conn.execute(
             "INSERT INTO memory_documents(namespace, key, value, updated_at) VALUES (?,?,?,?)"
             " ON CONFLICT(namespace, key) DO UPDATE SET"

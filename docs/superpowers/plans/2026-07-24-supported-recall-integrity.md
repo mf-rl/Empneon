@@ -35,7 +35,7 @@
 - Test: `adapters/thesims4/tests/test_sims4_backend.py`
 
 **Interfaces:**
-- Consumes: `HermesRuntime.dialogue(payload, context)`
+- Consumes: `CognitionRuntime.dialogue(payload, context)`
 - Produces: regression coverage for the always-on supported-recall contract
 
 - [ ] **Step 1: Add a live-shaped retry test**
@@ -234,7 +234,7 @@ also uses the same rule. Preserve unsupported-memory uncertainty behavior.
 
 - [ ] **Step 4: Enforce only recall integrity when broad rejection is off**
 
-In `HermesRuntime.dialogue()`, compute `recall_issue` after normalization.
+In `CognitionRuntime.dialogue()`, compute `recall_issue` after normalization.
 Return immediately under `RESPONSE_REJECTION_ENABLED=False` only when it is
 empty. When it is non-empty, use the existing second attempt and append the
 exact selected facts:

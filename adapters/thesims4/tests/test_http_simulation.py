@@ -64,6 +64,7 @@ def test_confirmation_uses_proposed_decision_and_action() -> None:
 
 def test_request_json_sends_and_decodes_json(monkeypatch) -> None:
     captured = {}
+    monkeypatch.setenv("AI_SIM_API_TOKEN", "secret")
 
     class Response(io.BytesIO):
         def __enter__(self):
@@ -85,6 +86,7 @@ def test_request_json_sends_and_decodes_json(monkeypatch) -> None:
 
     assert result == {"status": "ok"}
     assert captured["request"].method == "POST"
+    assert captured["request"].get_header("X-empneon-token") == "secret"
     assert json.loads(captured["request"].data) == {"message": "hello"}
     assert captured["timeout"] == 7
 

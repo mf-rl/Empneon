@@ -13,7 +13,7 @@ outcome into `relationship.friendship +8`.
 
 ## Design
 
-At the Hermes boundary, where both incoming and outgoing categories are
+At the runtime boundary, where both incoming and outgoing categories are
 available, make `friendly` and `funny` responses to an incoming funny
 interaction state-neutral:
 
@@ -29,7 +29,7 @@ remain unchanged.
 ## Testing
 
 An automated regression will reproduce the exact latest live reply as
-`friendly`, `friendship_positive`, and `trust_delta=1`, then verify that Hermes
+`friendly`, `friendship_positive`, and `trust_delta=1`, then verify that the runtime
 preserves the reply/category while neutralizing every state effect. Existing
 social-category coverage and the complete repository suites protect working
 behavior.

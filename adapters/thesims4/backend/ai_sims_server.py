@@ -1,11 +1,9 @@
-import ast
+# ruff: noqa: E402, F401
+
 import asyncio
-import contextlib
 import dataclasses
-import ipaddress
 import json
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import re
 import sqlite3
@@ -13,19 +11,13 @@ import sys
 import tempfile
 import threading
 import time
-import urllib.parse
 import urllib.request
 import uuid
-from collections import Counter, deque
-from difflib import SequenceMatcher
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from empneon_thesims4 import Sims4Adapter, cognition_priority
 from empneon.core.contracts import (
     SOCIAL_CATEGORIES,
     ActionResult,
@@ -34,6 +26,8 @@ from empneon.core.contracts import (
     StateDelta,
     WorldEvent,
 )
+from empneon.core.identity.relationships import Relationship, RelationshipStore
+from empneon.core.identity.store import AgentStore
 from empneon.core.memory.documents import DocumentMemoryStore
 from empneon.core.memory.episodic import Event
 from empneon.core.memory.recall import (
@@ -41,120 +35,49 @@ from empneon.core.memory.recall import (
     fact_supports_query,
     validate_recall_response,
 )
-from empneon.core.identity.relationships import Relationship, RelationshipStore
-from empneon.core.identity.store import AgentStore
-from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.replay import replay_action_record
-from empneon.core.timeline import agent_timeline
+from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
-from empneon.core.scheduler.priority import PriorityScheduler, RequestDeadlineExceeded
 from empneon.core.scheduler.selection import CognitionRoute
 from empneon.core.scheduler.usage import UsageStore
 from empneon.core.state import save_agent_state
-from empneon.db.connection import open_db
+from empneon.core.timeline import agent_timeline
+from empneon.db.connection import db_session, open_db
 from empneon.providers.llm import (
     ConfiguredProviderRouter,
     GenerationResult,
     Message,
     ProviderError,
 )
-from backend import empneon_state
+
+from backend import (
+    cognition as backend_cognition,
+)
+from backend import (
+    config as backend_config,
+)
+from backend import (
+    db as backend_db,
+)
+from backend import (
+    empneon_state,
+)
+from backend.agent_manager import AgentManager as _AgentManager
+from backend.agent_manager import CognitionQueue as _CognitionQueue
+from backend.agent_manager import Test10QueueGate as _Test10QueueGate
+from empneon_thesims4 import Sims4Adapter, cognition_priority
 
 CONFIG_PATH = os.environ.get("AI_SIM_CONFIG", os.path.join(ROOT, "config", "config.json"))
 
-DEFAULT_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 8765,
-    "debug": True,
-    "database": "ai_sims_memory.sqlite3",
-    "core_database": "empneon_core.sqlite3",
-    "memory_database": "empneon_core_memory.sqlite3",
-    "preserve_memory_only_on_game_save": False,
-    "response_rejection_enabled": True,
-    "active_agent_limit": 1,
-    "agent_wake_timeout_seconds": 60,
-    "provider": "lmstudio",
-    "providers": {
-        "lmstudio": {"endpoint": "http://127.0.0.1:1234/api/v1", "model": "local-model"},
-        "ollama": {"endpoint": "http://127.0.0.1:11434/v1", "model": "llama3"},
-        "openai": {"endpoint": "https://api.openai.com/v1", "model": "gpt-4.1-mini"},
-        "openrouter": {
-            "endpoint": "https://openrouter.ai/api/v1",
-            "model": "openai/gpt-4.1-mini",
-        },
-        "llamacpp": {"endpoint": "http://127.0.0.1:8080/v1", "model": "local-model"},
-        "koboldcpp": {"endpoint": "http://127.0.0.1:5001/v1", "model": "local-model"},
-        "textgenwebui": {"endpoint": "http://127.0.0.1:5000/v1", "model": "local-model"},
-    },
-    "models": {
-        "small": {
-            "temperature": 0.4,
-            "max_tokens": 120,
-            "context_tokens": 2048,
-            "latency_ms": 30000,
-            "ram_mb": 64,
-            "vram_mb": 0,
-        },
-        "large": {
-            "temperature": 0.6,
-            "max_tokens": 300,
-            "context_tokens": 4096,
-            "latency_ms": 90000,
-            "ram_mb": 128,
-            "vram_mb": 0,
-        },
-    },
-    "memory": {
-        "recent_limit": 6,
-        "summary_every": 10,
-        "summary_limit": 30,
-    },
-    "tts": {
-        "enabled": False,
-        "provider": "piper",
-        "endpoint": "",
-    },
-}
+DEFAULT_CONFIG = backend_config.DEFAULT_CONFIG
 
 
 def deep_update(base, overrides):
-    for key, value in (overrides or {}).items():
-        if isinstance(value, dict) and isinstance(base.get(key), dict):
-            deep_update(base[key], value)
-        else:
-            base[key] = value
-    return base
+    return backend_config.deep_update(base, overrides)
 
 
 def load_config():
-    config = json.loads(json.dumps(DEFAULT_CONFIG))
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
-            deep_update(config, json.load(handle))
-    except FileNotFoundError:
-        pass
-    except Exception as exc:
-        sys.stderr.write("Could not read config {}: {}\n".format(CONFIG_PATH, exc))
-
-    if os.environ.get("AI_SIM_PROVIDER"):
-        config["provider"] = os.environ["AI_SIM_PROVIDER"]
-    if os.environ.get("AI_SIM_LLM_BASE_URL"):
-        provider = config.get("provider") or "lmstudio"
-        config.setdefault("providers", {}).setdefault(provider, {})["endpoint"] = os.environ["AI_SIM_LLM_BASE_URL"]
-    if os.environ.get("AI_SIM_MODEL"):
-        provider = config.get("provider") or "lmstudio"
-        config.setdefault("providers", {}).setdefault(provider, {})["model"] = os.environ["AI_SIM_MODEL"]
-        for task in ("small", "large"):
-            config.setdefault("models", {}).setdefault(task, {})["model"] = os.environ["AI_SIM_MODEL"]
-    if os.environ.get("AI_SIM_DB"):
-        config["memory_database"] = os.environ["AI_SIM_DB"]
-    if os.environ.get("AI_SIM_MEMORY_DB"):
-        config["memory_database"] = os.environ["AI_SIM_MEMORY_DB"]
-    if os.environ.get("AI_SIM_PORT"):
-        config["port"] = int(os.environ["AI_SIM_PORT"])
-    if os.environ.get("AI_SIM_HOST"):
-        config["host"] = os.environ["AI_SIM_HOST"]
-    return config
+    return backend_config.load_config(CONFIG_PATH, os.environ, sys.stderr)
 
 
 CONFIG = load_config()
@@ -175,201 +98,50 @@ ACTIVE_AGENT_LIMIT = int(CONFIG.get("active_agent_limit") or 1)
 AGENT_WAKE_TIMEOUT = int(CONFIG.get("agent_wake_timeout_seconds") or 60)
 PRESERVE_MEMORY_ONLY_ON_GAME_SAVE = CONFIG["preserve_memory_only_on_game_save"]
 RESPONSE_REJECTION_ENABLED = CONFIG["response_rejection_enabled"]
+API_TOKEN = str(os.environ.get("AI_SIM_API_TOKEN") or "")
 PRIMARY_PROVIDER = str(CONFIG.get("provider") or "lmstudio")
 ACTIVE_DB_PATH = None
 MEMORY_SESSION_LOCK = threading.RLock()
 CORE_GOVERNOR = ResourceGovernor(ResourceBudget(256, 0, ACTIVE_AGENT_LIMIT))
 GENERATION_CONTEXT = threading.local()
+ASYNC_LOOP = threading.local()
 MIGRATION_STATUS = empneon_state.MigrationStatus(
     os.path.abspath(MEMORY_DB_PATH), completed=False, error="not started"
 )
 
 
 def setup_logging():
-    log_dir = os.path.join(ROOT, "logs")
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-    except Exception:
-        log_dir = tempfile.gettempdir()
-    root_logger = logging.getLogger("ai_sims")
-    root_logger.setLevel(logging.DEBUG if CONFIG.get("debug") else logging.INFO)
-    if root_logger.handlers:
-        return root_logger
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    for name in ("agent_manager", "ai_provider", "memory"):
-        handler = RotatingFileHandler(os.path.join(log_dir, name + ".log"), maxBytes=512000, backupCount=3)
-        handler.setFormatter(formatter)
-        logging.getLogger("ai_sims." + name).addHandler(handler)
-        logging.getLogger("ai_sims." + name).setLevel(root_logger.level)
-    stream = logging.StreamHandler(sys.stderr)
-    stream.setFormatter(formatter)
-    root_logger.addHandler(stream)
-    return root_logger
+    return backend_config.setup_logging(ROOT, CONFIG, sys.stderr)
 
 
-LOG = setup_logging()
+LOG = logging.getLogger("ai_sims")
+LOG.setLevel(logging.DEBUG if CONFIG.get("debug") else logging.INFO)
 AGENT_LOG = logging.getLogger("ai_sims.agent_manager")
 PROVIDER_LOG = logging.getLogger("ai_sims.ai_provider")
 MEMORY_LOG = logging.getLogger("ai_sims.memory")
+for logger in (AGENT_LOG, PROVIDER_LOG, MEMORY_LOG):
+    logger.setLevel(LOG.level)
 
 
-SYSTEM_PROMPT = """You roleplay one The Sims 4 character.
-Stay grounded in the Sim profile, relationship, current mood, and recalled history.
-Return one valid JSON object only. No markdown. No schema explanation. No placeholders.
-Do not write a thinking process, analysis, reasoning, or chain-of-thought.
-The first character of your response must be {.
-Normally write 2 to 4 natural sentences totaling about 25 to 60 words. Use a shorter answer only
-when the situation genuinely calls for one. Make the dialogue reflect the Sim's personality,
-emotion, and relationship instead of using generic filler.
-Never invent a past event, shared fact, codeword, promise, plan, date, or name. For factual recall,
-use only the attributed statements and confirmed exchanges supplied in the request. If the
-requested fact is absent, say naturally and in character that the Sim does not know or remember it.
-Use this exact shape with concrete values:
-{
-  "dialogue": "expressive in-character reply",
-  "expressed_emotion": "playful",
-  "intent": "accept_playfully",
-  "response_category": "romance",
-  "tone_tags": ["playful", "hesitant"],
-  "trust_delta": 1,
-  "relationship_outcome": "romance_positive"
-}
-
-Choose one response category from the request's available common social categories. The response
-category describes the Speaker's own dialogue, independently from the incoming category. Tone tags
-may blend style and mood, but never select additional actions. Choose friendship_positive only for
-a warm or funny response, friendship_negative only for a mean or hostile response,
-romance_positive only when the Speaker clearly reciprocates romance, romance_negative only for an
-explicit romantic rejection, and none otherwise. Do not return numeric friendship, romance,
-attraction, tuning, or action fields; the adapter and game own them.
-"""
-
-SOCIAL_ACTIONS = {category: "social." + category for category in SOCIAL_CATEGORIES}
-RELATIONSHIP_OUTCOMES = (
-    "friendship_positive",
-    "friendship_negative",
-    "romance_positive",
-    "romance_negative",
-    "none",
-)
-ROMANTIC_RECIPROCATION = re.compile(
-    r"\b(yes|i would love|i'd love|me too|feel the same|date sounds|be together)\b"
-)
-ROMANTIC_REJECTION = re.compile(
-    r"\b(no|not interested|rather stay friends|do not want|don't want|cannot|can't)\b"
-)
-
-DIALOGUE_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "dialogue": {"type": "string"},
-        "expressed_emotion": {"type": "string"},
-        "intent": {"type": "string"},
-        "response_category": {
-            "type": "string",
-            "enum": list(SOCIAL_CATEGORIES),
-        },
-        "tone_tags": {
-            "type": "array",
-            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$"},
-            "maxItems": 3,
-            "uniqueItems": True,
-        },
-        "trust_delta": {"type": "integer", "minimum": -10, "maximum": 10},
-        "relationship_outcome": {
-            "type": "string",
-            "enum": list(RELATIONSHIP_OUTCOMES),
-        },
-    },
-    "required": [
-        "dialogue",
-        "expressed_emotion",
-        "intent",
-        "response_category",
-        "tone_tags",
-        "trust_delta",
-        "relationship_outcome",
-    ],
-}
-
-MEMORY_SELECTOR_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "event_ids": {
-            "type": "array",
-            "items": {"type": "string"},
-            "maxItems": 3,
-        }
-    },
-    "required": ["event_ids"],
-}
-
-
-def available_actions(value):
-    return tuple(
-        dict.fromkeys(
-            str(action)
-            for action in (value if isinstance(value, (list, tuple)) else ())
-            if str(action) in ("friendly_chat", "apologize", "flirt")
-        )
-    )
-
-
-def available_response_categories(value):
-    return tuple(
-        dict.fromkeys(
-            str(category)
-            for category in (value if isinstance(value, (list, tuple)) else ())
-            if str(category) in SOCIAL_CATEGORIES
-        )
-    )
-
-
-def dialogue_schema(value):
-    schema = json.loads(json.dumps(DIALOGUE_SCHEMA))
-    categories = available_response_categories(value) or SOCIAL_CATEGORIES
-    schema["properties"]["response_category"] = {
-        "type": "string",
-        "enum": list(categories),
-    }
-    return schema
-
-
-DIRECTOR_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "hook": {"type": "string"},
-        "target": {"type": "string"},
-        "suggested_action": {"type": "string"},
-        "tone": {"type": "string"},
-    },
-    "required": ["hook", "target", "suggested_action", "tone"],
-}
+SYSTEM_PROMPT = backend_cognition.SYSTEM_PROMPT
+SOCIAL_ACTIONS = backend_cognition.SOCIAL_ACTIONS
+RELATIONSHIP_OUTCOMES = backend_cognition.RELATIONSHIP_OUTCOMES
+ROMANTIC_RECIPROCATION = backend_cognition.ROMANTIC_RECIPROCATION
+ROMANTIC_REJECTION = backend_cognition.ROMANTIC_REJECTION
+DIALOGUE_SCHEMA = backend_cognition.DIALOGUE_SCHEMA
+MEMORY_SELECTOR_SCHEMA = backend_cognition.MEMORY_SELECTOR_SCHEMA
+available_actions = backend_cognition.available_actions
+available_response_categories = backend_cognition.available_response_categories
+dialogue_schema = backend_cognition.dialogue_schema
+DIRECTOR_SCHEMA = backend_cognition.DIRECTOR_SCHEMA
 
 
 def connect_db():
     global ACTIVE_DB_PATH
-    paths = [ACTIVE_DB_PATH] if ACTIVE_DB_PATH else [DB_PATH]
-    if not os.environ.get("AI_SIM_DB"):
-        paths.append(os.path.join(tempfile.gettempdir(), "ai_sims_memory.sqlite3"))
-
-    last_error = None
-    for path in paths:
-        if not path:
-            continue
-        try:
-            conn = sqlite3.connect(path)
-            conn.row_factory = sqlite3.Row
-            init_db(conn)
-            conn.commit()
-            ACTIVE_DB_PATH = path
-            return conn
-        except sqlite3.Error as exc:
-            last_error = exc
-    raise last_error
+    path = ACTIVE_DB_PATH or DB_PATH
+    conn = backend_db.connect_db(path, sqlite3.connect, init_db)
+    ACTIVE_DB_PATH = path
+    return conn
 
 
 def memory_session_paths():
@@ -381,66 +153,13 @@ def memory_session_paths():
     )
 
 
-def memory_checkpoint_path(database, save_slot_id):
-    if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", save_slot_id):
-        raise ValueError("valid save slot id is required")
-    return database + ".empneon-saved.slot-" + save_slot_id
-
-
-def backup_memory_database(source, destination):
-    temporary = destination + ".tmp"
-    try:
-        os.remove(temporary)
-    except FileNotFoundError:
-        pass
-    with contextlib.closing(sqlite3.connect(source)) as source_db, contextlib.closing(
-        sqlite3.connect(temporary)
-    ) as destination_db:
-        source_db.backup(destination_db)
-    os.replace(temporary, destination)
-
-
-def restore_memory_database(source, destination):
-    with contextlib.closing(sqlite3.connect(source)) as source_db, contextlib.closing(
-        sqlite3.connect(destination)
-    ) as destination_db:
-        source_db.backup(destination_db)
-
-
-def create_empty_memory_checkpoint(destination):
-    temporary = destination + ".tmp"
-    try:
-        os.remove(temporary)
-    except FileNotFoundError:
-        pass
-    open_db(temporary).close()
-    os.replace(temporary, destination)
-
-
-def read_memory_session(path):
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            value = json.load(handle)
-            return value if isinstance(value, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {}
-
-
-def write_memory_session(path, session_id, save_slot_id):
-    temporary = path + ".tmp"
-    with open(temporary, "w", encoding="utf-8") as handle:
-        json.dump(
-            {"session_id": session_id, "save_slot_id": save_slot_id},
-            handle,
-        )
-    os.replace(temporary, path)
-
-
-def validate_game_session_id(session_id):
-    value = str(session_id or "").strip()
-    if not value or len(value) > 128:
-        raise ValueError("valid game session id is required")
-    return value
+memory_checkpoint_path = backend_db.memory_checkpoint_path
+backup_memory_database = backend_db.backup_memory_database
+restore_memory_database = backend_db.restore_memory_database
+create_empty_memory_checkpoint = backend_db.create_empty_memory_checkpoint
+read_memory_session = backend_db.read_memory_session
+write_memory_session = backend_db.write_memory_session
+validate_game_session_id = backend_db.validate_game_session_id
 
 
 def start_memory_session(session_id, save_slot_id=""):
@@ -457,7 +176,7 @@ def start_memory_session(session_id, save_slot_id=""):
             if os.path.exists(legacy_saved) and (
                 not previous_slot or previous_slot == save_slot_id
             ):
-                with open_db(database) as conn:
+                with db_session(database) as conn:
                     empneon_state.import_legacy_adapter(conn, legacy_saved)
                 backup_memory_database(database, saved)
             elif not previous:
@@ -466,8 +185,7 @@ def start_memory_session(session_id, save_slot_id=""):
                 create_empty_memory_checkpoint(saved)
         changed = previous.get("session_id") != session_id
         slot_changed = bool(
-            previous.get("save_slot_id")
-            and previous.get("save_slot_id") != save_slot_id
+            previous.get("save_slot_id") and previous.get("save_slot_id") != save_slot_id
         )
         if changed or slot_changed:
             restore_memory_database(saved, database)
@@ -493,133 +211,9 @@ def save_memory_session(session_id, save_slot_id=""):
     return {"enabled": True, "status": "saved"}
 
 
-def ensure_column(conn, table, name, definition):
-    rows = conn.execute("pragma table_info({})".format(table)).fetchall()
-    if name not in [row["name"] for row in rows]:
-        conn.execute("alter table {} add column {} {}".format(table, name, definition))
-
-
-def init_db(conn):
-    conn.execute(
-        """
-        create table if not exists sim_profiles (
-            sim_id text primary key,
-            name text not null,
-            identity_json text not null,
-            personality_json text not null,
-            values_json text not null,
-            behavioral_rules_json text not null,
-            knowledge_json text not null,
-            goals_json text not null,
-            voice_json text not null,
-            created_at real not null,
-            updated_at real not null
-        )
-        """
-    )
-    conn.execute(
-        """
-        create table if not exists memories (
-            id integer primary key autoincrement,
-            speaker_id text not null,
-            listener_id text not null,
-            summary text not null,
-            importance real not null default 0.5,
-            created_at real not null
-        )
-        """
-    )
-    for name, definition in (
-        ("sim_id", "text"),
-        ("target_id", "text"),
-        ("event", "text"),
-        ("emotion", "text"),
-        ("category", "text not null default 'short_term'"),
-        ("topic", "text"),
-        ("location", "text"),
-    ):
-        ensure_column(conn, "memories", name, definition)
-
-    conn.execute(
-        """
-        create table if not exists memory_summaries (
-            sim_id text not null,
-            target_id text not null,
-            summary text not null,
-            updated_at real not null,
-            primary key (sim_id, target_id)
-        )
-        """
-    )
-    conn.execute(
-        """
-        create table if not exists relationships (
-            sim_id text not null,
-            target_id text not null,
-            friendship integer not null default 0,
-            romance integer not null default 0,
-            trust integer not null default 50,
-            respect integer not null default 50,
-            admiration integer not null default 0,
-            jealousy integer not null default 0,
-            resentment integer not null default 0,
-            fear integer not null default 0,
-            updated_at real not null,
-            primary key (sim_id, target_id)
-        )
-        """
-    )
-    conn.execute(
-        """
-        create table if not exists emotions (
-            sim_id text primary key,
-            happiness integer not null default 50,
-            anger integer not null default 0,
-            sadness integer not null default 0,
-            stress integer not null default 20,
-            confidence integer not null default 50,
-            current_mood text not null default 'neutral',
-            updated_at real not null
-        )
-        """
-    )
-    conn.execute(
-        """
-        create table if not exists goals (
-            id integer primary key autoincrement,
-            sim_id text not null,
-            goal text not null,
-            status text not null default 'active',
-            importance real not null default 0.5,
-            updated_at real not null
-        )
-        """
-    )
-    conn.execute(
-        """
-        create table if not exists conversations (
-            id integer primary key autoincrement,
-            conversation_id text not null,
-            speaker_id text not null,
-            listener_id text not null,
-            message text not null,
-            response_json text not null,
-            created_at real not null
-        )
-        """
-    )
-    conn.execute(
-        """
-        create table if not exists voice_settings (
-            sim_id text primary key,
-            voice text not null default '',
-            speed real not null default 1.0,
-            pitch real not null default 0.0,
-            provider text not null default '',
-            updated_at real not null
-        )
-        """
-    )
+_LEGACY_COLUMNS = backend_db._LEGACY_COLUMNS
+ensure_column = backend_db.ensure_column
+init_db = backend_db.init_db
 
 
 def sim_name(sim):
@@ -744,7 +338,7 @@ def default_profile(sim):
 
 def save_profile(profile):
     identity = profile.get("identity") or {}
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.sync_sim(
             conn,
             {
@@ -759,22 +353,22 @@ def save_profile(profile):
 
 def get_profile(sim_or_id):
     sid = sim_id(sim_or_id) if isinstance(sim_or_id, dict) else str(sim_or_id)
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.profile_for(conn, sid) or empneon_state.profile_by_name(conn, sid)
 
 
 def get_profile_by_name(name):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.profile_by_name(conn, str(name or ""))
 
 
 def list_profiles(limit=100):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.profiles(conn, int(limit))
 
 
 def upsert_profile(sim):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.sync_sim(conn, sim)
 
 
@@ -792,31 +386,31 @@ def default_relationship():
 
 
 def get_relationship(sim_id_value, target_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.relationship_view(conn, sim_id_value, target_id_value)
 
 
 def get_relationship_diagnostic(sim_id_value, target_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.relationship_diagnostic(conn, sim_id_value, target_id_value)
 
 
 def save_relationship(sim_id_value, target_id_value, relationship):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.save_relationship(
             conn, sim_id_value, target_id_value, relationship or {}
         )
 
 
 def apply_relationship_delta(sim_id_value, target_id_value, deltas):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.apply_relationship_deltas(
             conn, sim_id_value, target_id_value, deltas or {}
         )
 
 
 def relationship_with_payload(sim_id_value, target_id_value, payload_relationship):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         relationship = empneon_state.save_relationship(
             conn, sim_id_value, target_id_value, payload_relationship or {}
         )
@@ -842,12 +436,12 @@ def default_emotion(mood="neutral"):
 
 
 def get_emotion(sim_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.emotion_view(conn, sim_id_value)
 
 
 def save_emotion(sim_id_value, emotion):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.save_emotion(conn, sim_id_value, emotion or {})
 
 
@@ -875,19 +469,27 @@ def update_emotion_from_response(sim_id_value, label):
 
 
 def memories_for_sim(speaker_id, limit=10):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.relevant_memories(conn, speaker_id, "", int(limit))
 
 
-def add_memory(speaker_id, listener_id, summary, importance, emotion="", category="", topic="", location=""):
+def add_memory(
+    speaker_id, listener_id, summary, importance, emotion="", category="", topic="", location=""
+):
     summary = str(summary or "").strip()
     if not summary:
         return
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         empneon_state.add_experience(
             conn, speaker_id, listener_id, summary, location=str(location or "")
         )
-    MEMORY_LOG.info("memory saved sim=%s target=%s importance=%s summary=%s", speaker_id, listener_id, importance, summary)
+    MEMORY_LOG.info(
+        "memory saved sim=%s target=%s importance=%s summary=%s",
+        speaker_id,
+        listener_id,
+        importance,
+        summary,
+    )
 
 
 def memory_summary(sim_id_value, target_id_value):
@@ -900,7 +502,7 @@ def memory_summary(sim_id_value, target_id_value):
 
 def memories_for_pair(sim_id_value, target_id_value, limit=20, query=""):
     pair = {str(sim_id_value), str(target_id_value)}
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         selected = [
             item
             for item in empneon_state.relevant_memories(
@@ -923,477 +525,51 @@ def _rank_memories(memories, limit):
     )[: int(limit)]
 
 
-def clamp_int(value, low=-10, high=10):
-    try:
-        value = int(round(float(value)))
-    except (TypeError, ValueError):
-        value = 0
-    return max(low, min(high, value))
+clamp_int = backend_cognition.clamp_int
+clamp_float = backend_cognition.clamp_float
+sanitize_action_proposal = backend_cognition.sanitize_action_proposal
+validated_relationship_outcome = backend_cognition.validated_relationship_outcome
+normalize_response = backend_cognition.normalize_response
+extract_json = backend_cognition.extract_json
+fallback_response = backend_cognition.fallback_response
 
 
-def clamp_float(value, low=0.0, high=1.0):
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        value = 0.5
-    return max(low, min(high, value))
-
-
-def sanitize_action_proposal(response, actions):
-    allowed = set(available_actions(actions))
-    action = str(response.get("suggested_action") or "none")
-    if action not in allowed:
-        action = "none"
-    dialogue = str(response.get("dialogue") or "").casefold()
-    if action == "flirt" and re.search(
-        r"\bno\b|not interested|rather stay friends|do not want|don't want",
-        dialogue,
-    ):
-        action = "none"
-    response["suggested_action"] = action
-    return response
-
-
-def validated_relationship_outcome(response):
-    value = str(response.get("relationship_outcome") or "none")
-    dialogue = str(response.get("dialogue") or "").casefold()
-    category = str(response.get("response_category") or "")
-    tone_tags = {
-        str(tag).strip().casefold() for tag in response.get("tone_tags") or ()
-    }
-    warm_romance = (
-        category == "romance"
-        and bool(tone_tags & {"warm", "playful", "romantic"})
-        and not tone_tags & {"hesitant", "neutral", "uncertain", "hostile"}
-        and not ROMANTIC_REJECTION.search(dialogue)
-    )
-    if value not in RELATIONSHIP_OUTCOMES:
-        return "none"
-    if value == "friendship_positive" and category not in ("friendly", "funny"):
-        return "none"
-    if value == "friendship_negative" and category not in ("mean", "mischief"):
-        return "none"
-    if value == "romance_positive" and (
-        category != "romance"
-        or not (ROMANTIC_RECIPROCATION.search(dialogue) or warm_romance)
-    ):
-        return "none"
-    if value == "romance_negative" and (
-        category != "romance" or not ROMANTIC_REJECTION.search(dialogue)
-    ):
-        return "none"
-    if (
-        value == "none" and warm_romance
-    ):
-        return "romance_positive"
-    return value
-
-
-def normalize_response(raw, available_categories=None):
-    if not isinstance(raw, dict):
-        raw = {}
-
-    categories = (
-        available_response_categories(available_categories)
-        if available_categories is not None
-        else SOCIAL_CATEGORIES
-    )
-    legacy_categories = {
-        "friendly": "friendly",
-        "friendship": "friendly",
-        "romantic_compliment": "romance",
-        "romantic_invitation": "romance",
-        "hostile": "mean",
-        "informational": "friendly",
-        "neutral": "friendly",
-    }
-    legacy_kind = str(raw.get("player_interaction_kind") or "")
-    raw_category = str(
-        raw.get("response_category")
-        or legacy_kind
-        or "friendly"
-    )
-    category = legacy_categories.get(raw_category, raw_category)
-    if category not in categories:
-        raise ValueError("response_category is invalid or unavailable")
-    tone_tags = raw.get("tone_tags") or []
-    if (
-        not isinstance(tone_tags, list)
-        or len(tone_tags) > 3
-        or len(set(tone_tags)) != len(tone_tags)
-        or any(
-            not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", str(tag))
-            for tag in tone_tags
-        )
-    ):
-        raise ValueError("tone_tags are invalid")
-
-    memory = raw.get("memory")
-    if isinstance(memory, str):
-        memory = {"summary": memory, "importance": 0.5}
-    elif not isinstance(memory, dict):
-        memory = {}
-
-    dialogue = str(raw.get("dialogue") or "").strip() or "..."
-    expressed_emotion = str(
-        raw.get("expressed_emotion") or raw.get("emotion") or "neutral"
-    ).strip().lower()
-    relationship = raw.get("relationship")
-    relationship = relationship if isinstance(relationship, dict) else {}
-    trust = raw.get("trust_delta")
-    if trust is None:
-        trust = relationship.get("trust_delta")
-    response = {
-        "dialogue": dialogue,
-        "expressed_emotion": expressed_emotion,
-        "emotion": expressed_emotion,
-        "intent": str(raw.get("intent") or "respond").strip(),
-        "response_category": category,
-        "tone_tags": [str(tag) for tag in tone_tags],
-        "trust_delta": clamp_int(trust),
-        "memory": {
-            "importance": clamp_float(memory.get("importance")),
-            "summary": str(memory.get("summary") or "").strip(),
-        },
-        "suggested_action": SOCIAL_ACTIONS[category],
-        "animation": SOCIAL_ACTIONS[category],
-    }
-    response["relationship_outcome"] = validated_relationship_outcome(
-        dict(response, relationship_outcome=raw.get("relationship_outcome"))
-    )
-    return response
-
-
-def extract_json(text):
-    text = str(text or "").strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    decoder = json.JSONDecoder()
-    for match in re.finditer(r"\{", text):
-        try:
-            parsed, _end = decoder.raw_decode(text[match.start() :])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end < start:
-        raise ValueError("model did not return a JSON object")
-    candidate = text[start : end + 1]
-    try:
-        return json.loads(candidate)
-    except json.JSONDecodeError:
-        pass
-    try:
-        parsed = ast.literal_eval(candidate)
-        if isinstance(parsed, dict):
-            return parsed
-    except (SyntaxError, ValueError):
-        pass
-    # ponytail: handles common local-model JSON-ish output; replace with schema-constrained decoding if needed.
-    quoted_keys = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)', r'\1"\2"\3', candidate)
-    return json.loads(quoted_keys)
-
-
-def fallback_response(text, available_categories=None):
-    dialogue = str(text or "").strip()
-    if not dialogue or any(marker in dialogue for marker in ("{", "}", "```")):
-        dialogue = "I couldn't form a reliable response. Please try again."
-    categories = (
-        available_response_categories(available_categories)
-        if available_categories is not None
-        else SOCIAL_CATEGORIES
-    )
-    category = classify_social_category(dialogue)
-    if category not in categories:
-        category = "friendly" if "friendly" in categories else categories[0]
-    response = normalize_response(
-        {
-            "dialogue": dialogue,
-            "emotion": "neutral",
-            "intent": "respond",
-            "response_category": category,
-            "relationship_outcome": (
-                "friendship_negative" if category == "mean" else "none"
-            ),
-            "memory": {"importance": 0.0, "summary": ""},
-        },
-        categories,
-    )
-    response["suggested_action"] = response["animation"] = "none"
-    return response
-
-
-class CognitionQueue:
-    def __init__(self, workers, max_queue_size):
-        self._worker_limit = max(1, int(workers))
-        self._scheduler = PriorityScheduler(max_queue_size)
-        self._jobs = {}
-        self._states = {}
-        self._recent = deque(maxlen=64)
-        self._condition = threading.Condition()
-        for index in range(self._worker_limit):
-            worker = threading.Thread(
-                target=self._work,
-                name="empneon-cognition-{}".format(index),
-                daemon=True,
-            )
-            worker.start()
-
-    def __len__(self):
-        return len(self._scheduler)
-
-    def _request_state(self, request, state):
-        return {
-            "request_id": request.id,
-            "actor_id": request.agent_id,
-            "event_type": request.event.type,
-            "urgency": request.urgency,
-            "state": state,
-            "submitted_at": time.time(),
-            "started_at": None,
-        }
-
-    def _record(self, item, state):
-        record = dict(item, state=state, recorded_at=time.time())
-        self._recent.append(record)
-        try:
-            AGENT_LOG.info(
-                "cognition request %s id=%s actor=%s event=%s urgency=%s queue_depth=%s",
-                state,
-                record["request_id"],
-                record["actor_id"],
-                record["event_type"],
-                record["urgency"],
-                len(self._scheduler),
-            )
-        except Exception:
-            pass
-
-    def snapshot(self):
-        with self._condition:
-            states = [dict(item) for item in self._states.values()]
-            return {
-                "worker_limit": self._worker_limit,
-                "running": [
-                    item for item in states if item["state"] == "running"
-                ],
-                "waiting": [
-                    item for item in states if item["state"] == "waiting"
-                ],
-                "recent": [dict(item) for item in self._recent],
-            }
-
-    def run(self, request, work):
-        job = {"work": work, "done": threading.Event(), "result": None, "error": None}
-        with self._condition:
-            self._jobs[request.id] = job
-            state = self._request_state(request, "waiting")
-            self._states[request.id] = state
-            try:
-                self._scheduler.submit(request)
-            except Exception:
-                self._jobs.pop(request.id, None)
-                self._states.pop(request.id, None)
-                raise
-            self._record(state, "submitted")
-            self._condition.notify()
-        if not job["done"].wait(request.deadline_ms / 1000):
-            with self._condition:
-                self._jobs.pop(request.id, None)
-                state = self._states.pop(request.id, None)
-                if state is not None:
-                    self._record(state, "timed_out")
-            raise RequestDeadlineExceeded("cognitive request deadline exceeded")
-        if job["error"] is not None:
-            raise job["error"]
-        return job["result"]
-
-    def _work(self):
-        while True:
-            with self._condition:
-                while len(self._scheduler) == 0:
-                    self._condition.wait()
-                try:
-                    request = self._scheduler.pop()
-                except RequestDeadlineExceeded:
-                    continue
-                job = self._jobs.get(request.id)
-            if job is None:
-                continue
-            with self._condition:
-                state = self._states.get(request.id)
-                if state is not None:
-                    state["state"] = "running"
-                    state["started_at"] = time.time()
-                    self._record(state, "started")
-            try:
-                job["result"] = job["work"]()
-            except Exception as exc:
-                job["error"] = exc
-            finally:
-                with self._condition:
-                    self._jobs.pop(request.id, None)
-                    state = self._states.pop(request.id, None)
-                    if state is not None:
-                        self._record(
-                            state,
-                            "failed" if job["error"] is not None else "completed",
-                        )
-                job["done"].set()
-
-
-class Test10QueueGate:
-    def __init__(self, queue, timeout_seconds=60):
-        self._queue = queue
-        self._timeout_seconds = max(1, int(timeout_seconds))
-        self._lock = threading.Lock()
-        self._active = None
-
-    def _wait_for(self, actor_id, state):
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
-            if any(
-                item["actor_id"] == actor_id
-                for item in self._queue.snapshot()[state]
-            ):
-                return True
-            time.sleep(0.005)
-        return False
-
-    def _run_safely(self, request, work):
-        try:
-            self._queue.run(request, work)
-        except Exception:
-            AGENT_LOG.exception("Test 10 diagnostic queue work failed")
-
-    def arm(self, run_id):
-        run_id = str(run_id or "")
-        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", run_id):
-            raise ValueError("valid Test 10 run_id is required")
-        release = threading.Event()
-        blocker_id = "empneon-test10-{}-blocker".format(run_id)
-        waiting_id = "empneon-test10-{}-waiting".format(run_id)
-        with self._lock:
-            if self._active is not None:
-                raise ValueError("a Test 10 queue gate is already active")
-            self._active = {"run_id": run_id, "release": release}
-
-        blocker = CognitiveRequest(
-            blocker_id,
-            1,
-            WorldEvent("test10_blocker", (blocker_id,)),
-            urgency=0.0,
-            deadline_ms=(self._timeout_seconds + 5) * 1000,
-        )
-
-        def hold_worker():
-            try:
-                self._queue.run(
-                    blocker,
-                    lambda: release.wait(self._timeout_seconds),
-                )
-            finally:
-                with self._lock:
-                    if self._active and self._active["run_id"] == run_id:
-                        self._active = None
-
-        threading.Thread(target=hold_worker, daemon=True).start()
-        if not self._wait_for(blocker_id, "running"):
-            release.set()
-            raise RuntimeError("Test 10 blocker did not start")
-
-        waiting = CognitiveRequest(
-            waiting_id,
-            1,
-            WorldEvent("critical_need", (waiting_id,)),
-            urgency=0.85,
-            deadline_ms=(self._timeout_seconds + 5) * 1000,
-        )
-        threading.Thread(
-            target=self._run_safely,
-            args=(waiting, lambda: None),
-            daemon=True,
-        ).start()
-        if not self._wait_for(waiting_id, "waiting"):
-            release.set()
-            raise RuntimeError("Test 10 ambient request did not wait")
-        return {"blocker": blocker_id, "waiting": waiting_id}
-
-    def release(self, run_id):
-        with self._lock:
-            if self._active is None or self._active["run_id"] != str(run_id or ""):
-                raise ValueError("matching active Test 10 run_id is required")
-            self._active["release"].set()
-        return {"run_id": str(run_id), "released": True}
-
-
-class AgentManager:
+class AgentManager(_AgentManager):
     def __init__(self, limit):
-        self.limit = max(1, int(limit or 1))
-        self._lock = threading.RLock()
-        self._active = {}
+        super().__init__(
+            limit,
+            profile_lookup=lambda sim: upsert_profile(sim),
+            clock=lambda: now(),
+            log_info=lambda *args: AGENT_LOG.info(*args),
+        )
 
-    def wake_agent(self, sim, reason="request", priority=3, timeout=None):
-        profile = upsert_profile(sim)
-        sid = profile["id"]
-        with self._lock:
-            if sid in self._active:
-                self._active[sid]["refs"] += 1
-                self._active[sid]["last_reason"] = reason
-                AGENT_LOG.info("agent reused sim=%s reason=%s refs=%s", sid, reason, self._active[sid]["refs"])
-                return profile
 
-        with self._lock:
-            self._active[sid] = {
-                "sim_id": sid,
-                "name": profile["name"],
-                "state": "active",
-                "priority": int(priority or 3),
-                "refs": 1,
-                "woke_at": now(),
-                "last_reason": reason,
-            }
-        AGENT_LOG.info("agent woke sim=%s name=%s reason=%s priority=%s", sid, profile["name"], reason, priority)
-        return profile
+class CognitionQueue(_CognitionQueue):
+    def __init__(self, workers, max_queue_size):
+        super().__init__(
+            workers,
+            max_queue_size,
+            clock=lambda: time.time(),
+            log_info=lambda *args: AGENT_LOG.info(*args),
+        )
 
-    def sleep_agent(self, sim_id_value, reason="complete"):
-        release = False
-        with self._lock:
-            active = self._active.get(str(sim_id_value))
-            if not active:
-                return False
-            active["refs"] -= 1
-            if active["refs"] <= 0:
-                self._active.pop(str(sim_id_value), None)
-                release = True
-        if release:
-            AGENT_LOG.info("agent slept sim=%s reason=%s", sim_id_value, reason)
-        return True
 
-    @contextlib.contextmanager
-    def session(self, sim, reason="request", priority=3):
-        profile = self.wake_agent(sim, reason=reason, priority=priority)
-        try:
-            yield profile
-        finally:
-            self.sleep_agent(profile["id"], reason="session complete")
-
-    def get_active_agents(self):
-        with self._lock:
-            return [dict(value) for value in self._active.values()]
+class Test10QueueGate(_Test10QueueGate):
+    def __init__(self, queue, timeout_seconds=60):
+        super().__init__(
+            queue,
+            timeout_seconds,
+            monotonic=lambda: time.monotonic(),
+            sleep=lambda seconds: time.sleep(seconds),
+            log_exception=lambda *args: AGENT_LOG.exception(*args),
+        )
 
 
 AGENTS = AgentManager(ACTIVE_AGENT_LIMIT)
-COGNITION_QUEUE = CognitionQueue(ACTIVE_AGENT_LIMIT, max(8, ACTIVE_AGENT_LIMIT * 4))
+COGNITION_QUEUE = CognitionQueue(
+    ACTIVE_AGENT_LIMIT,
+    max(8, ACTIVE_AGENT_LIMIT * 4),
+)
 TEST10_QUEUE_GATE = Test10QueueGate(COGNITION_QUEUE)
 
 
@@ -1414,6 +590,14 @@ def configured_model(task="large"):
     return str(task_model_config(task)["model"])
 
 
+def run_async(awaitable):
+    loop = getattr(ASYNC_LOOP, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        ASYNC_LOOP.loop = loop
+    return loop.run_until_complete(awaitable)
+
+
 def llm_chat(messages, temperature=None, schema=None, schema_name="response", task="large"):
     del schema_name  # Core providers use the schema itself, not an adapter label.
     task = str(getattr(GENERATION_CONTEXT, "task", task) or task)
@@ -1423,7 +607,7 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
     )
     router = provider_router()
     if hasattr(router, "generate_result"):
-        result = asyncio.run(
+        result = run_async(
             router.generate_result(
                 task,
                 core_messages,
@@ -1433,7 +617,7 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
         )
     else:
         result = GenerationResult(
-            asyncio.run(
+            run_async(
                 router.generate(
                     task,
                     core_messages,
@@ -1448,116 +632,25 @@ def llm_chat(messages, temperature=None, schema=None, schema_name="response", ta
     return result.content
 
 
-_FULL_EXCHANGE_QUERY = re.compile(
-    r"\b(?:what (?:did (?:we|you|i) (?:say|discuss|talk about)|was said)"
-    r"|how did\b|how was (?:our|the) (?:conversation|interaction))",
-    re.IGNORECASE,
-)
+_FULL_EXCHANGE_QUERY = backend_cognition._FULL_EXCHANGE_QUERY
 
 
 def select_recalled_memories(query, candidates):
-    if any(candidate.get("facts") for candidate in candidates) and not (
-        _FULL_EXCHANGE_QUERY.search(str(query or ""))
-    ):
-        candidates = [
-            candidate for candidate in candidates if candidate.get("facts")
-        ]
-    blocks = []
-    aliased = [
-        ("m{}".format(index), candidate)
-        for index, candidate in enumerate(candidates, start=1)
-    ]
-    for memory_id, candidate in aliased:
-        facts = " | ".join(
-            "{}: {}".format(
-                fact.get("actor_id") or "unknown",
-                fact.get("statement") or "",
-            )
-            for fact in candidate.get("facts") or []
-            if isinstance(fact, dict)
-        )
-        blocks.append(
-            "MEMORY {event_id}\nFACTS: {facts}\nPLAYER: {message}\nSIM: {dialogue}".format(
-                event_id=memory_id,
-                facts=facts or "none",
-                message=candidate.get("message") or "",
-                dialogue=candidate.get("dialogue") or "",
-            )
-        )
-    prompt = """Current message:
-{query}
-
-Candidate memories:
-{candidates}
-
-Select zero to three event_ids that provide evidence relevant to the current message.
-Match meaning, not exact wording.
-Prefer attributed facts for plans, preferences, promises, identity, locations, and past events.
-Use full exchanges only when the player asks what was said or how an interaction occurred.
-A previous answer to a memory question without supporting facts is not authoritative evidence.
-Related conversation that does not contain the requested answer is not evidence.
-Return exactly {{"event_ids":[]}} when no memory is relevant.
-""".format(
-        query=str(query),
-        candidates="\n\n".join(blocks),
+    return backend_cognition.select_recalled_memories(
+        query,
+        candidates,
+        lambda *args, **kwargs: llm_chat(*args, **kwargs),
     )
-    content = llm_chat(
-        [
-            {
-                "role": "system",
-                "content": (
-                    "Select relevant Sims memories. "
-                    'Return exactly {"event_ids":["<memory_id>"]} with up to three '
-                    "candidate IDs, or an empty event_ids list. No prose."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0,
-        schema=MEMORY_SELECTOR_SCHEMA,
-        schema_name="sims_memory_selector",
-        task="small",
-    )
-    try:
-        raw = extract_json(content)
-    except (ValueError, json.JSONDecodeError):
-        return []
-    event_ids = raw.get("event_ids")
-    if not isinstance(event_ids, list) or len(event_ids) > 3:
-        return []
-    if any(not isinstance(event_id, str) for event_id in event_ids):
-        return []
-    if len(set(event_ids)) != len(event_ids):
-        return []
-    by_id = dict(aliased)
-    if any(event_id not in by_id for event_id in event_ids):
-        return []
-    selected = [by_id[event_id] for event_id in event_ids]
-    grounded = [item for item in selected if item.get("facts")]
-    if grounded:
-        selected = grounded
-    result = [dict(item, explicit=True) for item in selected]
-    if result and result[0].get("facts"):
-        result[0]["semantic_primary"] = True
-    return result
 
 
 def semantic_recalled_memories(query, candidates, fallback):
-    if not candidates:
-        return fallback
-    try:
-        selected = select_recalled_memories(query, candidates)
-    except (ProviderError, ValueError, json.JSONDecodeError, OSError):
-        PROVIDER_LOG.warning(
-            "semantic memory selection failed; using deterministic recall"
-        )
-        return fallback
-    if (
-        any(item.get("facts") for item in fallback)
-        and not any(item.get("facts") for item in selected)
-    ):
-        return fallback
-    return selected or fallback
+    return backend_cognition.semantic_recalled_memories(
+        query,
+        candidates,
+        fallback,
+        select_recalled_memories,
+        lambda *args, **kwargs: PROVIDER_LOG.warning(*args, **kwargs),
+    )
 
 
 def cognition_routes(resolvers):
@@ -1586,1239 +679,66 @@ def cognition_routes(resolvers):
     return tuple(routes)
 
 
-def _actor_snapshot(payload, role):
-    other = "listener" if role == "speaker" else "speaker"
-    actor_payload = dict(payload)
-    actor_payload.pop("sim", None)
-    actor_payload["speaker"] = payload.get(role) or {}
-    actor_payload["listener"] = payload.get(other) or {}
-    actor_payload["relationship"] = (
-        payload.get("relationship")
-        if role == "speaker"
-        else payload.get("listener_relationship")
-    ) or {}
-    return dataclasses.asdict(Sims4Adapter(actor_payload).agent_state())
+_actor_snapshot = backend_cognition._actor_snapshot
+build_context = backend_cognition.build_context
+_exchange_text = backend_cognition._exchange_text
+_recalled_memory_text = backend_cognition._recalled_memory_text
+build_chat_prompt = backend_cognition.build_chat_prompt
+
+
+_identity_gender = backend_cognition._identity_gender
+_mask_quoted_dialogue = backend_cognition._mask_quoted_dialogue
+_direct_partner_terms = backend_cognition._direct_partner_terms
+_direct_partner_prefix = backend_cognition._direct_partner_prefix
+response_has_role_confusion = backend_cognition.response_has_role_confusion
+_dialogue_words = backend_cognition._dialogue_words
+_dialogue_similarity = backend_cognition._dialogue_similarity
+explicit_social_category = backend_cognition.explicit_social_category
+classify_social_category = backend_cognition.classify_social_category
+response_category_issue = backend_cognition.response_category_issue
+classify_player_interaction = backend_cognition.classify_player_interaction
+_is_romantic_request = backend_cognition._is_romantic_request
+response_grounding_issue = backend_cognition.response_grounding_issue
+
+
+_supported_recall_facts = backend_cognition._supported_recall_facts
+_CODEWORD_FACT = backend_cognition._CODEWORD_FACT
+_codeword_fact_parts = backend_cognition._codeword_fact_parts
+_attributed_fact_text = backend_cognition._attributed_fact_text
+_recalled_fact_dialogue = backend_cognition._recalled_fact_dialogue
+_PREFERENCE_FACT = backend_cognition._PREFERENCE_FACT
+_PROMISE_FACT = backend_cognition._PROMISE_FACT
+_preference_issue = backend_cognition._preference_issue
+_promise_issue = backend_cognition._promise_issue
+_supported_recall_issue = backend_cognition._supported_recall_issue
+_memory_supports_question = backend_cognition._memory_supports_question
 
-
-def build_context(
-    payload,
-    speaker_profile,
-    listener_profile,
-    relationship,
-    emotions,
-    recalled_memories,
-):
-    speaker = payload.get("speaker") or {}
-    listener = payload.get("listener") or {}
-    speaker_identity = speaker.get("identity") or {}
-    listener_identity = listener.get("identity") or {}
-    speaker_state = _actor_snapshot(payload, "speaker")
-    listener_state = _actor_snapshot(payload, "listener")
-    return {
-        "speaker": speaker_profile,
-        "listener": listener_profile,
-        "relationship": relationship,
-        "emotions": emotions,
-        "recalled_memories": recalled_memories,
-        "location": payload.get("location") or "unknown",
-        "nearby_sims": payload.get("nearby_sims") or [],
-        "message": payload.get("message") or "",
-        "speaker_identity": speaker_identity,
-        "listener_identity": listener_identity,
-        "speaker_state": speaker_state,
-        "listener_state": listener_state,
-        "speaker_traits": (
-            speaker_identity.get("traits") or []
-            if isinstance(speaker_identity, dict) and "traits" in speaker_identity
-            else speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or []
-        ),
-        "listener_traits": (
-            listener_identity.get("traits") or []
-            if isinstance(listener_identity, dict) and "traits" in listener_identity
-            else listener.get("traits") or listener_profile.get("identity", {}).get("traits") or []
-        ),
-        "game_state": {
-            "needs": speaker.get("needs") or {},
-            "moodlets": speaker.get("moodlets") or [],
-            "aspiration": speaker.get("aspiration") or "unknown",
-            "career": speaker.get("career") or "unknown",
-            "skills": speaker.get("skills") or {},
-            "household": speaker.get("household") or {},
-        },
-    }
-
-
-def _exchange_text(turns, context, *, limit, max_chars):
-    speaker_name = context["speaker"].get("name") or "Unknown Sim"
-    listener_name = context["listener"].get("name") or "Unknown Sim"
-    blocks = []
-    for turn in list(turns or [])[-limit:]:
-        if turn.get("speaker_id") == context.get("speaker_id"):
-            asker, respondent = listener_name, speaker_name
-        else:
-            asker, respondent = speaker_name, listener_name
-        blocks.append(
-            "{}: {}\n{}: {}".format(
-                asker,
-                turn.get("message") or "",
-                respondent,
-                turn.get("dialogue") or "",
-            )
-        )
-    selected = []
-    used = 0
-    for block in reversed(blocks):
-        cost = len(block) + 1
-        if used + cost > max_chars:
-            break
-        selected.append(block)
-        used += cost
-    return "\n".join(reversed(selected)) or "None yet"
-
-
-def _recalled_memory_text(context):
-    names = {
-        context.get("speaker_id"): context["speaker"].get("name") or "Unknown Sim",
-        context.get("listener_id"): context["listener"].get("name") or "Unknown Sim",
-    }
-    lines = []
-    for memory in list(context.get("recalled_memories") or [])[-3:]:
-        if memory.get("explicit"):
-            asker_id = (
-                context.get("listener_id")
-                if memory.get("speaker_id") == context.get("speaker_id")
-                else context.get("speaker_id")
-            )
-            message = str(memory.get("message") or "").strip()
-            if message:
-                lines.append("{} said: {}".format(names.get(asker_id, asker_id), message))
-        for fact in memory.get("facts") or []:
-            actor_id = str(fact.get("actor_id") or "")
-            statement = str(fact.get("statement") or "").strip()
-            if statement:
-                lines.append("{} said: {}".format(names.get(actor_id, actor_id), statement))
-    return "\n".join(lines) or "None yet"
-
-
-def build_chat_prompt(payload, context):
-    speaker_profile = context["speaker"]
-    listener_profile = context["listener"]
-    relationship = context["relationship"]
-    emotions = context["emotions"]
-    recalled_history = _recalled_memory_text(context)
-    nearby = ", ".join(sim_name(item) if isinstance(item, dict) else str(item) for item in context["nearby_sims"]) or "none"
-    game_state = context["game_state"]
-    household = game_state["household"]
-    household_name = household.get("name") if isinstance(household, dict) else household
-    goals = speaker_profile.get("goals") or []
-    speaker_traits = ", ".join(
-        str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
-        for item in context["speaker_traits"]
-    ) or "unknown"
-    listener_traits = ", ".join(
-        str(item.get("label") or item.get("id") or "unknown") if isinstance(item, dict) else str(item)
-        for item in context["listener_traits"]
-    ) or "unknown"
-    conversation_marker = "__EMPNEON_CURRENT_SOCIAL__"
-    categories = available_response_categories(
-        payload.get("available_response_categories")
-    )
-    if payload.get("available_response_categories") is None:
-        categories = SOCIAL_CATEGORIES
-
-    prompt = """Role assignment:
-You are {speaker_name}, the Speaker.
-{listener_name} is the Listener and wrote the message below.
-Reply as {speaker_name} to {listener_name}.
-Never address the Listener by the Speaker's name.
-Do not include the Speaker's name in dialogue.
-
-Speaker:
-{speaker_name}
-Speaker identity: {speaker_identity}
-Traits: {speaker_traits}
-Personality: {personality}
-Values: {values}
-Behavior rules: {rules}
-Knowledge: {knowledge}
-Goals: {goals}
-Needs: {needs}
-Moodlets: {moodlets}
-Aspiration: {aspiration}
-Career: {career}
-Skills: {skills}
-Household: {household}
-
-Listener:
-{listener_name}
-Listener identity: {listener_identity}
-Traits: {listener_traits}
-
-Speaker current state:
-{speaker_state}
-
-Listener current state:
-{listener_state}
-
-Relationship:
-{relationship}
-
-Current emotion:
-{emotions}
-
-Recalled long-term history:
-{recalled_history}
-
-Location:
-{location}
-
-Nearby Sims:
-{nearby}
-
-Incoming social category: {incoming_category}
-Available response categories: {available_response_categories}
-Choose the Speaker's response category independently from the incoming category.
-Use exactly one primary response category. Tone tags may blend style, mood, and personality but do
-not select additional actions.
-The Speaker may accept, reject, joke, retaliate, or deflect according to both actor states.
-Do not return friendship, romance, attraction, or action fields; the adapter and game own them.
-
-Current Empneon Social:
-{recent_conversation}
-
-Grounding rules:
-- Answer the current message without restating or closely paraphrasing it.
-- Keep the reply distinct from every recent player input and Speaker reply.
-- Advance the conversation with a new reaction, detail, question, or decision instead of reusing
-  an earlier opening or sentence frame.
-- Use the Speaker's traits to shape tone, preferences, confidence, boundaries, and choices.
-- Combine traits with current mood, needs, relationship, recalled history, and the current message.
-- Do not merely name or caricature traits.
-- Relationship attraction, when present, is the Speaker's attraction toward the Listener:
-  -1 is strong aversion, 0 is neutral, and 1 is strong attraction.
-- Attraction may shape warmth, hesitation, boundaries, or romantic openness, but
-  it does not imply consent or require flirtation and never overrides identity, mood, memory, history, or the message.
-- A close or romantic relationship and compatible traits may inspire a fresh, natural term of
-  endearment, but never require one.
-- Do not use a term of endearment for neutral or hostile relationships, rejected romance, or when
-  identity or context makes it inappropriate.
-- Use gendered relationship terms only when supported by supplied identity.
-- Do not guess gender or age when identity is unknown.
-- A fact about shared history is supported only when it appears in Recalled long-term history or
-  something the Listener said in the current Empneon Social.
-- Treat every recalled statement as attributed to the Sim whose name prefixes it; do not transfer
-  one actor's traits, preferences, promises, or identity to the other actor.
-- The Speaker's earlier generated replies in the current Empneon Social provide conversational
-  tone, but are not evidence that a fact is true.
-- When asked for an unsupported fact, do not guess. Say naturally that you do not know or do not
-  remember.
-- When the Listener supplies or corrects a concrete fact, use its exact value.
-- When asked about a supported plan or agreement, answer with the exact activity, date, and time
-  available in the evidence.
-- Needs are context, not required topics. A satisfied need is normally silent; a low need may
-  motivate a gentle suggestion; a critical need should strongly influence urgency and may redirect
-  the conversation, but the Speaker may still continue the current topic.
-- Express needs naturally in-world. Do not recite need names, status labels, or numeric values.
-
-Player says:
-{message}
-""".format(
-        speaker_name=speaker_profile.get("name") or "Unknown Sim",
-        speaker_identity=dumps(context["speaker_identity"]),
-        speaker_traits=speaker_traits,
-        personality=dumps(speaker_profile.get("personality") or {}),
-        values=", ".join(speaker_profile.get("values") or []) or "unknown",
-        rules=", ".join(speaker_profile.get("behavioral_rules") or []) or "none",
-        knowledge=dumps(speaker_profile.get("knowledge") or {}),
-        goals=", ".join(str(goal) for goal in goals) or "none",
-        needs=dumps(game_state["needs"]),
-        moodlets=", ".join(str(item) for item in game_state["moodlets"]) or "none",
-        aspiration=game_state["aspiration"],
-        career=game_state["career"],
-        skills=dumps(game_state["skills"]),
-        household=household_name or "unknown",
-        listener_name=listener_profile.get("name") or "Unknown Sim",
-        listener_identity=dumps(context["listener_identity"]),
-        listener_traits=listener_traits,
-        speaker_state=dumps(context["speaker_state"]),
-        listener_state=dumps(context["listener_state"]),
-        relationship=dumps(relationship),
-        emotions=dumps(emotions),
-        recent_conversation=conversation_marker,
-        recalled_history=recalled_history,
-        location=context["location"],
-        nearby=nearby,
-        incoming_category=payload.get("incoming_category") or "friendly",
-        available_response_categories=", ".join(categories) or "none",
-        message=payload.get("message") or "",
-    )
-    prompt_chars = max(
-        0,
-        (
-            int(context.get("max_context_tokens") or 4096)
-            - int(context.get("max_completion_tokens") or 350)
-        )
-        * 3
-        - len(prompt)
-        + len(conversation_marker),
-    )
-    recent_conversation = _exchange_text(
-        context.get("conversation"),
-        context,
-        limit=6,
-        max_chars=min(6000, prompt_chars),
-    )
-    return prompt.replace(conversation_marker, recent_conversation)
-
-
-def _identity_gender(identity):
-    value = identity.get("gender") if isinstance(identity, dict) else identity
-    if isinstance(value, dict):
-        value = value.get("key") or value.get("value") or value.get("label")
-    tokens = set(re.findall(r"[a-z]+", str(value or "").casefold()))
-    if tokens & {"female", "woman", "girl"}:
-        return "female"
-    if tokens & {"male", "man", "boy"}:
-        return "male"
-    return "unknown"
-
-
-def _mask_quoted_dialogue(dialogue):
-    masked = re.sub(
-        r'"[^"]*"|“[^”]*”|‘[^’]*’',
-        " ",
-        str(dialogue or "").casefold(),
-    )
-    characters = list(masked)
-    opening = None
-    for index, character in enumerate(characters):
-        if character != "'":
-            continue
-        previous = characters[index - 1] if index else " "
-        following = characters[index + 1] if index + 1 < len(characters) else " "
-        if opening is None and not previous.isalnum():
-            opening = index
-        elif opening is not None and not following.isalnum():
-            characters[opening : index + 1] = " " * (index + 1 - opening)
-            opening = None
-    return "".join(characters)
-
-
-def _direct_partner_terms(dialogue):
-    terms = {
-        "boyfriend": "boyfriend",
-        "boyfriends": "boyfriend",
-        "girlfriend": "girlfriend",
-        "girlfriends": "girlfriend",
-    }
-    results = []
-    unquoted = _mask_quoted_dialogue(dialogue).replace("’", "'")
-    for sentence in re.split(r"[.!?]+", unquoted):
-        tokens = re.findall(r"[a-z]+(?:'[a-z]+)?", sentence)
-        for index, token in enumerate(tokens):
-            term = terms.get(token)
-            if term and _direct_partner_prefix(tokens[:index]):
-                results.append(term)
-    return results
-
-
-def _direct_partner_prefix(prefix):
-    ownership = bool(prefix) and prefix[-1] in ("my", "a")
-    if prefix in (["let's", "be"], ["be", "my"], ["become", "my"]):
-        return True
-    if prefix in (["please", "be", "my"], ["please", "become", "my"]):
-        return True
-    if not ownership:
-        return False
-    stem = prefix[:-1]
-    if stem == ["you're"]:
-        return True
-    if stem[0:2] == ["you", "are"]:
-        modifiers = stem[2:]
-        return not modifiers or modifiers in (
-            ["definitely"],
-            ["certainly"],
-            ["really"],
-            ["truly"],
-        )
-    if stem in (
-        ["you", "were"],
-        ["you", "will", "be"],
-        ["you", "would", "be"],
-        ["you", "could", "be"],
-        ["you", "can", "be"],
-        ["you", "have", "been"],
-        ["you", "have", "always", "been"],
-    ):
-        return True
-    if len(stem) >= 2 and stem[0] in ("will", "would", "could", "can"):
-        if stem[1] != "you":
-            return False
-        proposal = stem[2:]
-        if proposal[0:1] == ["please"]:
-            proposal = proposal[1:]
-        return proposal in (
-            ["be"],
-            ["become"],
-            ["like", "to", "be"],
-            ["like", "to", "become"],
-            ["want", "to", "be"],
-            ["want", "to", "become"],
-        )
-    return stem in (
-        ["i", "want", "you", "to", "be"],
-        ["i", "want", "you", "to", "become"],
-        ["i", "would", "like", "you", "to", "be"],
-        ["i", "would", "like", "you", "to", "become"],
-    )
-
-
-def response_has_role_confusion(response, context):
-    dialogue = str(response.get("dialogue") or "")
-    normalized_dialogue = dialogue.casefold().replace("’", "'")
-    words = set(re.findall(r"\w+", normalized_dialogue))
-    speaker_name = str(context.get("speaker", {}).get("name") or "").casefold()
-    speaker = set(re.findall(r"\w+", speaker_name))
-    listener = set(
-        re.findall(
-            r"\w+", str(context.get("listener", {}).get("name") or "").casefold()
-        )
-    )
-    asks_speaker_name = re.search(
-        r"\byour (?:full )?name\b",
-        str(context.get("message") or "").casefold(),
-    )
-    self_identifies = any(
-        re.search(
-            r"\b(?:my name is|i am|i'm|call me)\s+{}\b".format(re.escape(name)),
-            normalized_dialogue,
-        )
-        for name in (speaker_name, speaker_name.split()[0] if speaker_name else "")
-        if name
-    )
-    if (
-        {word for word in speaker - listener if len(word) > 1} & words
-        and not asks_speaker_name
-        and not self_identifies
-    ):
-        return True
-    gender = _identity_gender(context.get("listener_identity") or {})
-    expected = "boyfriend" if gender == "male" else "girlfriend"
-    return any(gender == "unknown" or term != expected for term in _direct_partner_terms(dialogue))
-
-
-def _dialogue_words(value, context):
-    names = set()
-    for role in ("speaker", "listener"):
-        names.update(
-            re.findall(
-                r"[a-z0-9']+",
-                str(context.get(role, {}).get("name") or "").casefold(),
-            )
-        )
-    return [
-        word
-        for word in re.findall(r"[a-z0-9']+", str(value or "").casefold())
-        if word not in names
-    ]
-
-
-def _dialogue_similarity(left, right):
-    if not left or not right:
-        return 0.0
-    matcher = SequenceMatcher(None, left, right, autojunk=False)
-    sequence_ratio = matcher.ratio()
-    overlap_ratio = sum((Counter(left) & Counter(right)).values()) / min(
-        len(left), len(right)
-    )
-    blocks = [block.size for block in matcher.get_matching_blocks() if block.size]
-    longest_length = max(len(left), len(right))
-    secondary_coverage = (sum(blocks) - max(blocks, default=0)) / longest_length
-    total_matching_coverage = sum(blocks) / longest_length
-    if secondary_coverage >= 0.25 and total_matching_coverage >= 0.55:
-        return 1 - (1 - sequence_ratio) * (1 - overlap_ratio)
-    return max(sequence_ratio, overlap_ratio)
-
-
-def explicit_social_category(message):
-    value = str(message or "").casefold()
-    patterns = (
-        (
-            "romance",
-            r"\b(date|kiss|marry|girlfriend|boyfriend|attracted|attractive|beautiful|"
-            r"gorgeous|handsome|hot|sexy|love you|feelings for|like you romantically)\b",
-        ),
-        ("mean", r"\b(hate|despise|idiot|stupid|insufferable|leave me alone|go away)\b"),
-        (
-            "mischief",
-            r"\b(prank|trick|scare|deceive|pretend|lie|lies|lied|lying|mess with)\b",
-        ),
-        ("funny", r"\b(jokes?|funn(?:y|ier|iest)|hilarious|laugh|pun|comedy)\b"),
-    )
-    return next(
-        (category for category, pattern in patterns if re.search(pattern, value)),
-        None,
-    )
-
-
-def classify_social_category(message):
-    return explicit_social_category(message) or "friendly"
-
-
-def response_category_issue(response):
-    dialogue = str(response.get("dialogue") or "")
-    category = str(response.get("response_category") or "")
-    explicit = explicit_social_category(dialogue)
-    if explicit is not None and explicit != category:
-        return "explicit {}".format(explicit)
-    tone = {
-        str(tag).casefold() for tag in response.get("tone_tags") or []
-    }
-    tone.add(
-        str(
-            response.get("expressed_emotion")
-            or response.get("emotion")
-            or ""
-        ).casefold()
-    )
-    if (
-        category == "romance"
-        and explicit is None
-        and tone & {"hesitant", "uncertain", "hostile"}
-    ):
-        return "non-romantic tone"
-    return ""
-
-
-def classify_player_interaction(message):
-    if _is_romantic_request(message):
-        return "romantic_invitation"
-    category = explicit_social_category(message)
-    if category == "romance":
-        return "romantic_compliment"
-    if category == "mean":
-        return "hostile"
-    value = str(message or "").casefold()
-    if "?" in value:
-        return "informational"
-    if re.search(r"\b(friend|friends|nice|kind|hello|hi|thank|glad to meet)\b", value):
-        return "friendly"
-    return "neutral"
-
-
-def _is_romantic_request(message):
-    return bool(
-        re.search(
-            r"\b(go(?:ing)? out|go on a date|on a date with|date me|"
-            r"take (?:you|them|him|her) on a date|"
-            r"be my (?:girl|boy)friend|be (?:girl|boy)friends|kiss me|marry me|"
-            r"be together)\b",
-            str(message or "").casefold(),
-        )
-    )
-
-
-def response_grounding_issue(payload, response, context):
-    message = str(payload.get("message") or "").casefold()
-    dialogue = str(response.get("dialogue") or "").casefold()
-    message_words = _dialogue_words(message, context)
-    dialogue_words = _dialogue_words(dialogue, context)
-    if (
-        len(message_words) >= 6
-        and len(dialogue_words) >= 4
-        and _dialogue_similarity(message_words, dialogue_words) >= 0.72
-    ):
-        return "respond naturally; do not copy the player's message"
-    for turn in context.get("conversation") or []:
-        previous_message = _dialogue_words(turn.get("message"), context)
-        if (
-            len(previous_message) >= 6
-            and len(dialogue_words) >= 4
-            and _dialogue_similarity(dialogue_words, previous_message) >= 0.72
-        ):
-            return "do not copy a previous player message"
-        previous_reply = _dialogue_words(turn.get("dialogue"), context)
-        if (
-            len(previous_reply) >= 4
-            and len(dialogue_words) >= 4
-            and previous_message != message_words
-            and _dialogue_similarity(dialogue_words, previous_reply) >= 0.72
-        ):
-            return "do not reuse a previous reply for a different message"
-    listener_name = str(context.get("listener", {}).get("name") or "").strip()
-    asks_listener_name = re.search(
-        r"\b(?:what(?:'s| is) your (?:full )?name|tell me your (?:full )?name)\b",
-        dialogue.replace("’", "'"),
-    )
-    if listener_name and asks_listener_name:
-        return "do not ask for the known Listener's name"
-    supported_recall_issue = _supported_recall_issue(payload, response, context)
-    if supported_recall_issue:
-        return supported_recall_issue
-    asks_recalled_fact = analyze_recall_query(message).explicit
-    has_evidence = _memory_supports_question(message, context)
-    uncertainty = (
-        "don't know",
-        "do not know",
-        "not sure",
-        "don't remember",
-        "do not remember",
-        "what are you talking",
-    )
-    if asks_recalled_fact and has_evidence and any(phrase in dialogue for phrase in uncertainty):
-        return "use the supporting memory instead of denying it"
-    if asks_recalled_fact and not has_evidence and not any(
-        phrase in dialogue for phrase in uncertainty
-    ):
-        return "state uncertainty because no supporting memory exists"
-    return ""
-
-
-def _supported_recall_facts(message, context):
-    query = analyze_recall_query(str(message or ""))
-    memories = list(context.get("recalled_memories") or [])
-    primary_keys = {
-        (
-            str(fact.get("actor_id") or ""),
-            str(fact.get("statement") or "").strip(),
-        )
-        for memory in memories
-        if memory.get("semantic_primary") is True
-        for fact in memory.get("facts") or []
-        if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
-    }
-    identifiers = {
-        match.group(0).casefold()
-        for match in re.finditer(
-            r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
-            str(message or ""),
-            re.IGNORECASE,
-        )
-    }
-    facts = [
-        {
-            "actor_id": str(fact.get("actor_id") or ""),
-            "statement": str(fact.get("statement") or "").strip(),
-        }
-        for memory in memories
-        for fact in memory.get("facts") or []
-        if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
-    ]
-    owner_id = empneon_state.codeword_recall_owner_id(
-        message,
-        str(context.get("speaker_id") or ""),
-        str(context.get("listener_id") or ""),
-    )
-    if owner_id is not None:
-        facts = [
-            fact for fact in facts if fact["actor_id"] == owner_id
-        ]
-    if identifiers:
-        facts = [
-            fact
-            for fact in facts
-            if identifiers
-            <= {
-                match.group(0).casefold()
-                for match in re.finditer(
-                    r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
-                    fact["statement"],
-                    re.IGNORECASE,
-                )
-            }
-        ]
-    primary = [
-        fact
-        for fact in facts
-        if (fact["actor_id"], fact["statement"]) in primary_keys
-    ]
-    if not query.explicit:
-        return primary
-    supporting = [
-        fact for fact in facts if fact_supports_query(fact, query)
-    ]
-    if supporting:
-        return supporting
-    question_terms = set(_dialogue_words(message, context))
-    lexical = [
-        fact
-        for fact in facts
-        if question_terms
-        & set(_dialogue_words(fact["statement"], context))
-    ]
-    primary_lexical = [fact for fact in lexical if fact in primary]
-    if primary_lexical:
-        return primary_lexical
-    return lexical or primary
-
-
-_CODEWORD_FACT = re.compile(
-    r"\b(?P<possessive>my|our|your)\s+(?:secret\s+)?code\s*word\s+"
-    r"(?:is|are)\s+(?P<identifier>(?=[A-Z0-9-]*\d)"
-    r"[A-Z0-9]+(?:-[A-Z0-9]+)+)\b",
-    re.IGNORECASE,
-)
-
-
-def _codeword_fact_parts(fact):
-    match = _CODEWORD_FACT.search(str(fact.get("statement") or ""))
-    if match is None:
-        return None
-    return match.group("possessive").casefold(), match.group("identifier")
-
-
-def _attributed_fact_text(fact, context):
-    actor_id = str(fact.get("actor_id") or "")
-    names = {
-        context.get("speaker_id"): context["speaker"].get("name")
-        or "Unknown actor",
-        context.get("listener_id"): context["listener"].get("name")
-        or "Unknown actor",
-    }
-    actor = names.get(actor_id, actor_id or "Unknown actor")
-    parts = _codeword_fact_parts(fact)
-    if parts is not None:
-        possessive, identifier = parts
-        if possessive == "our":
-            return "The shared code word is {}.".format(identifier)
-        return "{}'s code word is {}.".format(actor, identifier)
-    return "{} said: {}".format(actor, fact["statement"])
-
-
-def _recalled_fact_dialogue(fact, context, message=""):
-    actor_id = str(fact.get("actor_id") or "")
-    statement = fact["statement"]
-    parts = _codeword_fact_parts(fact)
-    owner_id = empneon_state.codeword_recall_owner_id(
-        message,
-        str(context.get("speaker_id") or ""),
-        str(context.get("listener_id") or ""),
-    )
-    if parts is not None and owner_id is not None:
-        pronoun = (
-            "My"
-            if owner_id == str(context.get("speaker_id") or "")
-            else "Our"
-        )
-        return "{} code word is {}.".format(pronoun, parts[1])
-    if actor_id == context.get("listener_id"):
-        return 'You told me: "{}"'.format(statement)
-    if actor_id == context.get("speaker_id"):
-        return 'I remember saying: "{}"'.format(statement)
-    names = {
-        context.get("speaker_id"): context["speaker"].get("name") or "",
-        context.get("listener_id"): context["listener"].get("name") or "",
-    }
-    actor = names.get(actor_id, actor_id)
-    if actor:
-        return '{} said: "{}"'.format(actor, statement)
-    return 'I remember this: "{}"'.format(statement)
-
-
-_PREFERENCE_FACT = re.compile(
-    r"\bi prefer (?P<preferred>.+?) to (?P<alternative>.+?)(?:[.!?]|$)",
-    re.IGNORECASE,
-)
-_PROMISE_FACT = re.compile(
-    r"\bi promise(?: that)? (?P<commitment>.+?)(?:[.!?]|$)",
-    re.IGNORECASE,
-)
-
-
-def _preference_issue(facts, dialogue, context):
-    preferences = [
-        match
-        for fact in facts
-        if (
-            match := _PREFERENCE_FACT.search(
-                str(fact.get("statement") or "")
-            )
-        )
-    ]
-    if not preferences:
-        return ""
-    statements = re.split(r"(?<=[.!?])\s+", str(dialogue or ""))
-    for preference in preferences:
-        preferred = set(
-            _dialogue_words(preference.group("preferred"), context)
-        )
-        if any(
-            not statement.rstrip().endswith("?")
-            and preferred <= set(_dialogue_words(statement, context))
-            and re.search(
-                r"\b(?:prefer|best|suit|choice|choose|pick|recommend)\w*\b",
-                statement,
-                re.IGNORECASE,
-            )
-            for statement in statements
-        ):
-            return ""
-    return "answer with the supported preference"
-
-
-def _promise_issue(facts, dialogue, context):
-    promises = [
-        match
-        for fact in facts
-        if (
-            match := _PROMISE_FACT.search(
-                str(fact.get("statement") or "")
-            )
-        )
-    ]
-    if not promises:
-        return ""
-    statements = re.split(r"(?<=[.!?])\s+", str(dialogue or ""))
-    ignored = {"a", "an", "i", "i'll", "it", "my", "our", "the", "to", "will"}
-    for promise in promises:
-        details = {
-            word
-            for word in _dialogue_words(
-                promise.group("commitment"),
-                context,
-            )
-            if word not in ignored
-        }
-        if details and any(
-            not statement.rstrip().endswith("?")
-            and details <= set(_dialogue_words(statement, context))
-            for statement in statements
-        ):
-            return ""
-    return "answer with the complete supported promise"
-
-
-def _supported_recall_issue(payload, response, context):
-    message = str(payload.get("message") or "")
-    query = analyze_recall_query(message)
-    facts = _supported_recall_facts(message, context)
-    if not facts:
-        return ""
-    statements = [fact["statement"] for fact in facts]
-    dialogue = str(response.get("dialogue") or "")
-    lowered = dialogue.casefold()
-    if any(
-        phrase in lowered
-        for phrase in (
-            "don't know",
-            "do not know",
-            "not sure",
-            "don't remember",
-            "do not remember",
-            "what are you talking",
-        )
-    ):
-        return "use the supporting memory instead of denying it"
-    issue = validate_recall_response(
-        query,
-        facts,
-        dialogue,
-        str(context.get("speaker_id") or ""),
-        str(context.get("listener_id") or ""),
-    )
-    if issue:
-        return issue
-    issue = _preference_issue(facts, dialogue, context)
-    if issue:
-        return issue
-    issue = _promise_issue(facts, dialogue, context)
-    if issue:
-        return issue
-    owner_id = empneon_state.codeword_recall_owner_id(
-        message,
-        str(context.get("speaker_id") or ""),
-        str(context.get("listener_id") or ""),
-    )
-    if (
-        owner_id == str(context.get("speaker_id") or "")
-        and any(_codeword_fact_parts(fact) is not None for fact in facts)
-        and not re.search(
-            r"\bmy\s+(?:secret\s+)?code\s*word\b",
-            dialogue,
-            re.IGNORECASE,
-        )
-    ):
-        return (
-            "refer to the Speaker-owned code word in first person "
-            "as my code word"
-        )
-    if "time" in query.requested_slots:
-        return ""
-    question_terms = set(_dialogue_words(message, context))
-    ignored = {
-        "about",
-        "can",
-        "did",
-        "does",
-        "good",
-        "going",
-        "know",
-        "remember",
-        "said",
-        "say",
-        "sound",
-        "sounds",
-        "tell",
-        "that",
-        "the",
-        "this",
-        "what",
-        "when",
-        "where",
-        "which",
-        "who",
-        "with",
-        "would",
-        "you",
-    }
-    answer_terms = set().union(
-        *(
-            set(_dialogue_words(statement, context))
-            - question_terms
-            - ignored
-            for statement in statements
-        )
-    )
-    if answer_terms and answer_terms & set(_dialogue_words(dialogue, context)):
-        return ""
-    return "answer the recall question with the selected attributed fact"
-
-
-def _memory_supports_question(message, context):
-    facts = _supported_recall_facts(message, context)
-    if analyze_recall_query(str(message or "")).explicit:
-        return bool(facts)
-    if facts:
-        return True
-    ignored = {
-        "where",
-        "when",
-        "who",
-        "what",
-        "which",
-        "remember",
-        "said",
-        "say",
-        "item",
-        "hidden",
-        "there",
-        "about",
-    }
-    terms = {
-        term
-        for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(message).casefold())
-        if len(term) >= 4 and term not in ignored
-    }
-    evidence = _recalled_memory_text(context).casefold()
-    return bool(terms and any(term in evidence for term in terms))
 
 def reasoning_fallback_response(payload, context):
-    message = str(payload.get("message") or "").lower()
-    interaction_kind = classify_player_interaction(message)
-    supported_facts = _supported_recall_facts(message, context)
-    incoming_category = str(
-        payload.get("incoming_category") or classify_social_category(message)
+    return backend_cognition.reasoning_fallback_response(
+        payload,
+        context,
+        lambda *args, **kwargs: response_grounding_issue(*args, **kwargs),
+        lambda *args, **kwargs: response_has_role_confusion(*args, **kwargs),
     )
-    fallback_category, tone_tag = {
-        "romance": ("friendly", "reserved"),
-        "mean": ("mean", "firm"),
-        "mischief": ("mischief", "wary"),
-        "funny": ("funny", "light"),
-        "friendly": ("friendly", "neutral"),
-    }.get(incoming_category, ("friendly", "neutral"))
-    if "?" in message and supported_facts:
-        dialogue = _recalled_fact_dialogue(
-            supported_facts[0], context, message
+
+
+_response_rejection_diagnostics = backend_cognition._response_rejection_diagnostics
+
+
+class CognitionRuntime(backend_cognition.CognitionRuntime):
+    def __init__(self):
+        super().__init__(
+            lambda *args, **kwargs: llm_chat(*args, **kwargs),
+            lambda: RESPONSE_REJECTION_ENABLED,
+            lambda *args, **kwargs: PROVIDER_LOG.warning(*args, **kwargs),
+            grounding_issue=lambda *args, **kwargs: response_grounding_issue(*args, **kwargs),
+            role_confusion=lambda *args, **kwargs: response_has_role_confusion(*args, **kwargs),
+            reasoning_fallback=lambda *args, **kwargs: reasoning_fallback_response(*args, **kwargs),
         )
-        emotion = "confident"
-        intent = "recall"
-        animation = "friendly_chat"
-        trust_delta = 0
-    elif interaction_kind == "romantic_invitation":
-        dialogue = "No, I would rather stay friends."
-        emotion = "awkward"
-        intent = "set_boundary"
-        animation = "awkward_chat"
-        trust_delta = 0
-    elif "?" in message and _memory_supports_question(message, context):
-        candidates = [
-            str(item.get(field) or "").strip()
-            for item in context.get("recalled_memories") or []
-            for field in ("message", "dialogue")
-            if str(item.get(field) or "").strip()
-        ]
-        dialogue = next((item for item in candidates if not item.endswith("?")), candidates[0])
-        emotion = "confident"
-        intent = "recall"
-        animation = "friendly_chat"
-        trust_delta = 0
-    elif (
-        analyze_recall_query(message).explicit
-        and not _memory_supports_question(message, context)
-    ):
-        dialogue = "I don't know or remember that."
-        emotion = "uncertain"
-        intent = "admit_uncertainty"
-        animation = "awkward_chat"
-        trust_delta = 0
-    elif any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
-        dialogue = "I wasn't trying to avoid you. I just needed a little space to sort through my feelings."
-        emotion = "tense"
-        intent = "reassure"
-        animation = "awkward_chat"
-        trust_delta = 0
-    elif any(word in message for word in ("sorry", "apologize", "forgive")):
-        dialogue = "I appreciate you saying that. I need time, but I'm listening."
-        emotion = "softened"
-        intent = "accept_apology"
-        animation = "apologize"
-        trust_delta = 1
-    elif incoming_category == "funny":
-        dialogue = (
-            "Here's a llama joke: What do llamas call a rushed vacation? "
-            "An alpaca-to-go."
-        )
-        emotion = "playful"
-        intent = "tell_joke"
-        animation = "funny_chat"
-        trust_delta = 0
-    elif incoming_category == "mischief":
-        dialogue = (
-            "How about a harmless trick: tell them the llama council promoted "
-            "them to Chief Snack Officer?"
-        )
-        emotion = "playful"
-        intent = "suggest_prank"
-        animation = "mischief_chat"
-        trust_delta = 0
-    elif interaction_kind == "hostile":
-        dialogue = "I won't continue this conversation while you speak to me that way."
-        emotion = "tense"
-        intent = "set_boundary"
-        animation = "awkward_chat"
-        trust_delta = -1
-    elif interaction_kind == "romantic_compliment":
-        dialogue = "That is flattering. Thank you for being honest with me."
-        emotion = "flattered"
-        intent = "acknowledge_flirtation"
-        animation = "friendly_chat"
-        trust_delta = 0
-    elif any(word in message for word in ("sex", "woohoo")):
-        dialogue = "Slow down. If there is something between us, I want it to feel right, not rushed."
-        emotion = "awkward"
-        intent = "set_boundary"
-        animation = "awkward_chat"
-        trust_delta = -1
-    elif interaction_kind == "informational":
-        dialogue = "I may not have every answer, but I'll tell you what I know."
-        emotion = context.get("emotions", {}).get("current_mood", "neutral")
-        intent = "respond"
-        animation = "friendly_chat"
-        trust_delta = 0
-    elif interaction_kind == "friendly":
-        dialogue = "It's good to hear that. I enjoy talking with you."
-        emotion = "happy"
-        intent = "respond"
-        animation = "friendly_chat"
-        trust_delta = 0
-    else:
-        dialogue = "I hear you. Thank you for telling me."
-        emotion = context.get("emotions", {}).get("current_mood", "neutral")
-        intent = "respond"
-        animation = "friendly_chat"
-        trust_delta = 0
-    fallback = normalize_response(
-        {
-            "dialogue": dialogue,
-            "emotion": emotion,
-            "intent": intent,
-            "response_category": fallback_category,
-            "tone_tags": [tone_tag],
-            "trust_delta": trust_delta,
-            "memory": {
-                "importance": 0.2,
-                "summary": "{} {}".format(payload.get("message") or "", dialogue).strip(),
-            },
-        },
-    )
-    fallback["suggested_action"] = fallback["animation"] = "none"
-    if not response_grounding_issue(payload, fallback, context) and not response_has_role_confusion(
-        fallback, context
-    ):
-        return fallback
-
-    candidates = []
-    if "?" in message and _memory_supports_question(message, context):
-        candidates.append("Here is the detail I remember: {}".format(dialogue))
-    elif analyze_recall_query(message).explicit:
-        candidates.append("I'm not sure; I don't remember enough to answer that.")
-    candidates.extend(
-        (
-            "Let me think about that in my own words.",
-            "I understand. Give me a moment to respond.",
-            "There is more I want to consider before I answer.",
-        )
-    )
-    for candidate_dialogue in candidates:
-        candidate = dict(fallback, dialogue=candidate_dialogue)
-        if not response_grounding_issue(
-            payload, candidate, context
-        ) and not response_has_role_confusion(candidate, context):
-            return candidate
-    raise RuntimeError("could not build a grounded dialogue fallback")
 
 
-def _response_rejection_diagnostics(value):
-    if not isinstance(value, list) or len(value) != 2:
-        return []
-    diagnostics = []
-    for expected_attempt, item in enumerate(value, start=1):
-        if (
-            not isinstance(item, dict)
-            or type(item.get("attempt")) is not int
-            or item["attempt"] != expected_attempt
-            or not isinstance(item.get("reason"), str)
-            or not item["reason"].strip()
-        ):
-            return []
-        diagnostics.append(
-            {"attempt": expected_attempt, "reason": item["reason"].strip()}
-        )
-    return diagnostics
-
-
-class HermesRuntime:
-    def dialogue(self, payload, context):
-        configured_categories = payload.get("available_response_categories")
-        categories = available_response_categories(configured_categories)
-        if configured_categories is not None and not categories:
-            return reasoning_fallback_response(payload, context)
-        if configured_categories is None:
-            categories = SOCIAL_CATEGORIES
-        prompt = build_chat_prompt(payload, context)
-        supported_facts = _supported_recall_facts(
-            payload.get("message"), context
-        )
-        rejections = []
-        for attempt in range(2):
-            try:
-                content = llm_chat(
-                    [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    schema=dialogue_schema(categories),
-                    schema_name="sims_dialogue",
-                    task="large",
-                )
-            except (ProviderError, OSError):
-                if supported_facts:
-                    return reasoning_fallback_response(payload, context)
-                raise
-            try:
-                response = normalize_response(
-                    extract_json(content), categories
-                )
-            except (ValueError, json.JSONDecodeError):
-                response = fallback_response(content, categories)
-            explicit_category = explicit_social_category(response["dialogue"])
-            if (
-                RESPONSE_REJECTION_ENABLED
-                and explicit_category in categories
-                and explicit_category != response["response_category"]
-            ):
-                response["response_category"] = explicit_category
-                response["relationship_outcome"] = validated_relationship_outcome(
-                    response
-                )
-                response["suggested_action"] = response["animation"] = "none"
-            if (
-                payload.get("incoming_category") == "funny"
-                and response["response_category"] in ("friendly", "funny")
-            ):
-                response["trust_delta"] = 0
-                response["relationship_outcome"] = "none"
-                response["suggested_action"] = response["animation"] = "none"
-            if supported_facts:
-                response["relationship_outcome"] = "none"
-                response["suggested_action"] = response["animation"] = "none"
-            recall_issue = _supported_recall_issue(payload, response, context)
-            if not RESPONSE_REJECTION_ENABLED and not recall_issue:
-                return response
-            if RESPONSE_REJECTION_ENABLED:
-                issue = response_grounding_issue(payload, response, context)
-                category_issue = response_category_issue(response)
-                role_confusion = response_has_role_confusion(response, context)
-            else:
-                issue = recall_issue
-                category_issue = ""
-                role_confusion = False
-            if not role_confusion and not issue and not category_issue:
-                return response
-            reason = issue or category_issue or "speaker/listener confusion"
-            PROVIDER_LOG.warning(
-                "model response failed grounding (%s); retrying=%s",
-                reason,
-                attempt == 0,
-            )
-            rejections.append({"attempt": attempt + 1, "reason": reason})
-            if RESPONSE_REJECTION_ENABLED:
-                prompt += (
-                    "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
-                    "If using a name, use the Listener's name, '{}'."
-                ).format(context["speaker"]["name"], context["listener"]["name"])
-            if issue:
-                prompt += "\nCorrection: {}.".format(issue)
-            if recall_issue:
-                prompt += (
-                    "\nCorrection: Answer the recall question using this "
-                    "attributed evidence: "
-                    + " | ".join(
-                        _attributed_fact_text(fact, context)
-                        for fact in supported_facts
-                    )
-                )
-            if category_issue:
-                prompt += (
-                    "\nCorrection: The response_category must describe the Speaker's own "
-                    "dialogue. Do not copy the incoming category when the Speaker rejects or "
-                    "changes direction."
-                )
-            if issue and ("copy" in issue or "previous reply" in issue):
-                prompt += (
-                    "\nCorrection: Keep the facts and conversational continuity, but advance the "
-                    "conversation with a new reaction, detail, question, or decision. Do not reuse "
-                    "an earlier opening or sentence frame."
-                )
-        fallback = reasoning_fallback_response(payload, context)
-        fallback["suggested_action"] = fallback["animation"] = "none"
-        fallback["_response_rejections"] = rejections
-        return fallback
-
-    def story_beat(self, prompt):
-        content = llm_chat(
-            [
-                {"role": "system", "content": "You are a Sims 4 AI Director. Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            schema=DIRECTOR_SCHEMA,
-            schema_name="sims_director",
-            task="small",
-        )
-        try:
-            raw = extract_json(content)
-        except (ValueError, json.JSONDecodeError):
-            raw = {"hook": str(content).strip()[:500], "target": "", "suggested_action": "", "tone": "neutral"}
-        return {
-            "hook": str(raw.get("hook") or "").strip(),
-            "target": str(raw.get("target") or "").strip(),
-            "suggested_action": str(raw.get("suggested_action") or "").strip(),
-            "tone": str(raw.get("tone") or "neutral").strip(),
-        }
-
-
-HERMES = HermesRuntime()
+COGNITION_RUNTIME = CognitionRuntime()
 
 
 def chat(payload):
@@ -2841,9 +761,11 @@ def chat(payload):
         emotions = get_emotion(speaker_id)
         if emotions.get("current_mood") in ("neutral", "unknown") and speaker.get("current_mood"):
             emotions = save_emotion(speaker_id, default_emotion(speaker.get("current_mood")))
-        relationship = relationship_with_payload(speaker_id, listener_id, payload.get("relationship") or {})
+        relationship = relationship_with_payload(
+            speaker_id, listener_id, payload.get("relationship") or {}
+        )
         query = str(payload.get("message") or "")
-        with open_db(CORE_DB_PATH) as conn:
+        with db_session(CORE_DB_PATH) as conn:
             deterministic_recalled = empneon_state.recalled_memories(
                 conn,
                 speaker_id,
@@ -2882,12 +804,8 @@ def chat(payload):
         context["conversation"] = conversation
         context["speaker_id"] = speaker_id
         context["listener_id"] = listener_id
-        context["max_context_tokens"] = int(
-            model_config.get("context_tokens") or 4096
-        )
-        context["max_completion_tokens"] = int(
-            model_config.get("max_tokens") or 350
-        )
+        context["max_context_tokens"] = int(model_config.get("context_tokens") or 4096)
+        context["max_completion_tokens"] = int(model_config.get("max_tokens") or 350)
         adapter = Sims4Adapter(payload)
         event = adapter.observe()[0]
         numeric_emotions = [
@@ -2919,7 +837,7 @@ def chat(payload):
                     GENERATION_CONTEXT.task = task
                     GENERATION_CONTEXT.attempts = []
                     try:
-                        return HERMES.dialogue(payload, context)
+                        return COGNITION_RUNTIME.dialogue(payload, context)
                     finally:
                         generated = list(GENERATION_CONTEXT.attempts)
                         generations.extend(generated)
@@ -2932,21 +850,19 @@ def chat(payload):
                     raise ProviderError("Sims dialogue provider failed") from exc
                 selected.update(clod=current.preferred_clod, task=task)
                 response_rejections.extend(
-                    _response_rejection_diagnostics(
-                        response.pop("_response_rejections", [])
-                    )
+                    _response_rejection_diagnostics(response.pop("_response_rejections", []))
                 )
                 return adapter.decision_from_response(response, event.id)
 
             return resolve_dialogue
 
         resolvers = {task: resolver(task) for task in ("small", "large", "deep")}
-        with open_db(CORE_DB_PATH) as conn:
+        with db_session(CORE_DB_PATH) as conn:
             actions = ActionRecordStore(conn)
             runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
             decision = COGNITION_QUEUE.run(
                 request,
-                lambda: asyncio.run(
+                lambda: run_async(
                     runtime.decide_dynamic(
                         request,
                         cognition_routes(resolvers),
@@ -3043,7 +959,7 @@ Return only JSON with: hook, target, suggested_action, tone.
         emotion=dumps(emotion),
         memories=memory_lines,
     )
-    return HERMES.story_beat(prompt)
+    return COGNITION_RUNTIME.story_beat(prompt)
 
 
 def autonomous_action(payload):
@@ -3054,11 +970,11 @@ def autonomous_action(payload):
     async def unused_resolver(_request: CognitiveRequest) -> Decision:
         raise AssertionError("CLOD 1 must not call a provider")
 
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
         decision = COGNITION_QUEUE.run(
-            request, lambda: asyncio.run(runtime.decide(request, unused_resolver))
+            request, lambda: run_async(runtime.decide(request, unused_resolver))
         )
         action = adapter.action_for(decision)
         if action is None:
@@ -3105,9 +1021,7 @@ def persist_core_event(conn, event):
             "message": message,
             "summary": message or event.type,
             "agent_state": (
-                dataclasses.asdict(event.agent_state)
-                if event.agent_state is not None
-                else None
+                dataclasses.asdict(event.agent_state) if event.agent_state is not None else None
             ),
         }
     )
@@ -3149,16 +1063,20 @@ def confirm_action(payload):
                 "relationship.romance",
             ):
                 valid = operation == "increment" and numeric and -100 <= value <= 100
-            elif len(parts) == 2 and parts[0] == "emotion" and re.fullmatch(
-                r"[a-zA-Z0-9_-]{1,64}", parts[1]
+            elif (
+                len(parts) == 2
+                and parts[0] == "emotion"
+                and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", parts[1])
             ):
                 valid = (
                     operation in ("set", "increment")
                     and numeric
                     and (-100 <= value <= 100 if operation == "increment" else 0 <= value <= 100)
                 )
-            elif len(parts) == 2 and parts[0] == "need" and re.fullmatch(
-                r"[a-zA-Z0-9 _-]{1,64}", parts[1]
+            elif (
+                len(parts) == 2
+                and parts[0] == "need"
+                and re.fullmatch(r"[a-zA-Z0-9 _-]{1,64}", parts[1])
             ):
                 valid = operation == "set" and numeric and 0 <= value <= 100
             elif len(parts) == 3 and parts[0] == "goal" and parts[2] == "status":
@@ -3178,14 +1096,12 @@ def confirm_action(payload):
     elif payload.get("changes"):
         raise ValueError("unsuccessful action cannot apply consequences")
     result = ActionResult(decision_id, status, tuple(changes), reason)
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(decision_id)
         if proposal is None:
             existing = actions.get(decision_id)
-            receipt = DocumentMemoryStore(conn).get(
-                "thesims4.action-result", decision_id
-            )
+            receipt = DocumentMemoryStore(conn).get("thesims4.action-result", decision_id)
             if (
                 existing is not None
                 and isinstance(receipt, dict)
@@ -3221,7 +1137,7 @@ def confirm_dialogue_delivery(payload):
     decision_id = str(payload.get("decision_id") or "").strip()
     if not decision_id or payload.get("status") != "displayed":
         raise ValueError("displayed dialogue decision_id is required")
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
             documents = DocumentMemoryStore(conn)
@@ -3249,9 +1165,7 @@ def confirm_dialogue_delivery(payload):
                     )
                     relationships.set(relationship, commit=False)
             if proposal.adapter_action == "none":
-                actions.confirm(
-                    ActionResult(decision_id, "succeeded"), "none", commit=False
-                )
+                actions.confirm(ActionResult(decision_id, "succeeded"), "none", commit=False)
             documents.set(
                 "thesims4.dialogue-delivery",
                 decision_id,
@@ -3266,14 +1180,14 @@ def confirm_dialogue_delivery(payload):
 
 
 def voice_profile(sim_id_value):
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.voice_view(conn, sim_id_value)
 
 
 def save_voice_profile(sim_id_value, voice):
     values = dict(voice or {})
     values.setdefault("provider", CONFIG.get("tts", {}).get("provider") or "")
-    with open_db(CORE_DB_PATH) as conn:
+    with db_session(CORE_DB_PATH) as conn:
         return empneon_state.save_voice(conn, sim_id_value, values)
 
 
@@ -3316,14 +1230,14 @@ class DiagnosticNotFound(ValueError):
 def diagnostic_identifier(query, name):
     value = str(query.get(name, [""])[0]).strip()
     if not value:
-        raise DiagnosticInputError("{} is required".format(name))
+        raise DiagnosticInputError(f"{name} is required")
     if len(value) > 128:
-        raise DiagnosticInputError("{} is too long".format(name))
+        raise DiagnosticInputError(f"{name} is too long")
     return value
 
 
 def sims_timeline(conn, agent_id):
-    timeline = agent_timeline(conn, agent_id)
+    timeline = agent_timeline(conn, agent_id, limit=100)
     documents = DocumentMemoryStore(conn)
     for entry in timeline["entries"]:
         if entry["type"] != "decision":
@@ -3334,324 +1248,54 @@ def sims_timeline(conn, agent_id):
             continue
         if not isinstance(stored, dict):
             continue
-        rejections = _response_rejection_diagnostics(
-            stored.get("response_rejections")
-        )
+        rejections = _response_rejection_diagnostics(stored.get("response_rejections"))
         if not rejections:
             continue
         entry["data"]["diagnostics"] = {"response_rejections": rejections}
     return timeline
 
 
-class EmpneonHTTPServer(ThreadingHTTPServer):
-    allow_reuse_address = False
+from backend import server as backend_server
 
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
-
-    def send_json(self, status, data):
-        body = json.dumps(data, ensure_ascii=True, indent=2).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def read_json(self):
-        length = int(self.headers.get("Content-Length") or "0")
-        if length > MAX_REQUEST_BODY_BYTES:
-            raise ValueError("request body too large")
-        if not length:
-            return {}
-        return json.loads(self.rfile.read(length).decode("utf-8"))
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(parsed.query)
-        if parsed.path.startswith("/diagnostics/") or parsed.path == "/identity/export":
-            try:
-                self._send_diagnostic(parsed.path, query)
-            except DiagnosticInputError as exc:
-                self.send_json(400, {"error": str(exc)})
-            except DiagnosticNotFound as exc:
-                self.send_json(404, {"error": str(exc)})
-            except Exception:
-                LOG.exception("diagnostic request failed")
-                self.send_json(500, {"error": "diagnostic request failed"})
-            return
-        if parsed.path == "/health":
-            small = task_model_config("small")
-            large = task_model_config("large")
-            self.send_json(
-                200,
-                {
-                    "status": "ok",
-                    "model": configured_model(),
-                    "provider": PRIMARY_PROVIDER,
-                    "llm_base_url": large.get("endpoint"),
-                    "models": {
-                        "small": {"provider": small.get("name"), "model": configured_model("small")},
-                        "large": {"provider": large.get("name"), "model": configured_model("large")},
-                    },
-                    "memory_db": CORE_DB_PATH,
-                    "legacy_import_db": ACTIVE_DB_PATH or DB_PATH,
-                    "preserve_memory_only_on_game_save": (
-                        PRESERVE_MEMORY_ONLY_ON_GAME_SAVE
-                    ),
-                    "active_agent_limit": ACTIVE_AGENT_LIMIT,
-                    "active_agents": AGENTS.get_active_agents(),
-                },
-            )
-            return
-        if parsed.path == "/agents/active":
-            self.send_json(200, {"active_agents": AGENTS.get_active_agents()})
-            return
-        if parsed.path == "/profiles":
-            self.send_json(200, {"profiles": list_profiles(limit=int(query.get("limit", [100])[0]))})
-            return
-        if parsed.path == "/profile":
-            sim_id_value = query.get("sim_id", [""])[0]
-            self.send_json(200, {"profile": get_profile(sim_id_value)})
-            return
-        if parsed.path == "/memories":
-            speaker_id = query.get("speaker_id", query.get("sim_id", [""]))[0]
-            listener_id = query.get("listener_id", query.get("target_id", [""]))[0]
-            if listener_id:
-                memories = memories_for_pair(speaker_id, listener_id, limit=int(query.get("limit", [20])[0]))
-                summary = memory_summary(speaker_id, listener_id)
-            else:
-                memories = memories_for_sim(speaker_id, limit=int(query.get("limit", [20])[0]))
-                summary = {"summary": "", "updated_at": 0}
-            self.send_json(200, {"memories": memories, "summary": summary})
-            return
-        if parsed.path == "/relationship":
-            sim_id_value = query.get("sim_id", [""])[0]
-            target_id_value = query.get("target_id", [""])[0]
-            self.send_json(
-                200,
-                {"relationship": get_relationship_diagnostic(sim_id_value, target_id_value)},
-            )
-            return
-        if parsed.path == "/emotion":
-            sim_id_value = query.get("sim_id", [""])[0]
-            self.send_json(200, {"emotion": get_emotion(sim_id_value)})
-            return
-        if parsed.path == "/voice":
-            sim_id_value = query.get("sim_id", [""])[0]
-            self.send_json(200, {"voice": voice_profile(sim_id_value)})
-            return
-        self.send_json(404, {"error": "not found"})
-
-    def _send_diagnostic(self, path, query):
-        if path == "/diagnostics/cognition-queue":
-            self.send_json(200, COGNITION_QUEUE.snapshot())
-            return
-        if path == "/diagnostics/migration":
-            body = MIGRATION_STATUS.as_dict()
-            with open_db(CORE_DB_PATH) as conn:
-                body["completion_markers"] = [
-                    document.key
-                    for document in DocumentMemoryStore(conn).list(
-                        "thesims4.migration"
-                    )
-                ]
-            self.send_json(200, body)
-            return
-        if path == "/diagnostics/usage" and not str(
-            query.get("sim_id", [""])[0]
-        ).strip():
-            with open_db(CORE_DB_PATH) as conn:
-                body = UsageStore(conn).telemetry()
-            self.send_json(200, body)
-            return
-        name = "decision_id" if path == "/diagnostics/replay" else "sim_id"
-        identifier = diagnostic_identifier(query, name)
-        with open_db(CORE_DB_PATH) as conn:
-            if path == "/diagnostics/replay":
-                try:
-                    body = replay_action_record(conn, identifier)
-                except ValueError as exc:
-                    raise DiagnosticNotFound(str(exc)) from exc
-            else:
-                if AgentStore(conn).get(identifier) is None:
-                    raise DiagnosticNotFound("Sim does not exist")
-                if path == "/diagnostics/sim":
-                    body = empneon_state.sim_diagnostics(conn, identifier)
-                elif path == "/diagnostics/timeline":
-                    body = sims_timeline(conn, identifier)
-                elif path == "/diagnostics/usage":
-                    body = UsageStore(conn).telemetry(identifier)
-                elif path == "/identity/export":
-                    body = empneon_state.export_identity(conn, identifier)
-                else:
-                    raise DiagnosticNotFound("diagnostic route does not exist")
-        self.send_json(200, body)
-
-    def do_POST(self):
-        try:
-            payload = self.read_json()
-            parsed = urllib.parse.urlparse(self.path)
-            if parsed.path == "/identity/import":
-                if not isinstance(payload, dict):
-                    self.send_json(400, {"error": "identity must be a JSON object"})
-                    return
-                try:
-                    with open_db(CORE_DB_PATH) as conn:
-                        agent = empneon_state.import_identity(conn, payload)
-                except (KeyError, TypeError, ValueError) as exc:
-                    self.send_json(400, {"error": str(exc)})
-                    return
-                self.send_json(200, {"agent": {"id": agent.id, "name": agent.name}})
-                return
-            if parsed.path == "/diagnostics/cognition-queue/test10-gate":
-                try:
-                    loopback = ipaddress.ip_address(self.client_address[0]).is_loopback
-                except (AttributeError, IndexError, ValueError):
-                    loopback = False
-                if not loopback:
-                    self.send_json(403, {"error": "loopback access required"})
-                    return
-                action = str(payload.get("action") or "")
-                run_id = str(payload.get("run_id") or "")
-                try:
-                    if action == "arm":
-                        actor_ids = TEST10_QUEUE_GATE.arm(run_id)
-                        self.send_json(
-                            200,
-                            {
-                                "status": "armed",
-                                "run_id": run_id,
-                                "actor_ids": actor_ids,
-                            },
-                        )
-                    elif action == "release":
-                        TEST10_QUEUE_GATE.release(run_id)
-                        self.send_json(
-                            200,
-                            {"status": "released", "run_id": run_id},
-                        )
-                    else:
-                        self.send_json(400, {"error": "action must be arm or release"})
-                except ValueError as exc:
-                    self.send_json(400, {"error": str(exc)})
-                return
-            session_id = payload.get("_empneon_session_id")
-            save_slot_id = payload.get("_empneon_save_slot_id") or ""
-            if parsed.path == "/game-session/start":
-                self.send_json(200, start_memory_session(session_id, save_slot_id))
-                return
-            if parsed.path == "/game-session/save":
-                self.send_json(200, save_memory_session(session_id, save_slot_id))
-                return
-            if session_id:
-                start_memory_session(session_id, save_slot_id)
-            if parsed.path in ("/chat", "/conversation"):
-                if not payload.get("message"):
-                    self.send_json(400, {"error": "message is required"})
-                    return
-                self.send_json(200, chat(payload))
-                return
-            if parsed.path == "/director":
-                self.send_json(200, director(payload))
-                return
-            if parsed.path == "/autonomous":
-                self.send_json(200, autonomous_action(payload))
-                return
-            if parsed.path == "/action-result":
-                try:
-                    self.send_json(200, confirm_action(payload))
-                except ValueError as exc:
-                    self.send_json(400, {"error": str(exc)})
-                return
-            if parsed.path == "/dialogue-result":
-                try:
-                    self.send_json(200, confirm_dialogue_delivery(payload))
-                except ValueError as exc:
-                    self.send_json(400, {"error": str(exc)})
-                return
-            if parsed.path == "/agent/wake":
-                sim = payload.get("sim") or payload.get("speaker") or payload
-                profile = AGENTS.wake_agent(
-                    sim,
-                    reason=payload.get("reason") or "manual",
-                    priority=payload.get("priority") or 3,
-                )
-                self.send_json(200, {"profile": profile, "active_agents": AGENTS.get_active_agents()})
-                return
-            if parsed.path == "/agent/sleep":
-                sim_id_value = str(payload.get("sim_id") or payload.get("id") or "")
-                self.send_json(200, {"slept": AGENTS.sleep_agent(sim_id_value), "active_agents": AGENTS.get_active_agents()})
-                return
-            if parsed.path == "/profile":
-                sim = payload.get("sim") or payload
-                self.send_json(200, {"profile": upsert_profile(sim)})
-                return
-            if parsed.path == "/memory":
-                add_memory(
-                    str(payload.get("sim_id") or payload.get("speaker_id") or ""),
-                    str(payload.get("target_id") or payload.get("listener_id") or ""),
-                    payload.get("summary") or payload.get("event") or "",
-                    payload.get("importance", 0.5),
-                    emotion=payload.get("emotion") or "",
-                    category=payload.get("category") or "",
-                    topic=payload.get("topic") or "",
-                    location=payload.get("location") or "",
-                )
-                self.send_json(200, {"status": "ok"})
-                return
-            if parsed.path == "/relationship":
-                sim_id_value = str(payload.get("sim_id") or "")
-                target_id_value = str(payload.get("target_id") or "")
-                self.send_json(200, {"relationship": save_relationship(sim_id_value, target_id_value, payload.get("relationship") or payload)})
-                return
-            if parsed.path == "/emotion":
-                sim_id_value = str(payload.get("sim_id") or "")
-                self.send_json(200, {"emotion": save_emotion(sim_id_value, payload.get("emotion") or payload)})
-                return
-            if parsed.path == "/voice":
-                sim_id_value = str(payload.get("sim_id") or "")
-                self.send_json(200, {"voice": save_voice_profile(sim_id_value, payload.get("voice") or payload)})
-                return
-            if parsed.path == "/tts":
-                self.send_json(200, tts_generate(payload))
-                return
-            self.send_json(404, {"error": "not found"})
-        except Exception as exc:
-            LOG.exception("request failed")
-            self.send_json(500, {"error": "request failed"})
+backend_server.Handler.resolve = staticmethod(globals().__getitem__)
+EmpneonHTTPServer = backend_server.EmpneonHTTPServer
+Handler = backend_server.Handler
 
 
 def run():
     global MIGRATION_STATUS
+    setup_logging()
     MIGRATION_STATUS = empneon_state.prepare_database(
         MEMORY_DB_PATH, LEGACY_CORE_DB_PATH, LEGACY_ADAPTER_DB_PATH
     )
     if not MIGRATION_STATUS.completed:
-        raise RuntimeError(
-            "Empneon memory migration failed: {}".format(MIGRATION_STATUS.error)
-        )
-    with open_db(MEMORY_DB_PATH) as conn:
+        raise RuntimeError(f"Empneon memory migration failed: {MIGRATION_STATUS.error}")
+    with db_session(MEMORY_DB_PATH) as conn:
         empneon_state.import_legacy_adapter(conn, LEGACY_ADAPTER_DB_PATH)
     open_db(CORE_DB_PATH).close()
     server = EmpneonHTTPServer((HOST, PORT), Handler)
-    print("Empneon for The Sims 4 on http://{}:{}".format(HOST, PORT))
-    print("Provider: {}".format(PRIMARY_PROVIDER))
+    print(f"Empneon for The Sims 4 on http://{HOST}:{PORT}")
+    print(f"Provider: {PRIMARY_PROVIDER}")
     print("Endpoint: {}".format(task_model_config("large").get("endpoint")))
     print("Model: {}".format(configured_model("large")))
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Empneon backend stopped by keyboard interrupt.")
+    finally:
+        server.server_close()
 
 
 def self_test():
-    global DB_PATH, CORE_DB_PATH, ACTIVE_DB_PATH
-    parsed = extract_json('```json\n{"dialogue":"hi","relationship":{"friendship_delta":12},"memory":"met"}\n```')
+    parsed = extract_json(
+        '```json\n{"dialogue":"hi","relationship":{"friendship_delta":12},"memory":"met"}\n```'
+    )
     result = normalize_response(parsed)
     assert result["dialogue"] == "hi"
-    assert result["relationship"]["friendship_delta"] == 10
+    assert result["relationship_outcome"] == "none"
     assert result["memory"]["summary"] == "met"
-    assert result["animation"] == "friendly_chat"
-    assert extract_json("{dialogue: \"ok\"}")["dialogue"] == "ok"
+    assert result["animation"] == "social.friendly"
+    assert extract_json('{dialogue: "ok"}')["dialogue"] == "ok"
     assert fallback_response("plain text")["dialogue"] == "plain text"
     role_context = {
         "speaker": {"name": "Sri Bolton"},
@@ -3659,44 +1303,57 @@ def self_test():
     }
     assert response_has_role_confusion({"dialogue": "Sure, Sri."}, role_context)
     assert not response_has_role_confusion({"dialogue": "Sure, Robin."}, role_context)
-    old_db = DB_PATH
-    old_core_db = CORE_DB_PATH
-    old_active = ACTIVE_DB_PATH
     fd, path = tempfile.mkstemp(prefix="ai_sims_self_test_", suffix=".sqlite3")
     os.close(fd)
     try:
-        DB_PATH = path
-        CORE_DB_PATH = path + ".core"
-        ACTIVE_DB_PATH = None
-        sim = {"id": "bella-goth", "name": "Bella Goth", "traits": ["romantic", "family-oriented"]}
-        target = {"id": "mauricio", "name": "Mauricio", "traits": ["loyal"]}
-        profile = upsert_profile(sim)
-        assert profile["personality"]["empathy"] >= 50
-        upsert_profile(target)
-        relationship = apply_relationship_delta("bella-goth", "mauricio", {"trust_delta": 5, "respect_delta": 2})
-        assert relationship["trust"] == 55
-        emotion = update_emotion_from_response("bella-goth", "angry")
-        assert emotion["anger"] > 0
-        add_memory("bella-goth", "mauricio", "Mauricio helped Bella", 0.9, emotion="grateful")
-        assert memories_for_pair("bella-goth", "mauricio")[0]["category"] == "long_term"
+        with db_session(path) as conn:
+            sim = {
+                "id": "bella-goth",
+                "name": "Bella Goth",
+                "traits": ["romantic", "family-oriented"],
+            }
+            target = {"id": "mauricio", "name": "Mauricio", "traits": ["loyal"]}
+            profile = empneon_state.sync_sim(conn, sim)
+            assert profile["name"] == "Bella Goth"
+            empneon_state.sync_sim(conn, target)
+            relationship = empneon_state.apply_relationship_deltas(
+                conn,
+                "bella-goth",
+                "mauricio",
+                {"trust_delta": 5, "respect_delta": 2},
+            )
+            assert relationship["trust"] == 55
+            emotion = empneon_state.emotion_view(conn, "bella-goth")
+            for key, delta in emotion_from_label("angry").items():
+                emotion[key] = clamp_int(emotion.get(key, 0) + delta, 0, 100)
+            emotion["current_mood"] = "angry"
+            emotion = empneon_state.save_emotion(conn, "bella-goth", emotion)
+            assert emotion["anger"] > 0
+            empneon_state.add_experience(
+                conn,
+                "bella-goth",
+                "mauricio",
+                "Mauricio helped Bella",
+            )
+            memories = empneon_state.relevant_memories(conn, "bella-goth", "Mauricio", 20)
+            assert memories[0]["summary"] == "Mauricio helped Bella"
         fallback = reasoning_fallback_response(
             {"message": "why have you been avoiding me?"},
-            {"emotions": {"current_mood": "tense"}},
+            {
+                "emotions": {"current_mood": "tense"},
+                "speaker": {"name": "Bella Goth"},
+                "listener": {"name": "Mauricio"},
+                "speaker_id": "bella-goth",
+                "listener_id": "mauricio",
+                "recalled_memories": [],
+            },
         )
         assert fallback["dialogue"] != "..."
-        assert fallback["animation"] == "awkward_chat"
+        assert fallback["animation"] == "none"
     finally:
-        DB_PATH = old_db
-        core_path = CORE_DB_PATH
-        CORE_DB_PATH = old_core_db
-        ACTIVE_DB_PATH = old_active
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
         for suffix in ("", "-wal", "-shm"):
             try:
-                os.unlink(core_path + suffix)
+                os.unlink(path + suffix)
             except OSError:
                 pass
     print("ok")

@@ -143,6 +143,11 @@ Optional AI providers
 
 SQLite is currently the only database backend. The Godot adapter is a portability proof. The Sims 4 integration is a reference adapter, not a replacement for the game’s complete autonomy system.
 
+The Sims 4 local backend keeps `ai_sims_server.py` as its executable compatibility façade and
+separates configuration, database/session compatibility, agent scheduling, cognition processing,
+and HTTP dispatch into five inert modules. Importing those modules does not start workers, open a
+database, or bind a socket.
+
 ## Cognitive Level of Detail
 
 Empneon assigns work to a bounded cognitive level rather than sending every decision to the largest available model.
@@ -283,6 +288,11 @@ Implemented and tested behavior includes:
 - Provider-free CLOD 1 telemetry
 - Provider-backed CLOD 3 usage and latency accounting
 - Request-scoped live resource capture with a documented conservative hold decision
+- Optional shared-token protection for the loopback Sims API and token-aware shipped clients
+- Transaction-scoped SQLite sessions, schema 12 timestamp normalization, and explicit database
+  open failures instead of silent temporary-state fallback
+- SQL-bounded timeline and pair-recall result windows, including old relevant-fact and
+  large-query compatibility regressions
 - Timeline, replay, regression fixtures, and package builds
 - Stable repeated Sims identity import
 
@@ -300,7 +310,7 @@ Current priorities:
 
 - Simplify Sims 4 installation and diagnostics
 - Validate the experience with external testers
-- Decompose large Sims adapter modules
+- Continue narrowing the Sims compatibility façade where measured maintenance needs justify it
 - Improve typed application boundaries
 - Document third-party adapter development
 - Publish gameplay demonstrations and reproducible examples
@@ -342,6 +352,7 @@ Get-FileHash -Algorithm SHA256 .\empneon-X.Y.Z-py3-none-any.whl
 - [Adapter development](core/docs/adapter-development.md)
 - [Research hypotheses and evidence](core/docs/innovations.md)
 - [Open-source roadmap](docs/roadmap.md)
+- [July 29 technical audit remediation](docs/technical-audit-2026-07-29.md)
 - [The Sims 4 setup and privacy](adapters/thesims4/docs/setup.md)
 - [In-game Core feature test plan](adapters/thesims4/docs/in-game-core-feature-test-plan.md)
 - [In-game Core feature test results](adapters/thesims4/docs/in-game-core-feature-test-results.md)

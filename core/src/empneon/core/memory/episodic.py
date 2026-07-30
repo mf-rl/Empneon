@@ -5,7 +5,7 @@ import sqlite3
 import time
 import uuid
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Literal
 
 BeliefSourceKind = Literal["observation", "belief"]
@@ -65,20 +65,19 @@ class EpisodicMemoryStore:
         self._conn = conn
 
     def create(self, event: Event, *, commit: bool = True) -> Event:
-        now = int(time.time())
-        event.created_at = now
+        stored = replace(event, created_at=int(time.time()))
         self._conn.execute(
             "INSERT INTO events(id, description, location, happened_at, created_at)"
             " VALUES (?,?,?,?,?)",
-            (event.id, event.description, event.location, event.happened_at, event.created_at),
+            (stored.id, stored.description, stored.location, stored.happened_at, stored.created_at),
         )
         self._conn.executemany(
             "INSERT OR IGNORE INTO event_participants(event_id, agent_id) VALUES (?,?)",
-            [(event.id, agent_id) for agent_id in event.participant_ids],
+            [(stored.id, agent_id) for agent_id in stored.participant_ids],
         )
         if commit:
             self._conn.commit()
-        return event
+        return stored
 
     def get(self, event_id: str) -> Event | None:
         row = self._conn.execute(
@@ -93,7 +92,7 @@ class EpisodicMemoryStore:
             "SELECT e.* FROM events e"
             " JOIN event_participants ep ON ep.event_id = e.id"
             " WHERE ep.agent_id=?"
-            " ORDER BY e.happened_at DESC"
+            " ORDER BY e.happened_at DESC, e.id DESC"
         )
         args: tuple[str | int, ...] = (agent_id,)
         if limit is not None:
@@ -170,41 +169,44 @@ class BeliefStore:
     def create(self, belief: Belief, *, commit: bool = True) -> Belief:
         if commit:
             with self._conn:
-                self._insert(belief)
-        else:
-            self._insert(belief)
-        return belief
+                return self._insert(belief)
+        return self._insert(belief)
 
-    def _insert(self, belief: Belief) -> None:
+    def _insert(self, belief: Belief) -> Belief:
         if belief.source_kind == "observation":
             source = self._conn.execute(
                 "SELECT 1 FROM event_observations WHERE id=? AND agent_id=?",
                 (belief.source_id, belief.agent_id),
             ).fetchone()
-            belief.lineage = ()
+            lineage: tuple[str, ...] = ()
         else:
             source_belief = self.get(belief.source_id)
             source = source_belief
-            if source_belief is not None:
-                belief.lineage = (*source_belief.lineage, source_belief.id)
+            lineage = (
+                (*source_belief.lineage, source_belief.id)
+                if source_belief is not None
+                else ()
+            )
         if source is None:
             raise ValueError("belief source does not exist")
+        stored = replace(belief, lineage=lineage)
 
         self._conn.execute(
             "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
-            (belief.id, belief.agent_id, belief.statement, belief.created_at),
+            (stored.id, stored.agent_id, stored.statement, stored.created_at),
         )
         self._conn.execute(
             "INSERT INTO belief_provenance VALUES (?,?,?,?,?,?)",
             (
-                belief.id,
-                belief.source_id if belief.source_kind == "observation" else None,
-                belief.source_id if belief.source_kind == "belief" else None,
-                belief.confidence,
-                belief.interpretation,
-                json.dumps(belief.lineage),
+                stored.id,
+                stored.source_id if stored.source_kind == "observation" else None,
+                stored.source_id if stored.source_kind == "belief" else None,
+                stored.confidence,
+                stored.interpretation,
+                json.dumps(stored.lineage),
             ),
         )
+        return stored
 
     def get(self, belief_id: str) -> Belief | None:
         row = self._conn.execute(
@@ -214,12 +216,16 @@ class BeliefStore:
         ).fetchone()
         return None if row is None else _row_to_belief(row)
 
-    def get_for_agent(self, agent_id: str) -> list[Belief]:
-        rows = self._conn.execute(
+    def get_for_agent(self, agent_id: str, limit: int | None = None) -> list[Belief]:
+        query = (
             "SELECT b.*, p.* FROM beliefs b JOIN belief_provenance p ON p.belief_id=b.id"
-            " WHERE b.agent_id=? ORDER BY b.created_at DESC, b.id",
-            (agent_id,),
-        ).fetchall()
+            " WHERE b.agent_id=? ORDER BY b.created_at DESC, b.id DESC"
+        )
+        args: tuple[str | int, ...] = (agent_id,)
+        if limit is not None:
+            query += " LIMIT ?"
+            args = (agent_id, limit)
+        rows = self._conn.execute(query, args).fetchall()
         return [_row_to_belief(row) for row in rows]
 
     def get_current_for_agent(self, agent_id: str) -> list[Belief]:
@@ -271,12 +277,12 @@ class BeliefStore:
         if self.get_revision(original_id) is not None:
             raise ValueError("belief has already been revised")
         with self._conn:
-            self._insert(revision)
+            stored = self._insert(revision)
             self._conn.execute(
                 "INSERT INTO belief_relations VALUES (?,?,?,?,?)",
-                (revision.id, original_id, "revises", reason, int(time.time())),
+                (stored.id, original_id, "revises", reason, int(time.time())),
             )
-        return revision
+        return stored
 
     def get_revision(self, belief_id: str) -> Belief | None:
         row = self._conn.execute(
@@ -343,7 +349,7 @@ class BeliefStore:
                         confidence,
                         f"Relayed from {current.agent_id} with trust {relationship['trust']:.2f}",
                     )
-                    self._insert(transmitted)
+                    transmitted = self._insert(transmitted)
                     visited.add(recipient_id)
                     propagated.append(transmitted)
                     queue.append((transmitted, hops + 1))

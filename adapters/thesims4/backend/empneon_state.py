@@ -40,7 +40,7 @@ from empneon.core.memory.vector import VectorMemoryStore
 from empneon.core.contracts import ActionResult
 from empneon.core.runtime import ActionProposal
 from empneon.core.state import load_agent_state
-from empneon.db.connection import open_db
+from empneon.db.connection import db_session, open_db
 from empneon_thesims4.adapter import feature_hash
 
 
@@ -71,7 +71,7 @@ def prepare_database(target: str, legacy_core: str, legacy_adapter: str) -> Migr
                 source.backup(output)
             backup = _backup(core_source)
             backups.append(str(backup))
-        with open_db(destination) as conn:
+        with db_session(destination) as conn:
             _hide_legacy_unconfirmed_observations(conn)
         return MigrationStatus(str(destination), sources, tuple(backups))
     except Exception as exc:
@@ -689,6 +689,55 @@ def _recall_terms(text: str) -> set[str]:
     return terms
 
 
+def _recall_event_rows(
+    conn: sqlite3.Connection,
+    actor_id: str,
+    other_id: str,
+    terms: set[str],
+    *,
+    oldest_first: bool = False,
+) -> list[sqlite3.Row]:
+    # ponytail: returned rows are bounded; add FTS if pair-history scan latency matters.
+    base_query = (
+        "SELECT id, description, happened_at FROM events"
+        " WHERE json_valid(description)"
+        " AND json_extract(description, '$.kind')='confirmed_interaction'"
+        " AND ((json_extract(description, '$.speaker_id')=?"
+        " AND json_extract(description, '$.listener_id')=?)"
+        " OR (json_extract(description, '$.speaker_id')=?"
+        " AND json_extract(description, '$.listener_id')=?))"
+    )
+    pair_args: list[object] = [actor_id, other_id, other_id, actor_id]
+    direction = "ASC" if oldest_first else "DESC"
+    boundary_query = (
+        f"{base_query} ORDER BY happened_at {direction}, id {direction} LIMIT 100"
+    )
+    boundary_rows = conn.execute(boundary_query, pair_args).fetchall()
+    if not terms:
+        return boundary_rows
+
+    term_values = json.dumps(sorted(terms))
+    term_match = (
+        "SELECT 1 FROM json_each(?) AS term"
+        " WHERE instr(lower(events.description), term.value) > 0"
+    )
+    query = f"{base_query} AND EXISTS ({term_match})"
+    args = [*pair_args, term_values]
+    if not oldest_first:
+        query += (
+            " ORDER BY (SELECT count(*) FROM json_each(?) AS term"
+            " WHERE instr(lower(events.description), term.value) > 0) DESC,"
+            " happened_at DESC, id DESC"
+        )
+        args.append(term_values)
+    else:
+        query += f" ORDER BY happened_at {direction}, id {direction}"
+    query += " LIMIT 100"
+    targeted_rows = conn.execute(query, args).fetchall()
+    seen = {row["id"] for row in targeted_rows}
+    return targeted_rows + [row for row in boundary_rows if row["id"] not in seen]
+
+
 def recall_candidates(
     conn: sqlite3.Connection,
     actor_id: str,
@@ -696,21 +745,12 @@ def recall_candidates(
     query: str,
     max_chars: int = 6000,
 ) -> list[dict[str, object]]:
-    pair = {str(actor_id), str(other_id)}
     terms = _recall_terms(query)
     recall_query = analyze_recall_query(query)
     owner_id = codeword_recall_owner_id(query, actor_id, other_id)
     ranked = []
-    for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
-        data = _event_data(event.description)
-        if data.get("kind") != "confirmed_interaction":
-            continue
-        participants = {
-            str(data.get("speaker_id") or ""),
-            str(data.get("listener_id") or ""),
-        }
-        if participants != pair:
-            continue
+    for event in _recall_event_rows(conn, str(actor_id), str(other_id), terms):
+        data = _event_data(event["description"])
         facts = _authoritative_facts(data)
         if owner_id is not None:
             facts = [
@@ -733,8 +773,8 @@ def recall_candidates(
             )
         )
         candidate = {
-            "event_id": event.id,
-            "created_at": event.happened_at,
+            "event_id": event["id"],
+            "created_at": event["happened_at"],
             "speaker_id": str(data.get("speaker_id") or ""),
             "listener_id": str(data.get("listener_id") or ""),
             "message": str(data.get("message") or ""),
@@ -746,7 +786,7 @@ def recall_candidates(
                 bool(supporting_facts),
                 bool(terms & _recall_terms(searchable)),
                 bool(facts),
-                event.happened_at,
+                event["happened_at"],
                 candidate,
             )
         )
@@ -771,22 +811,20 @@ def recalled_memories(
     query: str,
     limit: int = 3,
 ) -> list[dict[str, object]]:
-    pair = {str(actor_id), str(other_id)}
     terms = _recall_terms(query)
     recall_query = analyze_recall_query(query)
     explicit = recall_query.explicit
     owner_id = codeword_recall_owner_id(query, actor_id, other_id)
     matches = []
-    for event in EpisodicMemoryStore(conn).get_for_agent(str(actor_id)):
-        data = _event_data(event.description)
-        if data.get("kind") != "confirmed_interaction":
-            continue
-        participants = {
-            str(data.get("speaker_id") or ""),
-            str(data.get("listener_id") or ""),
-        }
-        if participants != pair:
-            continue
+    first_time = bool(re.search(r"\bfirst time\b", str(query), re.IGNORECASE))
+    for event in _recall_event_rows(
+        conn,
+        str(actor_id),
+        str(other_id),
+        terms,
+        oldest_first=first_time,
+    ):
+        data = _event_data(event["description"])
         facts = _authoritative_facts(data)
         if owner_id is not None:
             facts = [
@@ -813,8 +851,8 @@ def recalled_memories(
         if not overlap and not answers_requested:
             continue
         selected = dict(data)
-        selected["event_id"] = event.id
-        selected["created_at"] = event.happened_at
+        selected["event_id"] = event["id"]
+        selected["created_at"] = event["happened_at"]
         selected["explicit"] = explicit
         selected["facts"] = [
             fact
@@ -823,11 +861,11 @@ def recalled_memories(
             or terms & _recall_terms(str(fact.get("statement") or ""))
         ]
         matches.append(
-            (len(overlap), event.happened_at, selected, answers_requested)
+            (len(overlap), event["happened_at"], selected, answers_requested)
         )
     if any(item[3] for item in matches):
         matches = [item for item in matches if item[3]]
-    if re.search(r"\bfirst time\b", str(query), re.IGNORECASE):
+    if first_time:
         matches.sort(key=lambda item: item[1])
     elif re.search(r"\blast time\b", str(query), re.IGNORECASE):
         matches.sort(key=lambda item: item[1], reverse=True)
@@ -1311,7 +1349,23 @@ def _default_relationship() -> dict[str, int]:
     }
 
 
+_LEGACY_TABLES = frozenset(
+    {
+        "sim_profiles",
+        "goals",
+        "relationships",
+        "emotions",
+        "voice_settings",
+        "memories",
+        "memory_summaries",
+        "conversations",
+    }
+)
+
+
 def _rows(source: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
+    if table not in _LEGACY_TABLES:
+        raise ValueError(f"unknown legacy table: {table!r}")
     exists = source.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
     ).fetchone()

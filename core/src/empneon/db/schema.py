@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -421,4 +421,9 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     9: (_CREATE_BELIEF_RELATIONS, _CREATE_IDX_BELIEF_SINGLE_REVISION),
     10: (_ADD_COGNITION_USAGE_SELECTED_CLOD,),
     11: (_CREATE_MEMORY_DOCUMENTS,),
+    12: (
+        "UPDATE memory_documents"
+        " SET updated_at = CAST(updated_at / 1000000000 AS INTEGER)"
+        " WHERE updated_at > 9999999999",
+    ),
 }

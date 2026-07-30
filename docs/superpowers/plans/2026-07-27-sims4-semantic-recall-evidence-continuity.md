@@ -260,7 +260,7 @@ In `_supported_recall_facts()`:
    semantic facts.
 
 Keep the existing `_supported_recall_issue()`, `reasoning_fallback_response()`, and
-`HermesRuntime.dialogue()` behavior unchanged; they already consume `_supported_recall_facts()`.
+`CognitionRuntime.dialogue()` behavior unchanged; they already consume `_supported_recall_facts()`.
 
 - [x] **Step 7: Run the focused tests and verify GREEN**
 

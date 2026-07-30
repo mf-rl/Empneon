@@ -1,4 +1,6 @@
+import asyncio
 import contextlib
+import inspect
 import io
 import json
 import os
@@ -36,6 +38,719 @@ from empneon.db.connection import open_db
 from empneon.providers.llm import GenerationResult, ModelCapabilities
 
 from backend import ai_sims_server
+from backend import config as backend_config
+
+
+def test_run_handles_keyboard_interrupt_and_closes_server(
+    monkeypatch, capsys
+) -> None:
+    calls = []
+
+    class Status:
+        completed = True
+        error = None
+
+    class Connection:
+        def close(self):
+            calls.append("database closed")
+
+    class Server:
+        def __init__(self, address, handler):
+            calls.append(("server created", address, handler))
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            calls.append("server closed")
+
+    monkeypatch.setattr(ai_sims_server, "setup_logging", lambda: None)
+    monkeypatch.setattr(
+        ai_sims_server.empneon_state,
+        "prepare_database",
+        lambda *_args: Status(),
+    )
+    monkeypatch.setattr(
+        ai_sims_server.empneon_state,
+        "import_legacy_adapter",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        ai_sims_server,
+        "db_session",
+        lambda *_args: contextlib.nullcontext(object()),
+    )
+    monkeypatch.setattr(ai_sims_server, "open_db", lambda *_args: Connection())
+    monkeypatch.setattr(ai_sims_server, "EmpneonHTTPServer", Server)
+
+    ai_sims_server.run()
+
+    assert "Empneon backend stopped by keyboard interrupt." in capsys.readouterr().out
+    assert calls[-1] == "server closed"
+
+
+def test_server_module_import_is_inert(tmp_path) -> None:
+    adapter_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(adapter_root), str(adapter_root.parents[1] / "core" / "src"))
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import http.server, socket; "
+                "socket.socket=lambda *_args,**_kwargs: "
+                "(_ for _ in ()).throw(AssertionError('socket created')); "
+                "from backend import server"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_handler_resolves_patched_facade_values_at_request_time(monkeypatch) -> None:
+    class Queue:
+        def snapshot(self):
+            return {"source": "patched queue"}
+
+    handler = object.__new__(ai_sims_server.Handler)
+    handler.headers = {}
+    responses = []
+    monkeypatch.setattr(
+        handler, "send_json", lambda status, body: responses.append((status, body))
+    )
+
+    monkeypatch.setattr(ai_sims_server, "API_TOKEN", "patched-token")
+    assert handler.is_authorized() is False
+    handler.headers = {"X-Empneon-Token": "patched-token"}
+    assert handler.is_authorized() is True
+
+    monkeypatch.setattr(ai_sims_server, "API_TOKEN", "")
+    monkeypatch.setattr(ai_sims_server, "COGNITION_QUEUE", Queue())
+    handler.path = "/diagnostics/cognition-queue"
+    handler.do_GET()
+    assert responses.pop() == (200, {"source": "patched queue"})
+
+    monkeypatch.setattr(
+        ai_sims_server,
+        "get_profile",
+        lambda sim_id: {"id": sim_id, "source": "patched endpoint"},
+    )
+    handler.path = "/profile?sim_id=late-bound"
+    handler.do_GET()
+    assert responses == [
+        (
+            200,
+            {
+                "profile": {
+                    "id": "late-bound",
+                    "source": "patched endpoint",
+                }
+            },
+        )
+    ]
+
+
+def test_backend_facade_exposes_extracted_compatibility_surface() -> None:
+    from backend import server as backend_server
+
+    expected = {
+        "DEFAULT_CONFIG",
+        "deep_update",
+        "load_config",
+        "setup_logging",
+        "AgentManager",
+        "CognitionQueue",
+        "Test10QueueGate",
+        "AGENTS",
+        "COGNITION_QUEUE",
+        "TEST10_QUEUE_GATE",
+        "connect_db",
+        "memory_session_paths",
+        "memory_checkpoint_path",
+        "backup_memory_database",
+        "restore_memory_database",
+        "create_empty_memory_checkpoint",
+        "read_memory_session",
+        "write_memory_session",
+        "validate_game_session_id",
+        "_LEGACY_COLUMNS",
+        "ensure_column",
+        "init_db",
+        "SYSTEM_PROMPT",
+        "SOCIAL_ACTIONS",
+        "RELATIONSHIP_OUTCOMES",
+        "ROMANTIC_RECIPROCATION",
+        "ROMANTIC_REJECTION",
+        "DIALOGUE_SCHEMA",
+        "MEMORY_SELECTOR_SCHEMA",
+        "available_actions",
+        "available_response_categories",
+        "dialogue_schema",
+        "DIRECTOR_SCHEMA",
+        "clamp_int",
+        "clamp_float",
+        "sanitize_action_proposal",
+        "validated_relationship_outcome",
+        "normalize_response",
+        "extract_json",
+        "fallback_response",
+        "_FULL_EXCHANGE_QUERY",
+        "select_recalled_memories",
+        "semantic_recalled_memories",
+        "_actor_snapshot",
+        "build_context",
+        "_exchange_text",
+        "_recalled_memory_text",
+        "build_chat_prompt",
+        "_identity_gender",
+        "_mask_quoted_dialogue",
+        "_direct_partner_terms",
+        "_direct_partner_prefix",
+        "response_has_role_confusion",
+        "_dialogue_words",
+        "_dialogue_similarity",
+        "explicit_social_category",
+        "classify_social_category",
+        "response_category_issue",
+        "classify_player_interaction",
+        "_is_romantic_request",
+        "response_grounding_issue",
+        "_supported_recall_facts",
+        "_CODEWORD_FACT",
+        "_codeword_fact_parts",
+        "_attributed_fact_text",
+        "_recalled_fact_dialogue",
+        "_PREFERENCE_FACT",
+        "_PROMISE_FACT",
+        "_preference_issue",
+        "_promise_issue",
+        "_supported_recall_issue",
+        "_memory_supports_question",
+        "reasoning_fallback_response",
+        "_response_rejection_diagnostics",
+        "CognitionRuntime",
+        "COGNITION_RUNTIME",
+        "EmpneonHTTPServer",
+        "Handler",
+    }
+
+    assert expected <= vars(ai_sims_server).keys()
+    assert ai_sims_server.EmpneonHTTPServer is backend_server.EmpneonHTTPServer
+    assert ai_sims_server.Handler is backend_server.Handler
+
+
+def test_cognition_module_import_is_inert(tmp_path) -> None:
+    adapter_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(adapter_root), str(adapter_root.parents[1] / "core" / "src"))
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sqlite3, threading; "
+                "sqlite3.connect=lambda *_args,**_kwargs: "
+                "(_ for _ in ()).throw(AssertionError('connection opened')); "
+                "before={t.name for t in threading.enumerate()}; "
+                "from backend import cognition; "
+                "after={t.name for t in threading.enumerate()}; "
+                "assert before == after"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_facade_monkeypatch_llm_chat_changes_cognition_runtime(monkeypatch) -> None:
+    calls = []
+    provider_response = _social_provider_response("A late-bound reply.", "friendly")
+    monkeypatch.setattr(
+        ai_sims_server,
+        "llm_chat",
+        lambda *_args, **_kwargs: calls.append("called")
+        or json.dumps(provider_response),
+    )
+    monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
+    payload = {
+        "speaker": {},
+        "listener": {},
+        "message": "Hello",
+        "available_response_categories": ["friendly"],
+    }
+    context = ai_sims_server.build_context(
+        payload, {"name": "Karmine"}, {"name": "Bernard"}, {}, {}, []
+    )
+    context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
+
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
+
+    assert calls == ["called"]
+    assert response["dialogue"] == "A late-bound reply."
+
+
+def test_facade_monkeypatch_cognition_runtime_dialogue_changes_chat(
+    tmp_path, monkeypatch
+) -> None:
+    core_db = str(tmp_path / "core.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(
+        ai_sims_server.COGNITION_RUNTIME,
+        "dialogue",
+        lambda _payload, _context: _social_provider_response(
+            "A singleton reply.", "friendly"
+        ),
+    )
+
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "facade-monkeypatch",
+            "message": "Hello",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": ["friendly"],
+        }
+    )
+
+    assert result["dialogue"] == "A singleton reply."
+
+
+def test_database_module_import_is_inert(tmp_path) -> None:
+    adapter_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(adapter_root), str(adapter_root.parents[1] / "core" / "src"))
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sqlite3; "
+                "sqlite3.connect=lambda *_args,**_kwargs: "
+                "(_ for _ in ()).throw(AssertionError('connection opened')); "
+                "from backend import db"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_database_module_keeps_facade_database_hooks_late_bound(monkeypatch) -> None:
+    paths = []
+    initialized = []
+
+    class Connection:
+        row_factory = None
+
+        def commit(self):
+            pass
+
+    def connect(path):
+        paths.append(path)
+        return Connection()
+
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", "configured.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", "active.sqlite3")
+    monkeypatch.setattr(ai_sims_server.sqlite3, "connect", connect)
+    monkeypatch.setattr(
+        ai_sims_server, "init_db", lambda connection: initialized.append(connection)
+    )
+
+    active_connection = ai_sims_server.connect_db()
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    configured_connection = ai_sims_server.connect_db()
+
+    assert paths == ["active.sqlite3", "configured.sqlite3"]
+    assert initialized == [active_connection, configured_connection]
+    assert active_connection.row_factory is sqlite3.Row
+    assert configured_connection.row_factory is sqlite3.Row
+
+
+def test_cognition_runtime_is_exposed() -> None:
+    assert isinstance(
+        ai_sims_server.COGNITION_RUNTIME,
+        ai_sims_server.CognitionRuntime,
+    )
+
+
+def test_legacy_import_rejects_unknown_table() -> None:
+    with open_db(":memory:") as conn, pytest.raises(ValueError, match="unknown legacy table"):
+        ai_sims_server.empneon_state._rows(conn, "events; DROP TABLE events")
+
+
+@pytest.mark.parametrize(
+    ("table", "name", "definition"),
+    [
+        ("memories; DROP TABLE memories", "topic", "text"),
+        ("memories", "topic) TEXT; DROP TABLE memories", "text"),
+        ("memories", "topic", "text; DROP TABLE memories"),
+    ],
+)
+def test_legacy_schema_rejects_unknown_identifiers(table, name, definition) -> None:
+    with contextlib.closing(sqlite3.connect(":memory:")) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE memories (id INTEGER PRIMARY KEY)")
+        with pytest.raises(ValueError, match="legacy schema"):
+            ai_sims_server.ensure_column(conn, table, name, definition)
+
+
+def test_legacy_database_does_not_fall_back_to_temp(monkeypatch) -> None:
+    attempts = []
+
+    class Connection:
+        row_factory = None
+
+        def commit(self):
+            pass
+
+    def connect(path):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise sqlite3.OperationalError("cannot open")
+        return Connection()
+
+    monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", "configured.sqlite3")
+    monkeypatch.delenv("AI_SIM_DB", raising=False)
+    monkeypatch.setattr(ai_sims_server.sqlite3, "connect", connect)
+    monkeypatch.setattr(ai_sims_server, "init_db", lambda _conn: None)
+
+    with pytest.raises(RuntimeError, match="configured.sqlite3"):
+        ai_sims_server.connect_db()
+
+    assert attempts == ["configured.sqlite3"]
+
+
+def test_http_auth_rejects_missing_or_wrong_token(monkeypatch) -> None:
+    handler = object.__new__(ai_sims_server.Handler)
+    monkeypatch.setattr(ai_sims_server, "API_TOKEN", "secret")
+    responses = []
+    handler.path = "/health"
+    handler.send_json = lambda status, body: responses.append((status, body))
+
+    handler.headers = {}
+    assert handler.is_authorized() is False
+    handler.do_GET()
+    assert responses == [(401, {"error": "unauthorized"})]
+    handler.headers = {"X-Empneon-Token": "wrong"}
+    assert handler.is_authorized() is False
+    handler.headers = {"X-Empneon-Token": "secret"}
+    assert handler.is_authorized() is True
+
+
+def test_llm_calls_reuse_the_worker_event_loop(monkeypatch) -> None:
+    loops = []
+
+    class Router:
+        async def generate_result(self, *_args, **_kwargs):
+            loops.append(asyncio.get_running_loop())
+            return GenerationResult("ok")
+
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
+
+    ai_sims_server.llm_chat([{"role": "user", "content": "one"}])
+    ai_sims_server.llm_chat([{"role": "user", "content": "two"}])
+
+    assert loops[0] is loops[1]
+
+
+def test_import_does_not_start_cognition_workers() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import threading; from backend import ai_sims_server; "
+                "print(sum(t.name.startswith('empneon-cognition-') "
+                "for t in threading.enumerate()))"
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "0"
+
+
+def test_facade_scheduling_classes_keep_legacy_constructors() -> None:
+    assert str(inspect.signature(ai_sims_server.AgentManager)) == "(limit)"
+    assert str(inspect.signature(ai_sims_server.CognitionQueue)) == (
+        "(workers, max_queue_size)"
+    )
+    assert str(inspect.signature(ai_sims_server.Test10QueueGate)) == (
+        "(queue, timeout_seconds=60)"
+    )
+
+    manager = ai_sims_server.AgentManager(2)
+    queue = ai_sims_server.CognitionQueue(1, 2)
+    gate = ai_sims_server.Test10QueueGate(queue)
+
+    assert manager.limit == 2
+    assert queue.snapshot()["worker_limit"] == 1
+    assert gate._timeout_seconds == 60
+
+
+def test_facade_scheduling_callbacks_are_late_bound(monkeypatch) -> None:
+    info_calls = []
+    exception_calls = []
+    sleep_calls = []
+
+    class PatchedClock:
+        @staticmethod
+        def time():
+            return 22.0
+
+        @staticmethod
+        def monotonic():
+            return 33.0
+
+        @staticmethod
+        def sleep(seconds):
+            sleep_calls.append(seconds)
+
+    class PatchedLogger:
+        def info(self, *args):
+            info_calls.append(args)
+
+        def exception(self, *args):
+            exception_calls.append(args)
+
+    manager = ai_sims_server.AgentManager(1)
+    queue = ai_sims_server.CognitionQueue(1, 2)
+    gate = ai_sims_server.Test10QueueGate(queue)
+    monkeypatch.setattr(
+        ai_sims_server,
+        "upsert_profile",
+        lambda _sim: {"id": "patched", "name": "Patched"},
+    )
+    monkeypatch.setattr(ai_sims_server, "now", lambda: 11.0)
+    monkeypatch.setattr(ai_sims_server, "time", PatchedClock)
+    monkeypatch.setattr(ai_sims_server, "AGENT_LOG", PatchedLogger())
+
+    assert manager.wake_agent({"id": "ignored"})["id"] == "patched"
+    assert manager.get_active_agents()[0]["woke_at"] == 11.0
+
+    request = CognitiveRequest(
+        "late-bound",
+        1,
+        WorldEvent("test", ("late-bound",)),
+        deadline_ms=1_000,
+    )
+    state = queue._request_state(request, "waiting")
+    queue._record(state, "submitted")
+    assert state["submitted_at"] == 22.0
+    assert queue.snapshot()["recent"][-1]["recorded_at"] == 22.0
+
+    assert gate._monotonic() == 33.0
+    gate._sleep(0.25)
+    gate._log_exception("gate")
+    assert sleep_calls == [0.25]
+    assert [call[0] for call in info_calls] == [
+        "agent woke sim=%s name=%s reason=%s priority=%s",
+        (
+            "cognition request %s id=%s actor=%s event=%s urgency=%s "
+            "queue_depth=%s"
+        ),
+    ]
+    assert exception_calls == [("gate",)]
+
+
+def test_agent_manager_module_is_inert_and_queue_workers_are_lazy() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, threading; "
+                "from empneon.core.contracts import CognitiveRequest, WorldEvent; "
+                "before={id(t) for t in threading.enumerate()}; "
+                "from backend import agent_manager; "
+                "after={id(t) for t in threading.enumerate()}; "
+                "assert before == after; "
+                "count=lambda: sum(t.name.startswith('empneon-cognition-') "
+                "for t in threading.enumerate()); "
+                "module_workers=count(); "
+                "from backend import ai_sims_server; "
+                "facade_workers=count(); "
+                "ai_sims_server.upsert_profile=lambda _sim: "
+                "{'id':'late-bound','name':'Late Bound'}; "
+                "profile=ai_sims_server.AGENTS.wake_agent({'id':'ignored'}); "
+                "request=CognitiveRequest('lazy-worker',1,"
+                "WorldEvent('test',('lazy-worker',)),deadline_ms=1000); "
+                "value=ai_sims_server.COGNITION_QUEUE.run(request,lambda:'done'); "
+                "workers=[t for t in threading.enumerate() "
+                "if t.name.startswith('empneon-cognition-')]; "
+                "print(json.dumps({'module_workers':module_workers,"
+                "'facade_workers':facade_workers,'profile':profile,'value':value,"
+                "'worker_names':sorted(t.name for t in workers),"
+                "'worker_daemons':[t.daemon for t in workers],"
+                "'worker_limit':ai_sims_server.ACTIVE_AGENT_LIMIT}))"
+            ),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    observed = json.loads(result.stdout)
+    assert observed["module_workers"] == 0
+    assert observed["facade_workers"] == 0
+    assert observed["profile"]["id"] == "late-bound"
+    assert observed["value"] == "done"
+    assert observed["worker_names"] == [
+        f"empneon-cognition-{index}"
+        for index in range(observed["worker_limit"])
+    ]
+    assert observed["worker_daemons"] == [True] * observed["worker_limit"]
+
+
+def test_config_module_import_is_inert(tmp_path) -> None:
+    adapter_root = Path(__file__).resolve().parents[1]
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(
+        (str(adapter_root), str(adapter_root.parents[1] / "core" / "src"))
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import logging; from backend import config; "
+                "print(len(logging.getLogger('ai_sims').handlers))"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "0"
+    assert not (tmp_path / "logs").exists()
+
+
+def test_config_module_returns_independent_default_copies(tmp_path) -> None:
+    config_path = tmp_path / "missing.json"
+    first = backend_config.load_config(config_path, {}, io.StringIO())
+    first["providers"]["lmstudio"]["model"] = "changed-model"
+
+    second = backend_config.load_config(config_path, {}, io.StringIO())
+
+    assert second["providers"]["lmstudio"]["model"] == "local-model"
+
+
+def test_configuration_precedence_keeps_environment_overrides(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "provider": "file-provider",
+                "memory_database": "file.sqlite3",
+                "port": 1234,
+                "host": "file-host",
+            }
+        ),
+        encoding="utf-8",
+    )
+    environment = {
+        "AI_SIM_PROVIDER": "env-provider",
+        "AI_SIM_LLM_BASE_URL": "http://env.example/v1",
+        "AI_SIM_MODEL": "env-model",
+        "AI_SIM_DB": "older.sqlite3",
+        "AI_SIM_MEMORY_DB": "winner.sqlite3",
+        "AI_SIM_PORT": "9876",
+        "AI_SIM_HOST": "env-host",
+    }
+
+    config = backend_config.load_config(config_path, environment, io.StringIO())
+
+    assert config["provider"] == "env-provider"
+    assert config["providers"]["env-provider"] == {
+        "endpoint": "http://env.example/v1",
+        "model": "env-model",
+    }
+    assert [config["models"][task]["model"] for task in ("small", "large")] == [
+        "env-model",
+        "env-model",
+    ]
+    assert config["memory_database"] == "winner.sqlite3"
+    assert config["port"] == 9876
+    assert config["host"] == "env-host"
+
+
+def test_config_module_reports_malformed_optional_config(tmp_path) -> None:
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{", encoding="utf-8")
+    error_stream = io.StringIO()
+
+    config = backend_config.load_config(config_path, {}, error_stream)
+
+    assert config["host"] == "127.0.0.1"
+    assert error_stream.getvalue().startswith(
+        f"Could not read config {config_path}: "
+    )
+
+
+def test_self_test_does_not_mutate_database_globals(monkeypatch, capsys) -> None:
+    expected = (
+        ai_sims_server.DB_PATH,
+        ai_sims_server.CORE_DB_PATH,
+        ai_sims_server.ACTIVE_DB_PATH,
+    )
+    observed = []
+    sync_sim = ai_sims_server.empneon_state.sync_sim
+
+    def observe_globals(conn, sim):
+        observed.append(
+            (
+                ai_sims_server.DB_PATH,
+                ai_sims_server.CORE_DB_PATH,
+                ai_sims_server.ACTIVE_DB_PATH,
+            )
+        )
+        return sync_sim(conn, sim)
+
+    monkeypatch.setattr(ai_sims_server.empneon_state, "sync_sim", observe_globals)
+
+    ai_sims_server.self_test()
+
+    assert observed
+    assert all(paths == expected for paths in observed)
+    assert capsys.readouterr().out == "ok\n"
+
+
+def test_self_test_matches_current_response_and_memory_shapes(capsys) -> None:
+    ai_sims_server.self_test()
+
+    assert capsys.readouterr().out == "ok\n"
 
 
 def test_conversation_id_is_preserved_in_world_event() -> None:
@@ -1067,6 +1782,80 @@ def test_recalled_memories_deduplicate_facts_and_cap_results(tmp_path) -> None:
     assert sum(len(item["facts"]) for item in recalled) == 1
 
 
+def test_recall_uses_bounded_sql_and_finds_old_relevant_fact(tmp_path, monkeypatch) -> None:
+    database = str(tmp_path / "core.sqlite3")
+    pair = ["karmine", "bernard"]
+    with open_db(database) as conn:
+        AgentStore(conn).create(Agent("karmine", "Karmine"))
+        AgentStore(conn).create(Agent("bernard", "Bernard"))
+        store = EpisodicMemoryStore(conn)
+        store.create(
+            Event(
+                json.dumps(
+                    {
+                        "kind": "confirmed_interaction",
+                        "speaker_id": "bernard",
+                        "listener_id": "karmine",
+                        "message": "PRIVATE-GARDEN-731 rose is under the blue bench.",
+                        "dialogue": "I will remember.",
+                        "facts": [
+                            {
+                                "actor_id": "bernard",
+                                "statement": "PRIVATE-GARDEN-731 rose is under the blue bench.",
+                            }
+                        ],
+                    }
+                ),
+                pair,
+                happened_at=1,
+                id="relevant-old",
+            )
+        )
+        for index in range(150):
+            store.create(
+                Event(
+                    json.dumps(
+                        {
+                            "kind": "confirmed_interaction",
+                            "speaker_id": "bernard",
+                            "listener_id": "karmine",
+                            "message": f"Unrelated recent chat {index}.",
+                            "dialogue": "Nothing memorable.",
+                            "facts": [],
+                        }
+                    ),
+                    pair,
+                    happened_at=index + 2,
+                    id=f"distractor-{index:03}",
+                )
+            )
+        queries = []
+        conn.set_trace_callback(queries.append)
+        monkeypatch.setattr(
+            EpisodicMemoryStore,
+            "get_for_agent",
+            lambda *_args, **_kwargs: pytest.fail("recall loaded complete event history"),
+        )
+
+        recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn, "karmine", "bernard", "Where is PRIVATE-GARDEN-731?"
+        )
+        large_query_recalled = ai_sims_server.empneon_state.recalled_memories(
+            conn,
+            "karmine",
+            "bernard",
+            " ".join(
+                [f"irrelevantterm{index}" for index in range(1001)] + ["rose"]
+            ),
+        )
+
+    assert [item["event_id"] for item in recalled] == ["relevant-old"]
+    assert [item["event_id"] for item in large_query_recalled] == ["relevant-old"]
+    recall_queries = [query for query in queries if "FROM events" in query]
+    assert recall_queries
+    assert all("LIMIT 100" in query for query in recall_queries)
+
+
 def test_displayed_dialogue_archives_attributed_durable_facts(
     tmp_path, monkeypatch
 ) -> None:
@@ -1363,6 +2152,12 @@ def test_test10_gate_releases_automatically() -> None:
     gate.arm("auto")
     deadline = time.time() + 2
     while queue.snapshot()["running"] or queue.snapshot()["waiting"]:
+        assert time.time() < deadline
+        time.sleep(0.005)
+    while True:
+        with gate._lock:
+            if gate._active is None:
+                break
         assert time.time() < deadline
         time.sleep(0.005)
 
@@ -1675,7 +2470,7 @@ def test_disabled_response_rejection_accepts_first_normalized_response(
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert calls == ["called"]
     assert response["dialogue"] == provider_response["dialogue"]
@@ -1717,7 +2512,7 @@ def test_dialogue_fallback_carries_only_exhausted_rejection_reasons(
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["_response_rejections"] == [
         {"attempt": 1, "reason": "first normalized reason"},
@@ -1764,7 +2559,7 @@ def test_accepted_dialogue_retry_carries_no_rejection_diagnostic(
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == "Accepted reply."
     assert "_response_rejections" not in response
@@ -1815,7 +2610,7 @@ def test_supported_recall_is_relationship_and_action_neutral(
     )
     context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == provider_response["dialogue"]
     assert response["response_category"] == "romance"
@@ -1862,7 +2657,7 @@ def test_normal_romance_remains_actionable(monkeypatch) -> None:
     )
     context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["relationship_outcome"] == "romance_positive"
     assert response["suggested_action"] == "social.romance"
@@ -2009,7 +2804,7 @@ def test_invented_time_uses_attributed_fallback(monkeypatch) -> None:
         "I'm happy you remember. What time are we having our date?"
     )
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] == (
@@ -2033,7 +2828,7 @@ def test_supported_recall_uses_attributed_fallback_after_location_inversion(
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
     payload, context = _supported_date_recall_context()
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] == (
@@ -2062,7 +2857,7 @@ def test_supported_recall_retries_ignored_fact_when_rejection_is_disabled(
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
     payload, context = _supported_date_recall_context()
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     correction = calls[1][1]["content"]
     assert len(calls) == 2
@@ -2087,7 +2882,7 @@ def test_supported_recall_uses_fact_after_failed_retry(monkeypatch) -> None:
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
     payload, context = _supported_date_recall_context()
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] == (
@@ -2107,7 +2902,7 @@ def test_supported_recall_uses_fact_when_provider_fails(monkeypatch) -> None:
     monkeypatch.setattr(ai_sims_server, "RESPONSE_REJECTION_ENABLED", False)
     payload, context = _supported_date_recall_context()
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == (
         'You told me: "Tonight, 7pm, at my place."'
@@ -2138,7 +2933,7 @@ def test_supported_recall_does_not_force_unsupported_question(monkeypatch) -> No
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert calls == [1]
     assert response["dialogue"] == "I don't remember that."
@@ -2183,7 +2978,7 @@ def test_friendship_category_alias_does_not_reclassify_dialogue(
     )
     context.update(conversation=[], speaker_id="ian", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == dialogue
     assert response["response_category"] == "friendly"
@@ -2620,7 +3415,7 @@ def test_valid_model_reply_is_not_replaced_for_omitting_a_critical_need(
         conversation=[], speaker_id="karmine", listener_id="bernard"
     )
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 1
     assert response["dialogue"].startswith("I'm glad you asked")
@@ -2657,7 +3452,7 @@ def test_dialogue_fallback_refuses_unsupported_fact(monkeypatch) -> None:
     )
     context.update(conversation=[], speaker_id="bella", listener_id="mortimer")
 
-    unknown_response = ai_sims_server.HERMES.dialogue(payload, context)
+    unknown_response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
     assert any(
         phrase in unknown_response["dialogue"].casefold()
         for phrase in ("don't know", "do not know", "don't remember", "do not remember")
@@ -3591,7 +4386,7 @@ def test_repetition_retry_keeps_history_and_requests_new_direction(monkeypatch) 
         ],
     )
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == "Thank you. I enjoy spending time with you too."
     assert "You have a very kind presence." in prompts[0]
@@ -3638,7 +4433,7 @@ def test_current_message_mirror_retries_and_returns_distinct_response(monkeypatc
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] == (
@@ -3677,7 +4472,7 @@ def test_persistent_current_message_mirror_uses_distinct_fallback(monkeypatch) -
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] != mirrored["dialogue"]
@@ -3705,7 +4500,7 @@ def test_mirroring_reasoning_fallback_uses_grounded_neutral_dialogue(monkeypatch
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert len(calls) == 2
     assert response["dialogue"] != message
@@ -4088,7 +4883,7 @@ def test_explicit_category_contradiction_is_recategorized_without_retry(
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert calls == [1]
     assert response["dialogue"] == provider_response["dialogue"]
@@ -4129,7 +4924,7 @@ def test_funny_incoming_friendly_reply_is_state_neutral(monkeypatch) -> None:
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == provider_response["dialogue"]
     assert response["response_category"] == "friendly"
@@ -4171,7 +4966,7 @@ def test_hesitant_non_romantic_reply_falls_back_without_relationship_action(
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert calls == [1, 1]
     assert response["response_category"] == "mean"
@@ -4223,7 +5018,7 @@ def test_recategorized_category_contradiction_is_dialogue_only(monkeypatch) -> N
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    result = ai_sims_server.HERMES.dialogue(payload, context)
+    result = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert result["suggested_action"] == "none"
 
@@ -4246,7 +5041,7 @@ def test_no_loaded_social_category_skips_provider(monkeypatch) -> None:
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["suggested_action"] == "none"
 
@@ -4918,7 +5713,7 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
     monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
     monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
     monkeypatch.setattr(ai_sims_server, "DB_PATH", core_db)
-    monkeypatch.setattr(ai_sims_server.HERMES, "dialogue", fail_dialogue)
+    monkeypatch.setattr(ai_sims_server.COGNITION_RUNTIME, "dialogue", fail_dialogue)
 
     result = ai_sims_server.chat(
         {
@@ -5199,7 +5994,7 @@ def test_chat_waits_for_native_game_confirmation(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(ai_sims_server, "DB_PATH", memory_db)
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(
-        ai_sims_server.HERMES,
+        ai_sims_server.COGNITION_RUNTIME,
         "dialogue",
         lambda _payload, _context: {
             "dialogue": "Hello.",
@@ -5249,7 +6044,7 @@ def test_exhausted_rejections_persist_on_completed_timeline_decision(
     core_db = str(tmp_path / "core.sqlite3")
     monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
     monkeypatch.setattr(
-        ai_sims_server.HERMES,
+        ai_sims_server.COGNITION_RUNTIME,
         "dialogue",
         lambda _payload, _context: {
             "dialogue": "Here is a harmless llama joke.",
@@ -5421,7 +6216,7 @@ def test_confirmed_exchange_ignores_generated_memory_summary(
     monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "memory.sqlite3"))
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(
-        ai_sims_server.HERMES,
+        ai_sims_server.COGNITION_RUNTIME,
         "dialogue",
         lambda _payload, _context: {
             "dialogue": "Hello.",
@@ -5474,7 +6269,7 @@ def test_dialogue_delivery_records_experience_and_empneon_trust_once(
     monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "memory.sqlite3"))
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(
-        ai_sims_server.HERMES,
+        ai_sims_server.COGNITION_RUNTIME,
         "dialogue",
         lambda _payload, _context: {
             "dialogue": "I hear you.",
@@ -5559,7 +6354,7 @@ def test_dialogue_delivery_concurrent_acknowledgements_apply_effects_once(
     monkeypatch.setattr(ai_sims_server, "DB_PATH", str(tmp_path / "memory.sqlite3"))
     monkeypatch.setattr(ai_sims_server, "ACTIVE_DB_PATH", None)
     monkeypatch.setattr(
-        ai_sims_server.HERMES,
+        ai_sims_server.COGNITION_RUNTIME,
         "dialogue",
         lambda _payload, _context: {
             "dialogue": "I hear you.",

@@ -6,7 +6,7 @@
 
 **Goal:** Prevent supported factual-recall answers from causing relationship outcomes or native social actions while preserving their dialogue and all normal social behavior.
 
-**Architecture:** Reuse `_supported_recall_facts()` as the existing explicit, grounded recall boundary. After model normalization in `HermesRuntime.dialogue()`, clear only the response's relationship outcome and executable actions when supported recall evidence exists.
+**Architecture:** Reuse `_supported_recall_facts()` as the existing explicit, grounded recall boundary. After model normalization in `CognitionRuntime.dialogue()`, clear only the response's relationship outcome and executable actions when supported recall evidence exists.
 
 **Tech Stack:** Python 3.12, pytest, Sims 4 adapter backend
 
@@ -28,7 +28,7 @@
 
 **Interfaces:**
 - Consumes: `_supported_recall_facts(message, context) -> list[dict]`.
-- Produces: `HermesRuntime.dialogue()` responses with supported recall dialogue intact and `relationship_outcome`, `suggested_action`, and `animation` set to `none`.
+- Produces: `CognitionRuntime.dialogue()` responses with supported recall dialogue intact and `relationship_outcome`, `suggested_action`, and `animation` set to `none`.
 
 - [x] **Step 1: Add the failing supported-recall regression**
 
@@ -72,7 +72,7 @@ def test_supported_recall_is_relationship_and_action_neutral(monkeypatch) -> Non
     )
     context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == provider_response["dialogue"]
     assert response["response_category"] == "romance"
@@ -122,7 +122,7 @@ def test_normal_romance_remains_actionable(monkeypatch) -> None:
     )
     context.update(conversation=[], speaker_id="sim-b", listener_id="sim-a")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["relationship_outcome"] == "romance_positive"
     assert response["suggested_action"] == "social.romance"
@@ -146,7 +146,7 @@ compatibility test passes.
 - [x] **Step 4: Implement the response-boundary guard**
 
 Immediately after the `normalize_response()` / `fallback_response()` block in
-`HermesRuntime.dialogue()`:
+`CognitionRuntime.dialogue()`:
 
 ```python
 if supported_facts:

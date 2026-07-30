@@ -10,7 +10,7 @@ decision in the existing timeline diagnostic.
 
 ## Root Cause
 
-`HermesRuntime.dialogue()` computes a grounding, category, or role-confusion reason for every
+`CognitionRuntime.dialogue()` computes a grounding, category, or role-confusion reason for every
 rejected response and writes it to the backend log. After the second rejection it returns
 `reasoning_fallback_response()` without carrying those reasons forward. The resulting Core
 decision and action record therefore have no link to the rejected attempts, and
@@ -32,7 +32,7 @@ warning log:
 - otherwise `speaker/listener confusion`.
 
 After both attempts are rejected, attach the two diagnostics to the private response dictionary
-returned by `HermesRuntime.dialogue()`. The Sims adapter's decision conversion ignores this
+returned by `CognitionRuntime.dialogue()`. The Sims adapter's decision conversion ignores this
 private field. The `chat()` orchestration captures it and, after the decision ID exists, stores:
 
 ```json

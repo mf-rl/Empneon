@@ -15,7 +15,7 @@ def agent_timeline(
         raise ValueError("timeline limit must be positive")
 
     entries: list[dict[str, object]] = []
-    for event in EpisodicMemoryStore(conn).get_for_agent(agent_id):
+    for event in EpisodicMemoryStore(conn).get_for_agent(agent_id, limit):
         entries.append(
             {
                 "type": "event",
@@ -24,7 +24,7 @@ def agent_timeline(
                 "data": asdict(event),
             }
         )
-    for record in ActionRecordStore(conn).get_for_agent(agent_id):
+    for record in ActionRecordStore(conn).get_for_agent(agent_id, limit):
         entries.append(
             {
                 "type": "decision",
@@ -37,7 +37,7 @@ def agent_timeline(
                 },
             }
         )
-    for belief in BeliefStore(conn).get_for_agent(agent_id):
+    for belief in BeliefStore(conn).get_for_agent(agent_id, limit):
         entries.append(
             {
                 "type": "belief",

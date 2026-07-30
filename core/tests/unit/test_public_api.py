@@ -20,6 +20,7 @@ def test_supported_api_and_version_source() -> None:
         "UsageStore",
         "WorldEvent",
         "agent_timeline",
+        "db_session",
         "load_agent_state",
         "open_db",
         "replay_action_record",

@@ -146,7 +146,7 @@ returned an accepted `mischief` response, and applied no relationship changes. T
 funny classifier now recognizes the observed `funniest` and `jokes` forms and automated coverage
 proves that reply is recategorized to relationship-neutral `funny`. A rebuilt-backend live retest
 then returned a joke without any explicit funny marker, kept category `friendly`, and again applied
-positive friendship. Hermes now makes `friendly` or `funny` responses to incoming funny
+positive friendship. The runtime now makes `friendly` or `funny` responses to incoming funny
 interactions relationship-neutral and actionless while preserving their dialogue and response
 category. Automated regression and rebuilt-backend live confirmation both pass.
 The July 29 request-scoped resource capture now records system, Sims, backend, provider, GPU, and
@@ -158,10 +158,43 @@ justify a hardware recommendation or higher concurrency. The accepted
 retains one concurrent request and the existing incremental RAM and latency estimates; no runtime
 setting changed, and provider-attributable VRAM remains unknown.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
+Set `AI_SIM_API_TOKEN` in both the backend and game launch environments to require the shipped
+clients to authenticate with the loopback API. Leaving it unset preserves the existing local
+development behavior.
+
+Confirmed pair recall now retrieves capped SQL relevance and first/latest windows instead of
+materializing complete agent history in Python. Deterministic ranking still preserves old
+relevant facts, first/last questions, attributed evidence, and large multi-term queries. SQLite
+term matching remains a pair-history scan; add an FTS index only if measured databases make that
+scan a latency bottleneck.
+
+## Backend architecture
+
+`backend/ai_sims_server.py` remains the executable entry point and compatibility façade. It owns
+composition, compatibility exports, process-wide singletons, `run()`, and `self_test()`. Existing
+imports and façade-level monkeypatch targets remain supported except for the deliberate cognition
+runtime rename to `CognitionRuntime` / `COGNITION_RUNTIME`.
+
+The five extracted modules are inert when imported:
+
+- `backend/config.py`: configuration merging, environment overrides, and logging setup
+- `backend/db.py`: SQLite schema and memory-session compatibility helpers
+- `backend/agent_manager.py`: agent lifecycle, cognition queue, and Test 10 queue gate
+- `backend/cognition.py`: response schemas, prompts, validation, fallback, and cognition runtime
+- `backend/server.py`: loopback HTTP server, authentication, validation, and route dispatch
+
+Importing an extracted module does not read configuration, attach log handlers, open a database,
+start a worker, or bind a socket. Cognition workers still start on first submission; database
+migration/opening remains in `run()` or explicit database calls.
 
 ## Files
 
-- `backend/ai_sims_server.py`: local game bridge; `/chat` and `/autonomous` run through Core
+- `backend/ai_sims_server.py`: executable local bridge and compatibility façade
+- `backend/config.py`: inert configuration and logging helpers
+- `backend/db.py`: inert database and memory-session compatibility helpers
+- `backend/agent_manager.py`: lazy cognition scheduling and agent management
+- `backend/cognition.py`: response processing and `CognitionRuntime`
+- `backend/server.py`: loopback HTTP request handling and dispatch
 - `backend/empneon_state.py`: unified Core identity, memory, migration, and diagnostics integration
 - `ts4script/ai_sims_agent.py`: Sims 4 interaction, autonomy bridge, and diagnostic commands
 - `tuning/empneon_social_interaction.xml`: custom pie-menu interaction tuning

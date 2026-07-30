@@ -13,7 +13,7 @@ timeline decision without storing prompts or raw model replies.
 integer attempts to `attempt` and `reason`; malformed types or ordering and corrupt JSON are
 ignored.
 
-**Architecture:** `HermesRuntime.dialogue()` returns exhausted rejection reasons as private,
+**Architecture:** `CognitionRuntime.dialogue()` returns exhausted rejection reasons as private,
 request-local response metadata. `chat()` removes and persists that metadata in the existing
 `DocumentMemoryStore`, while a Sims-only timeline wrapper decorates Core decision entries.
 
@@ -77,7 +77,7 @@ def test_dialogue_fallback_carries_only_exhausted_rejection_reasons(monkeypatch)
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["_response_rejections"] == [
         {"attempt": 1, "reason": "first normalized reason"},
@@ -123,7 +123,7 @@ def test_accepted_dialogue_retry_carries_no_rejection_diagnostic(monkeypatch) ->
     )
     context.update(conversation=[], speaker_id="karmine", listener_id="bernard")
 
-    response = ai_sims_server.HERMES.dialogue(payload, context)
+    response = ai_sims_server.COGNITION_RUNTIME.dialogue(payload, context)
 
     assert response["dialogue"] == "Accepted reply."
     assert "_response_rejections" not in response
@@ -187,7 +187,7 @@ Repeat Step 3. Expected: both tests pass.
 - [x] **Step 1: Write the failing persistence and timeline test**
 
 Add an end-to-end adapter test based on `test_chat_waits_for_native_game_confirmation`. Patch
-`HERMES.dialogue()` to return ordinary fallback fields plus:
+`COGNITION_RUNTIME.dialogue()` to return ordinary fallback fields plus:
 
 ```python
 "_response_rejections": [

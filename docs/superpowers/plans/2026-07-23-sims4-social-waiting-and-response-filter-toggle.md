@@ -100,7 +100,7 @@ Expected: failure because the config key/global bypass does not exist.
 
 Add `"response_rejection_enabled": false` to both default and checked-in config,
 validate that it is boolean, and return the first normalized response in
-`HermesRuntime.dialogue()` when the global is false. Document the toggle and
+`CognitionRuntime.dialogue()` when the global is false. Document the toggle and
 backend restart requirement.
 
 - [ ] **Step 4: Verify the focused tests pass**

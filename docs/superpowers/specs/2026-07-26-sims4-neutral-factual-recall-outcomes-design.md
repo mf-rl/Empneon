@@ -37,7 +37,7 @@ romance replies that do not contain a small set of explicit keywords.
 
 ## Design
 
-`HermesRuntime.dialogue()` already computes the request's supported recall
+`CognitionRuntime.dialogue()` already computes the request's supported recall
 facts before model generation. Immediately after normalizing a model response,
 when that set is non-empty:
 
