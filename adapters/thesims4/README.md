@@ -153,7 +153,10 @@ The July 29 request-scoped resource capture now records system, Sims, backend, p
 PresentMon evidence without retaining conversation content or Sim identity. One initial run and a
 three-request thinking-disabled neutral/recall matrix are published in the
 [benchmark results](docs/benchmark-results.md); they establish baseline evidence but do not yet
-justify a hardware recommendation or higher concurrency.
+justify a hardware recommendation or higher concurrency. The accepted
+[conservative resource proposal](../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md)
+retains one concurrent request and the existing incremental RAM and latency estimates; no runtime
+setting changed, and provider-attributable VRAM remains unknown.
 The packaged mod currently requires the backend at `127.0.0.1:8765`.
 
 ## Files

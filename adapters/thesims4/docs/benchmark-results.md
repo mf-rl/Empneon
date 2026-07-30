@@ -215,6 +215,9 @@ wide frame-time and duration variation still prevents treating any single run as
 budget. Per-process VRAM remains unavailable under Windows WDDM.
 
 The capture implementation and its 20 focused tests are complete. The full Sims adapter suite
-passed with 306 tests after implementation. The next engineering gate is a conservative resource
-budget proposal based on this matrix; runtime budgets, routing, and the single-request concurrency
-limit remain unchanged.
+passed with 306 tests after implementation. The conservative baseline proposal retains the current
+single-request limit, Core `256 MiB` incremental RAM ceiling, `64/128 MiB` small/large route
+estimates, and `30/90` second latency estimates. It leaves VRAM admission unknown and unenforced
+because the captures report total device use rather than provider-attributable memory. These are
+advisory hold values, not measured safe limits, and no runtime setting changed. See the
+[resource budget proposal](../../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md).

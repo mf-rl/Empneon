@@ -279,6 +279,12 @@ capture below records those values for a controlled request. Increase concurrenc
 observing the game and provider together. Do not increase the default limit of one without a new
 concurrent in-game measurement.
 
+The accepted [conservative resource proposal](../../../docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md)
+therefore retains `active_agent_limit: 1`, the Core `256 MiB` incremental RAM ceiling,
+`64/128 MiB` small/large route estimates, and `30/90` second latency estimates. VRAM admission
+remains unknown and unenforced because the published captures report total device use rather than
+provider-attributable memory.
+
 ### Live resource capture
 
 With The Sims 4, the Empneon backend, and LM Studio already running, capture one normal

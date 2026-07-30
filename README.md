@@ -255,7 +255,11 @@ The primary local validation machine is:
 - 16 GB RAM
 - The Sims 4 running concurrently
 
-The reference adapter defaults to one concurrent agent request. Existing measurements show significant pressure during repeated local-model calls; they do not establish broad performance or scalability.
+The reference adapter defaults to one concurrent agent request. The July 29 request-scoped matrix
+showed significant RAM, GPU, latency, and frame-time pressure while The Sims 4 and a local model
+ran together. The resulting [conservative resource proposal](docs/superpowers/specs/2026-07-29-sims4-conservative-resource-budget-design.md)
+retains the existing concurrency and incremental estimates without claiming safe limits, broad
+performance, or scalability.
 
 See:
 
@@ -278,6 +282,7 @@ Implemented and tested behavior includes:
 - Belief provenance, contradiction, revision, and trust-decayed propagation
 - Provider-free CLOD 1 telemetry
 - Provider-backed CLOD 3 usage and latency accounting
+- Request-scoped live resource capture with a documented conservative hold decision
 - Timeline, replay, regression fixtures, and package builds
 - Stable repeated Sims identity import
 

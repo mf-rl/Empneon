@@ -62,6 +62,9 @@ feature promise.
   pressure, durable cognition lifecycle, and PresentMon frame timing while excluding dialogue and
   Sim identity; one baseline and a three-request thinking-disabled neutral/recall matrix are
   published
+- The conservative baseline resource proposal retains one concurrent request and the existing
+  incremental RAM and latency estimates without changing runtime settings; route-attributable
+  VRAM remains unknown under Windows WDDM
 
 ## Next gates
 
@@ -76,12 +79,14 @@ feature promise.
 
 ### Resource evidence
 
-- Formulate a conservative resource-budget proposal from the initial thinking-disabled
-  neutral/recall matrix without changing runtime settings.
-- Extend the initial thinking-disabled neutral/recall matrix across additional game states only
-  if the proposal exposes a specific evidence gap. Establish provider-attributable VRAM
-  separately; Windows WDDM reports per-process GPU memory as unavailable.
-- Define safe budgets from measurements before increasing concurrency or claiming scalability.
+- Keep the conservative baseline proposal unchanged until a specific routing or capacity change
+  requires new evidence.
+- Before changing RAM estimates, repeat the neutral and recall cases enough to characterize
+  request-window variance.
+- Establish provider-attributable VRAM before enforcing VRAM admission; Windows WDDM reports
+  per-process GPU memory as unavailable.
+- Require a controlled concurrent in-game capture before increasing the single-request limit or
+  claiming scalability.
 
 ### Portability
 
