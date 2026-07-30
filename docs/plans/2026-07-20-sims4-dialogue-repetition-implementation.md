@@ -1,5 +1,10 @@
 # Sims 4 Dialogue Repetition Implementation Plan
 
+> **Historical execution record:** The unchecked checklist is preserved from the original plan.
+> Later implementation and live-acceptance records supersede its pending status; see
+> [the current roadmap](../roadmap.md) and the
+> [Sims acceptance results](../../adapters/thesims4/docs/in-game-core-feature-test-results.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop copied or recycled Sims dialogue, recognize common romantic invitations, and make `ai.relationship <name>` query the correct numeric Sim ID.

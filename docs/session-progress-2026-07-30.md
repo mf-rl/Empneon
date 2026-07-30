@@ -58,7 +58,7 @@ Phase 2 was committed earlier as `8284464`
 The final Phase 3 verification completed on 2026-07-30:
 
 - Core: `231` tests passed.
-- The Sims 4 adapter: `333` tests passed.
+- The Sims 4 adapter: `334` tests passed.
 - Godot adapter: `4` tests passed.
 - Shared and release tests: `23` tests passed.
 - CLOD regression scenario: `1/1` passed.

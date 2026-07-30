@@ -48,7 +48,7 @@ reviewed. No Critical or Important issue remained after the final review.
 The Phase 3 decomposition verification on 2026-07-30 produced:
 
 - Core: `231` tests
-- The Sims 4 adapter: `333` tests
+- The Sims 4 adapter: `334` tests
 - Godot adapter: `4` tests
 - Shared and release tests: `23` tests
 - CLOD regression scenario: `1/1`

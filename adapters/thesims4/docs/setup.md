@@ -102,7 +102,8 @@ the [in-game Core feature test plan](in-game-core-feature-test-plan.md).
 
 The mod currently connects to `http://127.0.0.1:8765`. Changing the backend host or
 port requires changing `BACKEND_URL` in `ts4script/ai_sims_agent.py` and rebuilding
-the mod. Do not expose the reference HTTP server to another machine; it has no authentication.
+the mod. `AI_SIM_API_TOKEN` optionally requires a shared token from the shipped clients, but this
+is not production network hardening. Keep the reference HTTP server bound to loopback.
 
 ## Configuration
 
@@ -151,8 +152,8 @@ Identical repeated prompts may reuse a relevant prior-shaped reply, while a repl
 different prompt is still rejected. After two rejected or failed model attempts, deterministic
 fallbacks remain actionless: funny returns a light llama joke, mean sets a firm boundary, and
 mischief suggests a harmless prank. Live July 27 validation confirmed these terminal behaviors
-with `relationship_outcome=none`, `animation=none`, and no applied game changes. The funny and
-mischief live rows reached fallback, so they do not yet demonstrate accepted provider dialogue.
+with `relationship_outcome=none`, `animation=none`, and no applied game changes. Those initial
+funny and mischief rows reached fallback; later provider-backed acceptance is recorded below.
 
 Each entry under `providers` accepts `endpoint`, `model`, and optionally `api_key`.
 Prefer `AI_SIM_API_KEY` over storing a secret in the tracked JSON file. `models.small`
@@ -186,22 +187,25 @@ deferred and must not be triggered by this implementation.
 On July 27, positive friendship had already been observed with a native `+8` result. A new social
 breadth run safely handled friendship, mean, funny, and mischief. Mean returned a firm boundary;
 funny returned an actual joke; mischief proposed a harmless trick. Every final mean/funny/mischief
-decision was relationship-neutral and actionless. Funny and mischief used deterministic fallback,
-which remains visible as a provider-acceptance gap rather than a safety failure.
+decision was relationship-neutral and actionless. The initial funny and mischief rows used
+deterministic fallback; subsequent rebuilt-package runs verified provider-backed acceptance.
 
 Later July 27 diagnostics captured only the two normalized rejection reasons for exhausted funny
 and mischief attempts. Funny state safety then passed live with zero trust, relationship outcome,
 animation, or applied changes even when the provider categorized marker-free joke dialogue as
 friendly. The live tuning probe identified
 `mixer_social_LieAboutCareer_group_mischief_skills`; source and automated discovery now use that
-exact name. The first attempted retest still loaded a stale July 26 archive. Source installation
-now rebuilds unconditionally, and the corrected archive has been installed for the next
-game-restart mischief row.
+exact name. The first attempted retest still loaded a stale July 26 archive, so source installation
+now rebuilds unconditionally. After a fresh install and game restart, provider-backed mischief
+dialogue passed through CLOD 2 selection and CLOD 3 generation with no relationship changes.
+Later funny dialogue also remained relationship-neutral whether classified as `funny` or
+`friendly`.
 
 On July 26, automated regression covered a later game-driven waiting-task cancellation that had
 discarded completed backend answers during Test 14. Non-user finishes now requeue the same session,
 stale callbacks cannot create duplicate tasks, and only `FinishingType.USER_CANCEL` suppresses a
-late reply. The rebuilt mod still requires a live in-game retest.
+late reply. The rebuilt mod passed the live Test 14 save-branch matrix without duplicating the
+backend request.
 
 On July 24, the in-game Core matrix also closed Tests 7 through 9. A non-date paraphrase retrieved
 the informed pair's private `under the blue bench` location before and after backend restart while
@@ -260,12 +264,12 @@ location, memories, and player-entered dialogue. A configured remote TTS endpoin
 generated dialogue and voice settings. Review those services' retention policies before
 enabling them.
 
-The adapter backend has no user accounts, encryption layer, retention scheduler, or authenticated
-HTTP API. Keep the backend bound to loopback. To remove retained reference data, stop the game
-and backend, then delete the configured `empneon_core_memory.sqlite3`, legacy migration sources,
-Empneon checkpoint/session files,
-and `logs` files. Back up
-save-related data first if continuity matters.
+The adapter backend has no user accounts, encryption layer, or retention scheduler.
+`AI_SIM_API_TOKEN` provides optional shared-token authentication for the loopback API; it does not
+make the reference server suitable for remote exposure. Keep the backend bound to loopback. To
+remove retained reference data, stop the game and backend, then delete the configured
+`empneon_core_memory.sqlite3`, legacy migration sources, Empneon checkpoint/session files, and
+`logs` files. Back up save-related data first if continuity matters.
 
 ## Hardware Profiles
 
@@ -318,9 +322,9 @@ they cannot prove a playable session, real game consequences, or save/reload con
 
 The current build persists observed identities and pending proposals, attempts the
 base-game social super-interaction on the simulation thread, and sends the finishing
-result and observed relationship delta back to Core. This code path is not validated until
-the following in-game procedure passes. If the installed game exposes different tuning or
-callback APIs, the result must remain failed and the Stage 2 checklist must stay open.
+result and observed relationship delta back to Core. The following procedure is the historical
+exit gate that produced the passing validation recorded at the end of this section. Future game
+patches that expose different tuning or callback APIs require the gate to be repeated.
 
 ### 1. Prepare an isolated test
 

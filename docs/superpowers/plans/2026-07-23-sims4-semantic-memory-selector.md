@@ -1,5 +1,10 @@
 # Sims 4 Semantic Memory Selector Implementation Plan
 
+> **Historical execution record:** The unchecked checklist is preserved from the original plan.
+> Later implementation and live-acceptance records supersede its pending status; see
+> [the current roadmap](../../roadmap.md) and the
+> [Sims acceptance results](../../../adapters/thesims4/docs/in-game-core-feature-test-results.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
@@ -598,7 +603,7 @@ files appear.
 Change the design status to:
 
 ```markdown
-**Status:** Implemented and automated tests passing; in-game validation pending
+**Status:** Implemented; date and non-date paraphrase recall live-passed
 ```
 
 Add the final test count and explicitly list these manual tests:
