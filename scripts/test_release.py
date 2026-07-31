@@ -35,13 +35,23 @@ def _fake_repo(tmp_path: Path) -> Path:
             '__version__ = "0.4.0"\n',
         )
 
+    _write(tmp_path / "LICENSE", "Apache License 2.0")
+    _write(tmp_path / "core/README.md", "# Empneon Core")
     _write(tmp_path / "core/dist/empneon-0.4.0-py3-none-any.whl")
     _write(tmp_path / "core/dist/empneon-0.4.0.tar.gz")
     _write(tmp_path / "adapters/thesims4/dist/empneon_thesims4-0.4.0-py3-none-any.whl")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.ts4script")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.package")
-    _write(tmp_path / "adapters/thesims4/backend/ai_sims_server.py")
-    _write(tmp_path / "adapters/thesims4/backend/empneon_state.py")
+    for name in (
+        "agent_manager.py",
+        "ai_sims_server.py",
+        "cognition.py",
+        "config.py",
+        "db.py",
+        "empneon_state.py",
+        "server.py",
+    ):
+        _write(tmp_path / "adapters/thesims4/backend" / name)
     _write(tmp_path / "adapters/thesims4/config/config.json", "{}")
     for name in (
         "install_mod.ps1",
@@ -68,6 +78,19 @@ def test_parse_release_tag(component: str) -> None:
 def test_parse_release_tag_rejects_invalid_tags(tag: str) -> None:
     with pytest.raises(ValueError, match="release tag"):
         release.parse_release_tag(tag)
+
+
+def test_parse_unified_release_tag() -> None:
+    assert release.parse_unified_release_tag("v0.4.0") == "0.4.0"
+
+
+@pytest.mark.parametrize(
+    "tag",
+    ["0.4.0", "core-v0.4.0", "v0.4", "v01.4.0", "v0.4.0-rc1"],
+)
+def test_parse_unified_release_tag_rejects_invalid_tags(tag: str) -> None:
+    with pytest.raises(ValueError, match="unified release tag"):
+        release.parse_unified_release_tag(tag)
 
 
 def test_validate_versions_rejects_mismatch(tmp_path: Path) -> None:
@@ -119,6 +142,44 @@ def test_package_godot_contains_only_runtime_files(tmp_path: Path) -> None:
             "portability/scenario.json",
             "wheels/empneon-0.4.0-py3-none-any.whl",
             "wheels/empneon_godot-0.4.0-py3-none-any.whl",
+        }
+
+
+def test_package_unified_contains_only_runnable_files(tmp_path: Path) -> None:
+    root = _fake_repo(tmp_path)
+    _write(root / "adapters/thesims4/backend/private.sqlite3", "secret")
+    _write(root / "adapters/godot/dist/empneon-godot.zip")
+
+    assets = release.package_unified(root, "0.4.0", root / "release")
+
+    assert [path.name for path in assets] == [
+        "empneon-core-v0.4.0.zip",
+        "empneon-thesims4-adapter-v0.4.0.zip",
+    ]
+    with ZipFile(assets[0]) as package:
+        assert set(package.namelist()) == {
+            "LICENSE",
+            "README.md",
+            "wheels/empneon-0.4.0-py3-none-any.whl",
+        }
+    with ZipFile(assets[1]) as package:
+        assert set(package.namelist()) == {
+            "LICENSE",
+            "README.md",
+            "backend/agent_manager.py",
+            "backend/ai_sims_server.py",
+            "backend/cognition.py",
+            "backend/config.py",
+            "backend/db.py",
+            "backend/empneon_state.py",
+            "backend/server.py",
+            "config/config.json",
+            "dist/Empneon_TheSims4.package",
+            "dist/Empneon_TheSims4.ts4script",
+            "install_mod.ps1",
+            "run_backend.ps1",
+            "wheels/empneon-0.4.0-py3-none-any.whl",
+            "wheels/empneon_thesims4-0.4.0-py3-none-any.whl",
         }
 
 
@@ -200,6 +261,44 @@ def test_release_workflow_has_required_contract() -> None:
     ) in workflow
 
 
+def test_unified_release_workflow_has_required_contract() -> None:
+    workflow = (ROOT / ".github/workflows/unified-release.yml").read_text(encoding="utf-8")
+
+    for text in (
+        "name: Unified release",
+        "release:",
+        "types: [published]",
+        "windows-2022",
+        "package-unified",
+        "empneon-core-v",
+        "empneon-thesims4-adapter-v",
+        "run_backend.ps1 -InstallOnly",
+        "gh release upload",
+        "--clobber",
+        "environment: pypi",
+        "id-token: write",
+        "pypa/gh-action-pypi-publish@release/v1",
+        "actions/checkout@v6",
+        "actions/setup-python@v6",
+        "actions/upload-artifact@v7",
+        "actions/download-artifact@v8",
+    ):
+        assert text in workflow
+    for forbidden in (
+        "workflow_dispatch:",
+        "godot-v",
+        "empneon-godot",
+        "PYPI_API_TOKEN",
+        "secrets.PYPI",
+        "gh release create",
+    ):
+        assert forbidden not in workflow
+    assert "if: startsWith(github.event.release.tag_name, 'v')" in workflow
+    assert "attach-release-assets:\n    needs: build" in workflow
+    assert "publish-core:\n    needs: [build, attach-release-assets]" in workflow
+    assert "packages-dir: dist/" in workflow
+
+
 def test_monorepo_ci_checks_release_support() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "scripts/release.py scripts/test_release.py" in workflow
@@ -214,7 +313,11 @@ def test_release_documentation_matches_artifacts() -> None:
     godot_readme = (ROOT / "adapters/godot/README.md").read_text(encoding="utf-8")
 
     assert "core-vX.Y.Z" in root_readme
+    assert "vX.Y.Z" in root_readme
+    assert "empneon-core-vX.Y.Z.zip" in root_readme
+    assert "python -m pip install empneon" in root_readme
     assert "thesims4-vX.Y.Z" in sims_readme
+    assert "empneon-thesims4-adapter-vX.Y.Z.zip" in sims_readme
     assert "godot-vX.Y.Z" in godot_readme
     assert "pip install" in root_readme
     assert "SHA256SUMS.txt" in root_readme

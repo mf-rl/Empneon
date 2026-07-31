@@ -1,0 +1,119 @@
+name: Unified release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: windows-2022
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python 3.7 for The Sims 4
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.7"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install build tools
+        run: python -m pip install --upgrade build pytest twine
+      - id: version
+        name: Validate unified release tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $version = py -3.11 -c "import os; from scripts.release import parse_unified_release_tag; print(parse_unified_release_tag(os.environ['RELEASE_TAG']))"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Validate repository versions
+        shell: pwsh
+        run: |
+          py -3.11 scripts/release.py validate core ${{ steps.version.outputs.version }}
+          py -3.11 scripts/release.py validate thesims4 ${{ steps.version.outputs.version }}
+          py -3.11 scripts/release.py validate godot ${{ steps.version.outputs.version }}
+      - name: Test release packaging
+        run: py -3.11 -m pytest -q scripts/test_release.py
+      - name: Build Core
+        working-directory: core
+        run: py -3.11 -m build
+      - name: Build The Sims 4 adapter
+        working-directory: adapters/thesims4
+        run: py -3.11 -m build
+      - name: Validate Python distributions
+        shell: pwsh
+        run: |
+          py -3.11 -m twine check core/dist/*
+          py -3.11 -m twine check adapters/thesims4/dist/*.whl adapters/thesims4/dist/*.tar.gz
+      - name: Build The Sims 4 mod
+        run: py -3.11 adapters/thesims4/build_mod.py
+      - name: Package unified archives
+        run: py -3.11 scripts/release.py package-unified ${{ steps.version.outputs.version }} --output release/unified
+      - name: Smoke-test Core archive
+        shell: pwsh
+        run: |
+          Expand-Archive release/unified/empneon-core-v${{ steps.version.outputs.version }}.zip release/core-smoke
+          py -3.11 -m venv release/core-smoke-venv
+          $wheel = (Get-ChildItem release/core-smoke/wheels/empneon-*.whl).FullName
+          & .\release\core-smoke-venv\Scripts\python.exe -m pip install $wheel
+          & .\release\core-smoke-venv\Scripts\python.exe -c "import empneon; assert empneon.__version__ == '${{ steps.version.outputs.version }}'"
+      - name: Smoke-test The Sims 4 archive
+        shell: pwsh
+        run: |
+          Expand-Archive release/unified/empneon-thesims4-adapter-v${{ steps.version.outputs.version }}.zip release/sims-smoke
+          & .\release\sims-smoke\run_backend.ps1 -InstallOnly
+      - uses: actions/upload-artifact@v7
+        with:
+          name: unified-release-zips
+          path: release/unified/*.zip
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: core-python-distributions
+          path: |
+            core/dist/*.whl
+            core/dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  attach-release-assets:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: unified-release-zips
+          path: release-assets
+      - name: Attach archives to the triggering release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" release-assets/*.zip --clobber
+
+  publish-core:
+    needs: [build, attach-release-assets]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: core-python-distributions
+          path: dist
+      - name: Publish Empneon Core to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/

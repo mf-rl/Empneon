@@ -4,6 +4,10 @@ The Sims 4 adapter, script mod, and local bridge for Empneon Core.
 
 ## Install a release
 
+From a unified `vX.Y.Z` release, download
+`empneon-thesims4-adapter-vX.Y.Z.zip`. The existing independent
+`thesims4-vX.Y.Z` release archive remains supported.
+
 Download the `thesims4-vX.Y.Z` release and extract `Empneon-TheSims4-X.Y.Z.zip`. The archive
 contains the adapter wheel, matching Core wheel, mod artifacts, and `SHA256SUMS.txt`. From the
 extracted directory:
