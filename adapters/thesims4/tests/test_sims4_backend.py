@@ -5168,6 +5168,52 @@ def test_romantic_invitation_fallback_does_not_recall_an_earlier_player_message(
     assert response["dialogue"] != previous_message
 
 
+def test_reasoning_fallback_never_crashes_when_all_candidates_are_rejected() -> None:
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"name": "Sim A"},
+        {"name": "Sim B"},
+        {},
+        {},
+        [],
+    )
+
+    response = ai_sims_server.backend_cognition.reasoning_fallback_response(
+        {"message": "I want to discuss something private with you."},
+        context,
+        grounding_issue=lambda *_args, **_kwargs: "rejected",
+        role_confusion=lambda *_args, **_kwargs: False,
+    )
+
+    assert response["dialogue"]
+    assert response["intent"] == "set_boundary"
+    assert response["suggested_action"] == "none"
+
+
+def test_non_recall_statement_does_not_require_semantic_fact_in_reply() -> None:
+    payload = {"message": "I want to discuss something private with you."}
+    context = ai_sims_server.build_context(
+        {"speaker": {}, "listener": {}},
+        {"id": "sim-a", "name": "Sim A"},
+        {"id": "sim-b", "name": "Sim B"},
+        {},
+        {},
+        [
+            {
+                "semantic_primary": True,
+                "facts": [{"actor_id": "sim-b", "statement": "I am attracted to you."}],
+            }
+        ],
+    )
+    context.update(conversation=[], speaker_id="sim-a", listener_id="sim-b")
+
+    assert ai_sims_server.response_grounding_issue(
+        payload,
+        {"dialogue": "I need to pause this conversation for now."},
+        context,
+    ) == ""
+
+
 def test_reasoning_fallback_stays_relevant_across_social_kinds() -> None:
     context = ai_sims_server.build_context(
         {"speaker": {}, "listener": {}},

@@ -1238,6 +1238,10 @@ def _promise_issue(facts, dialogue, context):
 def _supported_recall_issue(payload, response, context):
     message = str(payload.get("message") or "")
     query = analyze_recall_query(message)
+    if "?" not in message and not re.search(
+        r"\b(?:tell|remind)\s+me\b", message, re.IGNORECASE
+    ):
+        return ""
     facts = _supported_recall_facts(message, context)
     if not facts:
         return ""
@@ -1489,7 +1493,15 @@ def reasoning_fallback_response(
             candidate, context
         ):
             return candidate
-    raise RuntimeError("could not build a grounded dialogue fallback")
+    return dict(
+        fallback,
+        dialogue="I need to pause this conversation for now.",
+        emotion="guarded",
+        intent="set_boundary",
+        response_category="friendly",
+        tone_tags=["reserved"],
+        trust_delta=0,
+    )
 
 
 def _response_rejection_diagnostics(value):
