@@ -220,7 +220,15 @@ See the [open-source roadmap](docs/roadmap.md).
 
 ## Releases
 
-Core releases use the `core-vX.Y.Z` tag and contain a wheel, source distribution, and
+Unified releases use the `vX.Y.Z` tag. Each release includes
+`empneon-core-vX.Y.Z.zip`, containing the installable Core wheel. Core is also available from
+PyPI:
+
+```bash
+python -m pip install empneon
+```
+
+Independent Core releases use the `core-vX.Y.Z` tag and contain a wheel, source distribution, and
 `SHA256SUMS.txt`.
 
 Install a downloaded wheel with:

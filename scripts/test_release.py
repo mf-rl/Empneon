@@ -312,7 +312,11 @@ def test_release_documentation_matches_artifacts() -> None:
     godot_readme = (ROOT / "adapters/godot/README.md").read_text(encoding="utf-8")
 
     assert "core-vX.Y.Z" in root_readme
+    assert "vX.Y.Z" in root_readme
+    assert "empneon-core-vX.Y.Z.zip" in root_readme
+    assert "python -m pip install empneon" in root_readme
     assert "thesims4-vX.Y.Z" in sims_readme
+    assert "empneon-thesims4-adapter-vX.Y.Z.zip" in sims_readme
     assert "godot-vX.Y.Z" in godot_readme
     assert "pip install" in root_readme
     assert "SHA256SUMS.txt" in root_readme
