@@ -174,7 +174,7 @@ scan a latency bottleneck.
 
 ## Current status and validation
 
-The adapter is an experimental alpha reference integration. It supports contextual player
+The adapter is an alpha reference integration. It supports contextual player
 dialogue, persistent identity and relationships, pair-scoped confirmed-memory recall, grounded
 action proposals with game-confirmed results, save-aware database checkpoints, and provider-free
 deterministic autonomy at lower cognitive levels.

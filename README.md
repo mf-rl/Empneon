@@ -5,7 +5,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB.svg">
-  <img alt="Status: experimental alpha" src="https://img.shields.io/badge/status-experimental%20alpha-orange.svg">
+  <img alt="Core: beta" src="https://img.shields.io/badge/core-beta-blue.svg">
+  <img alt="Sims 4 adapter: alpha" src="https://img.shields.io/badge/sims4%20adapter-alpha-orange.svg">
+  <img alt="Godot adapter: proof-of-concept" src="https://img.shields.io/badge/godot%20adapter-proof--of--concept-lightgrey.svg">
 </p>
 
 <p align="center">
@@ -18,8 +20,9 @@ uses deterministic rules or optional language models to decide what a character 
 attempt next.
 
 > [!IMPORTANT]
-> Empneon is an experimental alpha. It is suitable for development, demonstrations, and controlled
-> testing, not production use or unattended deployment.
+> Empneon Core is a beta release suitable for development, demonstrations, and controlled testing,
+> not production use or unattended deployment. The Sims 4 adapter is in alpha: single hardware
+> profile tested, resource pressure documented. The Godot adapter is a proof of concept.
 
 ## Why Empneon?
 

@@ -9,7 +9,7 @@ the [Empneon README](https://github.com/mf-rl/Empneon#readme).
 
 ## Installation
 
-Empneon is currently an experimental alpha distributed through project releases.
+Empneon Core is currently a beta release distributed through project releases.
 
 ```bash
 python -m pip install ./empneon-X.Y.Z-py3-none-any.whl

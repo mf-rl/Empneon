@@ -17,7 +17,7 @@ adapter-specific setup, features, status, validation, hardware, compatibility, o
 
 Retain:
 
-- Empneon Core's purpose and alpha status;
+- Empneon Core's purpose and beta status;
 - Core capabilities and architecture;
 - cognitive levels, memory, grounding, providers, telemetry, and replay;
 - Core-only development and test commands;
