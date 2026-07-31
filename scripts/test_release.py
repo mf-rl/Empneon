@@ -261,6 +261,43 @@ def test_release_workflow_has_required_contract() -> None:
     ) in workflow
 
 
+def test_unified_release_workflow_has_required_contract() -> None:
+    workflow = (ROOT / ".github/workflows/unified-release.yml").read_text(encoding="utf-8")
+
+    for text in (
+        "name: Unified release",
+        "release:",
+        "types: [published]",
+        "windows-2022",
+        "package-unified",
+        "empneon-core-v",
+        "empneon-thesims4-adapter-v",
+        "run_backend.ps1 -InstallOnly",
+        "gh release upload",
+        "--clobber",
+        "environment: pypi",
+        "id-token: write",
+        "pypa/gh-action-pypi-publish@release/v1",
+        "actions/checkout@v6",
+        "actions/setup-python@v6",
+        "actions/upload-artifact@v7",
+        "actions/download-artifact@v8",
+    ):
+        assert text in workflow
+    for forbidden in (
+        "workflow_dispatch:",
+        "godot-v",
+        "empneon-godot",
+        "PYPI_API_TOKEN",
+        "secrets.PYPI",
+        "gh release create",
+    ):
+        assert forbidden not in workflow
+    assert "attach-release-assets:\n    needs: build" in workflow
+    assert "publish-core:\n    needs: [build, attach-release-assets]" in workflow
+    assert "packages-dir: dist/" in workflow
+
+
 def test_monorepo_ci_checks_release_support() -> None:
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "scripts/release.py scripts/test_release.py" in workflow
