@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   build:
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: windows-2022
     outputs:
       version: ${{ steps.version.outputs.version }}

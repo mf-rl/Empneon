@@ -293,6 +293,7 @@ def test_unified_release_workflow_has_required_contract() -> None:
         "gh release create",
     ):
         assert forbidden not in workflow
+    assert "if: startsWith(github.event.release.tag_name, 'v')" in workflow
     assert "attach-release-assets:\n    needs: build" in workflow
     assert "publish-core:\n    needs: [build, attach-release-assets]" in workflow
     assert "packages-dir: dist/" in workflow
