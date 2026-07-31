@@ -24,20 +24,20 @@ def _fake_repo(tmp_path: Path) -> Path:
         ("adapters/godot", "empneon_godot"),
     ):
         dynamic = component == "core"
-        version_line = 'dynamic = ["version"]' if dynamic else 'version = "0.3.0"'
-        dependencies = "" if dynamic else 'dependencies = ["empneon>=0.3.0,<0.4"]'
+        version_line = 'dynamic = ["version"]' if dynamic else 'version = "0.4.0"'
+        dependencies = "" if dynamic else 'dependencies = ["empneon>=0.4.0,<0.5"]'
         _write(
             tmp_path / component / "pyproject.toml",
             f'[project]\nname = "{package.replace("_", "-")}"\n{version_line}\n{dependencies}\n',
         )
         _write(
             tmp_path / component / "src" / package / "__init__.py",
-            '__version__ = "0.3.0"\n',
+            '__version__ = "0.4.0"\n',
         )
 
-    _write(tmp_path / "core/dist/empneon-0.3.0-py3-none-any.whl")
-    _write(tmp_path / "core/dist/empneon-0.3.0.tar.gz")
-    _write(tmp_path / "adapters/thesims4/dist/empneon_thesims4-0.3.0-py3-none-any.whl")
+    _write(tmp_path / "core/dist/empneon-0.4.0-py3-none-any.whl")
+    _write(tmp_path / "core/dist/empneon-0.4.0.tar.gz")
+    _write(tmp_path / "adapters/thesims4/dist/empneon_thesims4-0.4.0-py3-none-any.whl")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.ts4script")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.package")
     _write(tmp_path / "adapters/thesims4/backend/ai_sims_server.py")
@@ -52,7 +52,7 @@ def _fake_repo(tmp_path: Path) -> Path:
     ):
         _write(tmp_path / "adapters/thesims4" / name)
 
-    _write(tmp_path / "adapters/godot/dist/empneon_godot-0.3.0-py3-none-any.whl")
+    _write(tmp_path / "adapters/godot/dist/empneon_godot-0.4.0-py3-none-any.whl")
     for name in ("main.gd", "main.tscn", "project.godot", "scenario.json"):
         _write(tmp_path / "adapters/godot/portability" / name)
     _write(tmp_path / "adapters/godot/README.md")
@@ -61,10 +61,10 @@ def _fake_repo(tmp_path: Path) -> Path:
 
 @pytest.mark.parametrize("component", ["core", "thesims4", "godot"])
 def test_parse_release_tag(component: str) -> None:
-    assert release.parse_release_tag(f"{component}-v0.3.0") == (component, "0.3.0")
+    assert release.parse_release_tag(f"{component}-v0.4.0") == (component, "0.4.0")
 
 
-@pytest.mark.parametrize("tag", ["v0.3.0", "core-0.3.0", "other-v0.3.0", "core-v0.3"])
+@pytest.mark.parametrize("tag", ["v0.4.0", "core-0.4.0", "other-v0.4.0", "core-v0.4"])
 def test_parse_release_tag_rejects_invalid_tags(tag: str) -> None:
     with pytest.raises(ValueError, match="release tag"):
         release.parse_release_tag(tag)
@@ -75,18 +75,18 @@ def test_validate_versions_rejects_mismatch(tmp_path: Path) -> None:
     init = root / "adapters/godot/src/empneon_godot/__init__.py"
     init.write_text('__version__ = "0.2.0"\n', encoding="utf-8")
     with pytest.raises(ValueError, match="0.2.0"):
-        release.validate_versions(root, "godot", "0.3.0")
+        release.validate_versions(root, "godot", "0.4.0")
 
 
 @pytest.mark.parametrize("component", ["core", "thesims4", "godot"])
 def test_repository_versions_are_synchronized(component: str) -> None:
-    release.validate_versions(ROOT, component, "0.3.0")
+    release.validate_versions(ROOT, component, "0.4.0")
 
 
 def test_package_sims_contains_only_runtime_files(tmp_path: Path) -> None:
     root = _fake_repo(tmp_path)
     _write(root / "adapters/thesims4/tests/secret.env", "TOKEN=bad")
-    assets = release.package_component(root, "thesims4", "0.3.0", root / "release")
+    assets = release.package_component(root, "thesims4", "0.4.0", root / "release")
     archive = next(path for path in assets if path.suffix == ".zip")
     with ZipFile(archive) as package:
         assert set(package.namelist()) == {
@@ -100,15 +100,15 @@ def test_package_sims_contains_only_runtime_files(tmp_path: Path) -> None:
             "docs/in-game-core-feature-test-plan.md",
             "install_mod.ps1",
             "run_backend.ps1",
-            "wheels/empneon-0.3.0-py3-none-any.whl",
-            "wheels/empneon_thesims4-0.3.0-py3-none-any.whl",
+            "wheels/empneon-0.4.0-py3-none-any.whl",
+            "wheels/empneon_thesims4-0.4.0-py3-none-any.whl",
         }
         assert all("secret" not in name and "tests" not in name for name in package.namelist())
 
 
 def test_package_godot_contains_only_runtime_files(tmp_path: Path) -> None:
     root = _fake_repo(tmp_path)
-    assets = release.package_component(root, "godot", "0.3.0", root / "release")
+    assets = release.package_component(root, "godot", "0.4.0", root / "release")
     archive = next(path for path in assets if path.suffix == ".zip")
     with ZipFile(archive) as package:
         assert set(package.namelist()) == {
@@ -117,8 +117,8 @@ def test_package_godot_contains_only_runtime_files(tmp_path: Path) -> None:
             "portability/main.tscn",
             "portability/project.godot",
             "portability/scenario.json",
-            "wheels/empneon-0.3.0-py3-none-any.whl",
-            "wheels/empneon_godot-0.3.0-py3-none-any.whl",
+            "wheels/empneon-0.4.0-py3-none-any.whl",
+            "wheels/empneon_godot-0.4.0-py3-none-any.whl",
         }
 
 
@@ -237,5 +237,5 @@ def test_release_documentation_matches_artifacts() -> None:
     assert "Empneon-Godot-X.Y.Z.zip" in godot_readme
     assert "wheels/" in godot_readme
 
-    sims_notes = release.release_notes("thesims4", "0.3.0")
+    sims_notes = release.release_notes("thesims4", "0.4.0")
     assert "automatically installs the bundled wheels" in sims_notes

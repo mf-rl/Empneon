@@ -26,7 +26,7 @@ def test_supported_api_and_version_source() -> None:
         "replay_action_record",
         "save_agent_state",
     }
-    assert empneon.__version__ == "0.3.0"
+    assert empneon.__version__ == "0.4.0"
     assert set(empneon.__all__) == expected
     assert all(hasattr(empneon, name) for name in expected)
 

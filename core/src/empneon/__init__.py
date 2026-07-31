@@ -17,7 +17,7 @@ from empneon.core.state import load_agent_state, save_agent_state
 from empneon.core.timeline import agent_timeline
 from empneon.db.connection import db_session, open_db
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "ActionRecordStore",

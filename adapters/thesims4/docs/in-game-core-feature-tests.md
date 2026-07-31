@@ -36,7 +36,7 @@ With the release backend and configured LLM provider running, execute this from
 
 ```powershell
 py -3.12 .\scripts\simulate_http_interactions.py `
-  --database 'C:\Users\mauri\Downloads\Empneon-TheSims4-0.3.0\empneon_core_memory.sqlite3'
+  --database 'C:\Users\mauri\Downloads\Empneon-TheSims4-0.4.0\empneon_core_memory.sqlite3'
 ```
 
 The harness sends the same `/chat` and `/action-result` payloads as Empneon Social, then verifies

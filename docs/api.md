@@ -1,6 +1,6 @@
 # Package, API, and Compatibility Policy
 
-Empneon `0.3.0` supports Python 3.11 or newer. It is a pre-1.0 developer release:
+Empneon `0.4.0` supports Python 3.11 or newer. It is a pre-1.0 developer release:
 the package artifact and the API listed below are supported, but minor releases may
 make documented breaking changes.
 
