@@ -35,13 +35,23 @@ def _fake_repo(tmp_path: Path) -> Path:
             '__version__ = "0.4.0"\n',
         )
 
+    _write(tmp_path / "LICENSE", "Apache License 2.0")
+    _write(tmp_path / "core/README.md", "# Empneon Core")
     _write(tmp_path / "core/dist/empneon-0.4.0-py3-none-any.whl")
     _write(tmp_path / "core/dist/empneon-0.4.0.tar.gz")
     _write(tmp_path / "adapters/thesims4/dist/empneon_thesims4-0.4.0-py3-none-any.whl")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.ts4script")
     _write(tmp_path / "adapters/thesims4/dist/Empneon_TheSims4.package")
-    _write(tmp_path / "adapters/thesims4/backend/ai_sims_server.py")
-    _write(tmp_path / "adapters/thesims4/backend/empneon_state.py")
+    for name in (
+        "agent_manager.py",
+        "ai_sims_server.py",
+        "cognition.py",
+        "config.py",
+        "db.py",
+        "empneon_state.py",
+        "server.py",
+    ):
+        _write(tmp_path / "adapters/thesims4/backend" / name)
     _write(tmp_path / "adapters/thesims4/config/config.json", "{}")
     for name in (
         "install_mod.ps1",
@@ -68,6 +78,19 @@ def test_parse_release_tag(component: str) -> None:
 def test_parse_release_tag_rejects_invalid_tags(tag: str) -> None:
     with pytest.raises(ValueError, match="release tag"):
         release.parse_release_tag(tag)
+
+
+def test_parse_unified_release_tag() -> None:
+    assert release.parse_unified_release_tag("v0.4.0") == "0.4.0"
+
+
+@pytest.mark.parametrize(
+    "tag",
+    ["0.4.0", "core-v0.4.0", "v0.4", "v01.4.0", "v0.4.0-rc1"],
+)
+def test_parse_unified_release_tag_rejects_invalid_tags(tag: str) -> None:
+    with pytest.raises(ValueError, match="unified release tag"):
+        release.parse_unified_release_tag(tag)
 
 
 def test_validate_versions_rejects_mismatch(tmp_path: Path) -> None:
@@ -119,6 +142,44 @@ def test_package_godot_contains_only_runtime_files(tmp_path: Path) -> None:
             "portability/scenario.json",
             "wheels/empneon-0.4.0-py3-none-any.whl",
             "wheels/empneon_godot-0.4.0-py3-none-any.whl",
+        }
+
+
+def test_package_unified_contains_only_runnable_files(tmp_path: Path) -> None:
+    root = _fake_repo(tmp_path)
+    _write(root / "adapters/thesims4/backend/private.sqlite3", "secret")
+    _write(root / "adapters/godot/dist/empneon-godot.zip")
+
+    assets = release.package_unified(root, "0.4.0", root / "release")
+
+    assert [path.name for path in assets] == [
+        "empneon-core-v0.4.0.zip",
+        "empneon-thesims4-adapter-v0.4.0.zip",
+    ]
+    with ZipFile(assets[0]) as package:
+        assert set(package.namelist()) == {
+            "LICENSE",
+            "README.md",
+            "wheels/empneon-0.4.0-py3-none-any.whl",
+        }
+    with ZipFile(assets[1]) as package:
+        assert set(package.namelist()) == {
+            "LICENSE",
+            "README.md",
+            "backend/agent_manager.py",
+            "backend/ai_sims_server.py",
+            "backend/cognition.py",
+            "backend/config.py",
+            "backend/db.py",
+            "backend/empneon_state.py",
+            "backend/server.py",
+            "config/config.json",
+            "dist/Empneon_TheSims4.package",
+            "dist/Empneon_TheSims4.ts4script",
+            "install_mod.ps1",
+            "run_backend.ps1",
+            "wheels/empneon-0.4.0-py3-none-any.whl",
+            "wheels/empneon_thesims4-0.4.0-py3-none-any.whl",
         }
 
 
