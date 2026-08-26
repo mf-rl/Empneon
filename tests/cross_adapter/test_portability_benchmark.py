@@ -32,7 +32,8 @@ def test_same_scenario_runs_through_both_adapters(
     assert isinstance(event_data, dict)
     actor_ids = event_data["actor_ids"]
     facts = event_data["facts"]
-    assert isinstance(actor_ids, list) and isinstance(facts, dict)
+    assert isinstance(actor_ids, list)
+    assert isinstance(facts, dict)
     state_data = {
         "schema_version": 1,
         "adapter": "godot",
@@ -113,7 +114,8 @@ def test_same_scenario_runs_through_both_adapters(
     assert sims_state.affect == reconstructed_state.affect
     sims_energy = sims_state.needs["energy"]
     godot_energy = reconstructed_state.needs["energy"]
-    assert isinstance(sims_energy, dict) and isinstance(godot_energy, dict)
+    assert isinstance(sims_energy, dict)
+    assert isinstance(godot_energy, dict)
     assert sims_energy["level"] == pytest.approx(godot_energy["level"])
     assert sims_energy["urgency"] == pytest.approx(godot_energy["urgency"])
     assert sims_energy["status"] == godot_energy["status"] == "satisfied"

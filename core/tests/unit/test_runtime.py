@@ -206,3 +206,60 @@ def test_dynamic_selection_uses_clod1_when_expected_value_is_low() -> None:
     decision = asyncio.run(runtime.decide_dynamic(request, (route,), 0.9))
 
     assert decision.intent == "acknowledge"
+
+
+def test_cognition_route_rejects_invalid_provider_or_clod() -> None:
+    capabilities = ModelCapabilities()
+    estimate = ResourceEstimate(0, 0, 0, 100, 0)
+    with pytest.raises(ValueError, match="provider is required"):
+        CognitionRoute("", 3, capabilities, estimate, None)
+
+
+def test_cognition_route_rejects_non_positive_completion_tokens() -> None:
+    capabilities = ModelCapabilities()
+    estimate = ResourceEstimate(0, 0, 0, 0, 0)
+    with pytest.raises(ValueError, match="completion token estimate must be positive"):
+        CognitionRoute("provider", 3, capabilities, estimate, None)
+
+
+def test_dynamic_selection_falls_back_to_clod1_when_no_route_meets_deadline() -> None:
+    governor = ResourceGovernor(ResourceBudget(256, 128))
+    request = CognitiveRequest("agent-a", 4, event("agent-a"), urgency=1, deadline_ms=100)
+
+    async def unused(_: CognitiveRequest) -> Decision:
+        raise AssertionError("no route should be selected")
+
+    route = CognitionRoute(
+        "provider",
+        4,
+        ModelCapabilities(),
+        ResourceEstimate(32, 16, 100, 50, 5_000),
+        unused,
+    )
+
+    plan = select_cognition(request, (route,), governor, 0.9)
+
+    assert plan.clod == 1
+    assert plan.resolver is None
+
+
+def test_dynamic_selection_rejects_route_when_context_window_too_small() -> None:
+    governor = ResourceGovernor(ResourceBudget(256, 128))
+    request = CognitiveRequest(
+        "agent-a", 4, event("agent-a"), urgency=1, max_tokens=300, max_context_tokens=2_000
+    )
+
+    async def unused(_: CognitiveRequest) -> Decision:
+        raise AssertionError("no route should be selected")
+
+    route = CognitionRoute(
+        "provider",
+        4,
+        ModelCapabilities(context_window=50),
+        ResourceEstimate(32, 16, 2_000, 300, 100),
+        unused,
+    )
+
+    plan = select_cognition(request, (route,), governor, 0.9)
+
+    assert plan.clod == 1

@@ -87,6 +87,19 @@ def test_agent_state_snapshot_rejects_non_json_identity() -> None:
         )
 
 
+def test_agent_state_snapshot_ignores_non_mapping_needs_and_relationships() -> None:
+    snapshot = AgentStateSnapshot(
+        1,
+        "test",
+        "alice",
+        needs={"hunger": "not-a-mapping"},
+        relationships={"bob": "not-a-mapping"},
+    )
+
+    assert snapshot.needs == {"hunger": "not-a-mapping"}
+    assert snapshot.relationships == {"bob": "not-a-mapping"}
+
+
 def test_agent_state_snapshot_accepts_common_need_status_and_native_scale() -> None:
     snapshot = AgentStateSnapshot.from_mapping(
         {
@@ -245,16 +258,18 @@ def test_world_event_rejects_unknown_social_category(category: str) -> None:
 
 @pytest.mark.parametrize("clod", [-1, 5])
 def test_request_rejects_invalid_clod(clod: int) -> None:
+    event = WorldEvent("event")
     with pytest.raises(ValueError, match="preferred_clod"):
-        CognitiveRequest("alice", preferred_clod=clod, event=WorldEvent("event"))
+        CognitiveRequest("alice", preferred_clod=clod, event=event)
 
 
 def test_request_rejects_negative_context_budget() -> None:
+    event = WorldEvent("event")
     with pytest.raises(ValueError, match="max_context_tokens"):
         CognitiveRequest(
             "alice",
             preferred_clod=3,
-            event=WorldEvent("event"),
+            event=event,
             max_context_tokens=-1,
         )
 

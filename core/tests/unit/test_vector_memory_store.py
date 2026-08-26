@@ -6,7 +6,7 @@ from empneon.db.connection import open_db
 DIM = 4
 
 
-@pytest.fixture()
+@pytest.fixture
 def store() -> VectorMemoryStore:
     conn = open_db(":memory:")
     return VectorMemoryStore(conn, dimensions=DIM)

@@ -107,6 +107,14 @@ class CognitionQueue:
                     daemon=True,
                 ).start()
 
+    def _mark_started(self, request_id):
+        with self._condition:
+            state = self._states.get(request_id)
+            if state is not None:
+                state["state"] = "running"
+                state["started_at"] = self._clock()
+                self._record(state, "started")
+
     def _work(self):
         while True:
             with self._condition:
@@ -119,12 +127,7 @@ class CognitionQueue:
                 job = self._jobs.get(request.id)
             if job is None:
                 continue
-            with self._condition:
-                state = self._states.get(request.id)
-                if state is not None:
-                    state["state"] = "running"
-                    state["started_at"] = self._clock()
-                    self._record(state, "started")
+            self._mark_started(request.id)
             try:
                 job["result"] = job["work"]()
             except Exception as exc:
@@ -242,7 +245,7 @@ class AgentManager:
         self._lock = threading.RLock()
         self._active = {}
 
-    def wake_agent(self, sim, reason="request", priority=3, timeout=None):
+    def wake_agent(self, sim, reason="request", priority=3):
         profile = self._profile_lookup(sim)
         sid = profile["id"]
         with self._lock:

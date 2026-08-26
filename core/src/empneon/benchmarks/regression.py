@@ -116,7 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.output.write_text(body, encoding="utf-8", newline="\n")
         else:
             print(body, end="")
-    except (FileNotFoundError, FileExistsError, json.JSONDecodeError, ValueError) as exc:
+    except (FileNotFoundError, FileExistsError, ValueError) as exc:
         print(f"regression error: {exc}", file=sys.stderr)
         return 2
     return 0 if report["passed"] else 1

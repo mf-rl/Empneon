@@ -6,7 +6,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, field, replace
-from typing import Literal
+from typing import Literal, cast
 
 BeliefSourceKind = Literal["observation", "belief"]
 
@@ -65,7 +65,7 @@ class EpisodicMemoryStore:
         self._conn = conn
 
     def create(self, event: Event, *, commit: bool = True) -> Event:
-        stored = replace(event, created_at=int(time.time()))
+        stored = cast(Event, replace(event, created_at=int(time.time())))
         self._conn.execute(
             "INSERT INTO events(id, description, location, happened_at, created_at)"
             " VALUES (?,?,?,?,?)",
@@ -162,6 +162,15 @@ class ObservationStore:
         return [_row_to_observation(row) for row in rows]
 
 
+def _validate_propagation_args(
+    max_hops: int, max_recipients: int, min_confidence: float, decay: float
+) -> None:
+    if max_hops <= 0 or max_recipients <= 0:
+        raise ValueError("propagation bounds must be positive")
+    if not 0.0 <= min_confidence <= 1.0 or not 0.0 <= decay <= 1.0:
+        raise ValueError("propagation confidence settings must be between 0 and 1")
+
+
 class BeliefStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
@@ -189,7 +198,7 @@ class BeliefStore:
             )
         if source is None:
             raise ValueError("belief source does not exist")
-        stored = replace(belief, lineage=lineage)
+        stored = cast(Belief, replace(belief, lineage=lineage))
 
         self._conn.execute(
             "INSERT INTO beliefs(id, agent_id, statement, created_at) VALUES (?,?,?,?)",
@@ -294,6 +303,49 @@ class BeliefStore:
         ).fetchone()
         return None if row is None else _row_to_belief(row)
 
+    def _relay_belief(
+        self,
+        current: Belief,
+        relationship: sqlite3.Row,
+        visited: set[str],
+        min_confidence: float,
+        decay: float,
+    ) -> Belief | None:
+        recipient_id = relationship["agent_id"]
+        if recipient_id in visited:
+            return None
+        confidence = current.confidence * relationship["trust"] * decay
+        if confidence < min_confidence:
+            return None
+        transmitted = Belief(
+            recipient_id,
+            current.statement,
+            "belief",
+            current.id,
+            confidence,
+            f"Relayed from {current.agent_id} with trust {relationship['trust']:.2f}",
+        )
+        return self._insert(transmitted)
+
+    def _expand_hop(
+        self,
+        current: Belief,
+        visited: set[str],
+        min_confidence: float,
+        decay: float,
+    ) -> list[Belief]:
+        relationships = self._conn.execute(
+            "SELECT agent_id, trust FROM relationships"
+            " WHERE target_agent_id=? ORDER BY agent_id",
+            (current.agent_id,),
+        ).fetchall()
+        transmitted_beliefs = []
+        for relationship in relationships:
+            transmitted = self._relay_belief(current, relationship, visited, min_confidence, decay)
+            if transmitted is not None:
+                transmitted_beliefs.append(transmitted)
+        return transmitted_beliefs
+
     def propagate(
         self,
         belief_id: str,
@@ -303,10 +355,7 @@ class BeliefStore:
         min_confidence: float = 0.1,
         decay: float = 0.9,
     ) -> list[Belief]:
-        if max_hops <= 0 or max_recipients <= 0:
-            raise ValueError("propagation bounds must be positive")
-        if not 0.0 <= min_confidence <= 1.0 or not 0.0 <= decay <= 1.0:
-            raise ValueError("propagation confidence settings must be between 0 and 1")
+        _validate_propagation_args(max_hops, max_recipients, min_confidence, decay)
         source = self.get(belief_id)
         if source is None:
             raise ValueError("source belief does not exist")
@@ -329,28 +378,8 @@ class BeliefStore:
                 current, hops = queue.popleft()
                 if hops >= max_hops:
                     continue
-                relationships = self._conn.execute(
-                    "SELECT agent_id, trust FROM relationships"
-                    " WHERE target_agent_id=? ORDER BY agent_id",
-                    (current.agent_id,),
-                ).fetchall()
-                for relationship in relationships:
-                    recipient_id = relationship["agent_id"]
-                    if recipient_id in visited:
-                        continue
-                    confidence = current.confidence * relationship["trust"] * decay
-                    if confidence < min_confidence:
-                        continue
-                    transmitted = Belief(
-                        recipient_id,
-                        current.statement,
-                        "belief",
-                        current.id,
-                        confidence,
-                        f"Relayed from {current.agent_id} with trust {relationship['trust']:.2f}",
-                    )
-                    transmitted = self._insert(transmitted)
-                    visited.add(recipient_id)
+                for transmitted in self._expand_hop(current, visited, min_confidence, decay):
+                    visited.add(transmitted.agent_id)
                     propagated.append(transmitted)
                     queue.append((transmitted, hops + 1))
                     if len(propagated) >= max_recipients:

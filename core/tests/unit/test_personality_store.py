@@ -6,7 +6,7 @@ from empneon.core.identity.store import AgentStore
 from empneon.db.connection import open_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def stores() -> tuple[AgentStore, PersonalityStore]:
     conn = open_db(":memory:")
     return AgentStore(conn), PersonalityStore(conn)

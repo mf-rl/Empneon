@@ -68,12 +68,14 @@ def test_summarizes_resource_and_clod_telemetry() -> None:
         "latency_ms": 2_000,
     }
     assert store.telemetry("alice")["by_clod"] == {"2": 1}
+    estimate = ResourceEstimate()
+    result = GenerationResult("", 0, 0, 0)
     with pytest.raises(ValueError, match="CLOD"):
         store.record(
             first,
-            ResourceEstimate(),
+            estimate,
             "local",
             "small",
-            GenerationResult("", 0, 0, 0),
+            result,
             5,
         )

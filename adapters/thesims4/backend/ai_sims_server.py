@@ -474,7 +474,7 @@ def memories_for_sim(speaker_id, limit=10):
 
 
 def add_memory(
-    speaker_id, listener_id, summary, importance, emotion="", category="", topic="", location=""
+    speaker_id, listener_id, summary, importance, location=""
 ):
     summary = str(summary or "").strip()
     if not summary:
@@ -1287,6 +1287,7 @@ def run():
 
 
 def self_test():
+    _SELF_TEST_SIM_NAME = "Bella Goth"
     parsed = extract_json(
         '```json\n{"dialogue":"hi","relationship":{"friendship_delta":12},"memory":"met"}\n```'
     )
@@ -1309,12 +1310,12 @@ def self_test():
         with db_session(path) as conn:
             sim = {
                 "id": "bella-goth",
-                "name": "Bella Goth",
+                "name": _SELF_TEST_SIM_NAME,
                 "traits": ["romantic", "family-oriented"],
             }
             target = {"id": "mauricio", "name": "Mauricio", "traits": ["loyal"]}
             profile = empneon_state.sync_sim(conn, sim)
-            assert profile["name"] == "Bella Goth"
+            assert profile["name"] == _SELF_TEST_SIM_NAME
             empneon_state.sync_sim(conn, target)
             relationship = empneon_state.apply_relationship_deltas(
                 conn,
@@ -1341,7 +1342,7 @@ def self_test():
             {"message": "why have you been avoiding me?"},
             {
                 "emotions": {"current_mood": "tense"},
-                "speaker": {"name": "Bella Goth"},
+                "speaker": {"name": _SELF_TEST_SIM_NAME},
                 "listener": {"name": "Mauricio"},
                 "speaker_id": "bella-goth",
                 "listener_id": "mauricio",

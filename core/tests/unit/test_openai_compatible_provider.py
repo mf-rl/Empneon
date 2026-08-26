@@ -65,10 +65,10 @@ def test_generation_normalizes_provider_failures(failure: Exception) -> None:
     provider = OpenAICompatibleProvider("http://localhost:1234/v1", "local-model")
 
     with patch("urllib.request.urlopen", side_effect=failure):
+        request = GenerationRequest((Message("user", "Hi"),), max_tokens=20)
+        coro = provider.generate(request)
         with pytest.raises(ProviderError):
-            asyncio.run(
-                provider.generate(GenerationRequest((Message("user", "Hi"),), max_tokens=20))
-            )
+            asyncio.run(coro)
 
 
 class OptimizedProvider:
@@ -158,8 +158,10 @@ def test_rejects_declared_batching_without_native_method() -> None:
         GenerationRequest((shared, Message("user", "agent B")), 20),
     )
 
+    provider = MisconfiguredProvider()
+    coro = generate_requests(provider, requests)
     with pytest.raises(ProviderError, match="without generate_batch"):
-        asyncio.run(generate_requests(MisconfiguredProvider(), requests))
+        asyncio.run(coro)
 
 
 def test_configured_router_selects_provider_without_adapter_logic(monkeypatch) -> None:
@@ -253,14 +255,14 @@ def test_router_rejects_schema_for_incapable_provider(monkeypatch) -> None:
     )
     monkeypatch.setattr(router, "provider_for", lambda _task: Provider())
 
+    message = Message("user", "respond")
+    coro = router.generate_result(
+        "large",
+        (message,),
+        schema={"type": "object"},
+    )
     with pytest.raises(ProviderError, match="structured output"):
-        asyncio.run(
-            router.generate_result(
-                "large",
-                (Message("user", "respond"),),
-                schema={"type": "object"},
-            )
-        )
+        asyncio.run(coro)
 
 
 def test_lmstudio_native_provider_resolves_loaded_model_and_disables_reasoning() -> None:
@@ -367,3 +369,36 @@ def test_lmstudio_native_provider_returns_final_message() -> None:
         )
 
     assert result.content == "My name is Karmine Luna."
+
+
+def test_lmstudio_health_check_returns_false_when_endpoint_is_unavailable() -> None:
+    provider = LMStudioProvider("http://localhost:1234/api/v1", "local-model")
+
+    with patch("urllib.request.urlopen", side_effect=OSError):
+        assert asyncio.run(provider.health_check()) is False
+
+
+def test_lmstudio_health_check_returns_true_when_endpoint_is_available() -> None:
+    provider = LMStudioProvider("http://localhost:1234/api/v1", "local-model")
+
+    with patch("urllib.request.urlopen", return_value=Response({"models": []})):
+        assert asyncio.run(provider.health_check()) is True
+
+
+def test_lmstudio_generate_wraps_transport_errors_as_provider_error() -> None:
+    provider = LMStudioProvider("http://localhost:1234/api/v1", "karmine")
+    coro = provider.generate(GenerationRequest((Message("user", "Hi"),), 120))
+
+    with patch("urllib.request.urlopen", side_effect=OSError):
+        with pytest.raises(ProviderError, match="LM Studio generation failed"):
+            asyncio.run(coro)
+
+
+def test_lmstudio_generate_raises_when_response_has_no_message_content() -> None:
+    chat = {"output": ["not-a-dict", {"type": "other"}]}
+    provider = LMStudioProvider("http://localhost:1234/api/v1", "karmine")
+    coro = provider.generate(GenerationRequest((Message("user", "Hi"),), 120))
+
+    with patch("urllib.request.urlopen", return_value=Response(chat)):
+        with pytest.raises(ProviderError, match="LM Studio generation failed"):
+            asyncio.run(coro)

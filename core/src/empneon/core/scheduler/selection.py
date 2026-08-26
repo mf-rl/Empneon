@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 
 from empneon.core.contracts import CognitiveRequest, Decision
-from empneon.core.scheduler.resources import ResourceEstimate, ResourceGovernor
+from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.providers.llm import ModelCapabilities
 
 Resolver = Callable[[CognitiveRequest], Awaitable[Decision]]
@@ -63,38 +63,50 @@ def select_cognition(
         ),
     )
     for route in candidates:
-        completion_tokens = min(request.max_tokens, route.estimate.completion_tokens)
-        if budget.max_completion_tokens is not None:
-            completion_tokens = min(completion_tokens, budget.max_completion_tokens)
-        if completion_tokens <= 0 or route.estimate.latency_ms > request.deadline_ms:
-            continue
-
-        context_tokens = min(request.max_context_tokens, route.estimate.context_tokens)
-        if budget.max_context_tokens is not None:
-            context_tokens = min(context_tokens, budget.max_context_tokens)
-        if route.capabilities.context_window:
-            context_tokens = min(
-                context_tokens,
-                route.capabilities.context_window - completion_tokens,
-            )
-        if context_tokens < 0:
-            continue
-
-        estimate = replace(
-            route.estimate,
-            context_tokens=context_tokens,
-            completion_tokens=completion_tokens,
-        )
-        if governor.can_reserve(estimate):
-            return CognitionPlan(
-                route.clod,
-                route.provider,
-                context_tokens,
-                completion_tokens,
-                estimate,
-                route.resolver,
-            )
+        plan = _plan_for_route(route, request, governor, budget)
+        if plan is not None:
+            return plan
     return _clod1_plan()
+
+
+def _plan_for_route(
+    route: CognitionRoute,
+    request: CognitiveRequest,
+    governor: ResourceGovernor,
+    budget: ResourceBudget,
+) -> CognitionPlan | None:
+    completion_tokens = min(request.max_tokens, route.estimate.completion_tokens)
+    if budget.max_completion_tokens is not None:
+        completion_tokens = min(completion_tokens, budget.max_completion_tokens)
+    if completion_tokens <= 0 or route.estimate.latency_ms > request.deadline_ms:
+        return None
+
+    context_tokens = min(request.max_context_tokens, route.estimate.context_tokens)
+    if budget.max_context_tokens is not None:
+        context_tokens = min(context_tokens, budget.max_context_tokens)
+    if route.capabilities.context_window:
+        context_tokens = min(
+            context_tokens,
+            route.capabilities.context_window - completion_tokens,
+        )
+    if context_tokens < 0:
+        return None
+
+    estimate = replace(
+        route.estimate,
+        context_tokens=context_tokens,
+        completion_tokens=completion_tokens,
+    )
+    if not governor.can_reserve(estimate):
+        return None
+    return CognitionPlan(
+        route.clod,
+        route.provider,
+        context_tokens,
+        completion_tokens,
+        estimate,
+        route.resolver,
+    )
 
 
 def _clod1_plan() -> CognitionPlan:

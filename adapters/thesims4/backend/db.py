@@ -64,7 +64,7 @@ def read_memory_session(path):
         with open(path, encoding="utf-8") as handle:
             value = json.load(handle)
             return value if isinstance(value, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError):
         return {}
 
 

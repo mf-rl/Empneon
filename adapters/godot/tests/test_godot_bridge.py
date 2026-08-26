@@ -106,8 +106,9 @@ def test_godot_bridge_rejects_serialized_state_outside_request_boundary(
     state_adapter: str,
     message: str,
 ) -> None:
+    bridge = GodotBridge()
     with pytest.raises(ValueError, match=message):
-        GodotBridge().decide(
+        bridge.decide(
             {
                 "agent_id": "godot-a",
                 "event": {

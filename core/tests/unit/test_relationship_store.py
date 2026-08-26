@@ -6,7 +6,7 @@ from empneon.core.identity.store import AgentStore
 from empneon.db.connection import open_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def stores() -> tuple[AgentStore, RelationshipStore]:
     conn = open_db(":memory:")
     return AgentStore(conn), RelationshipStore(conn)
@@ -44,8 +44,10 @@ def test_directed_edges_are_independent(
     stores[1].set(Relationship(b.id, a.id, "rival", strength=-0.3))
     ab = stores[1].get(a.id, b.id)
     ba = stores[1].get(b.id, a.id)
-    assert ab is not None and ab.relationship_type == "friend"
-    assert ba is not None and ba.relationship_type == "rival"
+    assert ab is not None
+    assert ab.relationship_type == "friend"
+    assert ba is not None
+    assert ba.relationship_type == "rival"
 
 
 def test_upsert_updates_existing(stores: tuple[AgentStore, RelationshipStore]) -> None:

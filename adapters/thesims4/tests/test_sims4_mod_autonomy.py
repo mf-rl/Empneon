@@ -378,7 +378,8 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
 
     path = project / "ts4script" / "ai_sims_agent.py"
     spec = importlib.util.spec_from_file_location("test_ai_sims_agent", path)
-    assert spec and spec.loader
+    assert spec
+    assert spec.loader
     agent = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(agent)
 
@@ -2015,7 +2016,6 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("ack down")),
     )
     agent.report_dialogue_delivery(
-        pie_interaction.sim,
         player_payload,
         {"decision_id": "decision-ack-failure"},
         queue_native=False,
@@ -2049,7 +2049,6 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
         },
     )
     agent.report_dialogue_delivery(
-        pie_interaction.sim,
         player_payload,
         {"decision_id": "decision-lost-ack", "suggested_action": "none"},
         queue_native=False,
@@ -2327,7 +2326,6 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
             },
         )
         agent.report_dialogue_delivery(
-            pie_interaction.sim,
             player_payload,
             {"decision_id": "decision-already", "animation": "friendly_chat"},
         )

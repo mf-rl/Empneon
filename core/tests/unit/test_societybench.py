@@ -146,13 +146,14 @@ def test_rejects_misaligned_cognition_comparisons() -> None:
     decisions = tuple(Decision(agent, "acknowledge") for agent in scenario.agent_ids)
     misaligned = (Decision("wrong-agent", "consider context"),) + decisions[1:]
 
+    baselines = (
+        BaselineResult("fixed-clod-1", decisions, 0),
+        BaselineResult("one-call-per-agent", misaligned, 20),
+    )
     with pytest.raises(ValueError, match="match the request agent"):
         collect_cognition_comparisons(
             scenario,
-            (
-                BaselineResult("fixed-clod-1", decisions, 0),
-                BaselineResult("one-call-per-agent", misaligned, 20),
-            ),
+            baselines,
         )
 
 
@@ -258,6 +259,57 @@ def test_adaptive_comparison_exposes_cost_quality_tradeoff() -> None:
     assert metrics.one_call_preference_rate == 0.95
     assert metrics.preference_retention == pytest.approx(1 / 19)
     assert metrics.meets_believability_threshold is False
+
+
+def test_score_packet_without_adaptive_data_returns_baseline_only() -> None:
+    packet = {
+        "samples": [
+            {"sample_id": "sample-0", "preferred": "A"},
+        ]
+    }
+    key = {
+        "keys": [
+            {
+                "sample_id": "sample-0",
+                "option_a_strategy": "fixed-clod-1",
+                "option_b_strategy": "one-call-per-agent",
+            },
+        ],
+    }
+
+    result = score_packet(packet, key)
+
+    assert "cost" not in result
+    assert "adaptive_comparison" not in result
+
+
+def test_score_packet_rejects_misaligned_adaptive_selections() -> None:
+    packet = {
+        "samples": [
+            {"sample_id": "sample-0", "preferred": "A"},
+        ]
+    }
+    key = {
+        "keys": [
+            {
+                "sample_id": "sample-0",
+                "option_a_strategy": "fixed-clod-1",
+                "option_b_strategy": "one-call-per-agent",
+            },
+        ],
+        "adaptive": {
+            "minimum_preference_retention": 0.9,
+            "minimum_identity_continuity": 1.0,
+            "maximum_contradiction_rate": 0.0,
+            "selections": [
+                {"sample_id": "sample-0", "strategy": "fixed-clod-1"},
+            ],
+            "one_call_observations": [],
+        },
+    }
+
+    with pytest.raises(ValueError, match="adaptive selections and observations must align"):
+        score_packet(packet, key)
 
 
 def test_adaptive_packet_score_combines_cost_quality_and_consistency() -> None:

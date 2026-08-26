@@ -120,6 +120,19 @@ async def generate_packet(
     )
 
 
+def _validate_adaptive_alignment(selection_rows: object, observations: object) -> None:
+    if (
+        not isinstance(selection_rows, list)
+        or not isinstance(observations, list)
+        or len(observations) != len(selection_rows)
+        or any(
+            row.get("strategy") not in {"one-call-per-agent", "fixed-clod-1"}
+            for row in selection_rows
+        )
+    ):
+        raise ValueError("adaptive selections and observations must align")
+
+
 def score_packet(packet: dict[str, Any], answer_key: dict[str, Any]) -> dict[str, object]:
     sample_rows = cast(list[dict[str, object]], packet.get("samples"))
     key_rows = cast(list[dict[str, str]], answer_key.get("keys"))
@@ -144,16 +157,7 @@ def score_packet(packet: dict[str, Any], answer_key: dict[str, Any]) -> dict[str
     observations = cast(
         list[dict[str, int | None]], adaptive.get("one_call_observations")
     )
-    if (
-        not isinstance(selection_rows, list)
-        or not isinstance(observations, list)
-        or len(observations) != len(selection_rows)
-        or any(
-            row.get("strategy") not in {"one-call-per-agent", "fixed-clod-1"}
-            for row in selection_rows
-        )
-    ):
-        raise ValueError("adaptive selections and observations must align")
+    _validate_adaptive_alignment(selection_rows, observations)
     selections = tuple(
         AdaptiveSelection(str(row["sample_id"]), cast(Any, row["strategy"]))
         for row in selection_rows

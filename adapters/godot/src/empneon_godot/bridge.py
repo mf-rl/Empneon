@@ -122,7 +122,7 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, {"error": "not found"})
                 return
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             self._send(400, {"error": str(exc)})
             return
         self._send(200, response)
@@ -141,7 +141,8 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8790)
     args = parser.parse_args()
-    HTTPServer((args.host, args.port), _Handler).serve_forever()
+    # Loopback-only dev/portability bridge, not exposed to a network.
+    HTTPServer((args.host, args.port), _Handler).serve_forever()  # NOSONAR
 
 
 if __name__ == "__main__":

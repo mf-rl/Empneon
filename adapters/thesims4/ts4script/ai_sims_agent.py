@@ -48,6 +48,10 @@ NATIVE_SOCIAL_TUNINGS = {
 }
 SOCIAL_CATEGORIES = ("friendly", "funny", "romance", "mean", "mischief")
 AVAILABLE_ACTIONS = ["friendly_chat", "apologize", "flirt"]
+UNKNOWN_SIM_NAME = "Unknown Sim"
+NO_ACTIVE_SIM_MESSAGE = "No active Sim."
+DIAGNOSTICS_SIM_PATH = "/diagnostics/sim"
+CHAT_ENDPOINT = "/chat"
 _AUTONOMY_ALARM = None
 _AUTONOMY_RESPONSE_ALARM = None
 _AUTONOMY_CURSOR = 0
@@ -416,7 +420,7 @@ def sim_full_name(sim_info):
         return str(name)
     first = text_value(getattr(sim_info, "first_name", None), "")
     last = text_value(getattr(sim_info, "last_name", None), "")
-    return (first + " " + last).strip() or "Unknown Sim"
+    return (first + " " + last).strip() or UNKNOWN_SIM_NAME
 
 
 def clean_name(text):
@@ -2083,7 +2087,7 @@ def submit_empneon_chat(session, message):
 
     def worker():
         try:
-            data = post_json("/chat", payload)
+            data = post_json(CHAT_ENDPOINT, payload)
             data["_empneon_payload"] = payload
             result = (session.id, turn_id, data, None)
         except Exception as exc:
@@ -2097,7 +2101,6 @@ def submit_empneon_chat(session, message):
 
 
 def report_dialogue_delivery(
-    actor,
     payload,
     data,
     queue_native=True,
@@ -2195,7 +2198,6 @@ def show_empneon_chat_result(session, data, error):
     session.response_choice_ready = displayed
     if displayed and data.get("decision_id"):
         report_dialogue_delivery(
-            actor,
             payload,
             data,
             queue_native=False,
@@ -2402,7 +2404,7 @@ def ai_chat(*args, _connection=None):
     write_marker("ai.chat command ran")
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
 
     target_name, message = split_chat_args(args)
@@ -2412,7 +2414,7 @@ def ai_chat(*args, _connection=None):
 
     payload = chat_payload(sim, target_name, message)
     try:
-        data = post_json("/chat", payload)
+        data = post_json(CHAT_ENDPOINT, payload)
     except Exception as exc:
         out(_connection, "AI chat error: {}".format(exc))
         return
@@ -2430,7 +2432,7 @@ def ai_chat_async(*args, _connection=None):
     write_marker("ai.chat.async command ran")
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     target_name, message = split_chat_args(args)
     if not message:
@@ -2442,7 +2444,7 @@ def ai_chat_async(*args, _connection=None):
 
     def worker(connection, body):
         try:
-            data = post_json("/chat", body)
+            data = post_json(CHAT_ENDPOINT, body)
             result = (connection, body["speaker"]["name"], data, None)
         except Exception as exc:
             result = (connection, body["speaker"]["name"], None, str(exc))
@@ -2461,7 +2463,7 @@ def ai_director(_connection=None):
     write_marker("ai.director command ran")
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     try:
         data = post_json("/director", {"sim": sim_payload(sim)})
@@ -2491,7 +2493,7 @@ def ai_agents(_connection=None):
         out(
             _connection,
             "{} ({}) refs={} reason={}".format(
-                agent.get("name", "Unknown Sim"),
+                agent.get("name", UNKNOWN_SIM_NAME),
                 agent.get("sim_id", ""),
                 agent.get("refs", 0),
                 agent.get("last_reason", ""),
@@ -2505,7 +2507,7 @@ def ai_agents(_connection=None):
 def ai_profile(*args, _connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     target = " ".join(str(item) for item in args).strip()
     try:
@@ -2531,7 +2533,7 @@ def ai_profile(*args, _connection=None):
 def ai_memories(*args, _connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     target = " ".join(str(item) for item in args).strip()
     active = sim_payload(sim)
@@ -2560,7 +2562,7 @@ def ai_memories(*args, _connection=None):
 def ai_relationship(*args, _connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     target = " ".join(str(item) for item in args).strip()
     if not target:
@@ -2638,7 +2640,7 @@ def ai_resolve(*args, _connection=None):
 def ai_emotion(*args, _connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     target = " ".join(str(item) for item in args).strip()
     active = sim_payload(sim)
@@ -2667,7 +2669,7 @@ def ai_emotion(*args, _connection=None):
 def ai_wake(_connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     try:
         data = post_json("/agent/wake", {"sim": sim_payload(sim), "reason": "manual", "priority": 1})
@@ -2684,7 +2686,7 @@ def ai_wake(_connection=None):
 def ai_sleep(_connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     active = sim_payload(sim)
     try:
@@ -2701,7 +2703,7 @@ def ai_sleep(_connection=None):
 def ai_autonomous(_connection=None):
     sim = active_sim(_connection)
     if sim is None:
-        out(_connection, "No active Sim.")
+        out(_connection, NO_ACTIVE_SIM_MESSAGE)
         return
     try:
         data = post_json("/autonomous", {"sim": sim_payload(sim)})
@@ -2716,7 +2718,7 @@ def ai_autonomous(_connection=None):
 def active_diagnostic(path, connection):
     sim = active_sim(connection)
     if sim is None:
-        out(connection, "No active Sim.")
+        out(connection, NO_ACTIVE_SIM_MESSAGE)
         return None
     try:
         return query_json(path, {"sim_id": sim_payload(sim)["id"]})
@@ -2727,14 +2729,14 @@ def active_diagnostic(path, connection):
 
 @command("empneon.status")
 def empneon_status(_connection=None):
-    data = active_diagnostic("/diagnostics/sim", _connection)
+    data = active_diagnostic(DIAGNOSTICS_SIM_PATH, _connection)
     if data is None:
         return
     agent = data.get("agent") or {}
     out(
         _connection,
         "Empneon: {} | goals={} beliefs={} memories={}".format(
-            agent.get("name", "Unknown Sim"),
+            agent.get("name", UNKNOWN_SIM_NAME),
             len(data.get("goals") or []),
             len(data.get("beliefs") or []),
             len(data.get("accessible_memories") or []),
@@ -2755,7 +2757,7 @@ def empneon_timeline(_connection=None):
 
 @command("empneon.beliefs")
 def empneon_beliefs(_connection=None):
-    data = active_diagnostic("/diagnostics/sim", _connection)
+    data = active_diagnostic(DIAGNOSTICS_SIM_PATH, _connection)
     if data is None:
         return
     beliefs = data.get("beliefs") or []
@@ -2766,7 +2768,7 @@ def empneon_beliefs(_connection=None):
 
 @command("empneon.goals")
 def empneon_goals(_connection=None):
-    data = active_diagnostic("/diagnostics/sim", _connection)
+    data = active_diagnostic(DIAGNOSTICS_SIM_PATH, _connection)
     if data is None:
         return
     goals = data.get("goals") or []

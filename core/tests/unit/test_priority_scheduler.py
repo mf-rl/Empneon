@@ -17,8 +17,9 @@ def test_scheduler_enforces_priority_deadlines_and_backpressure() -> None:
     scheduler.submit(low)
     scheduler.submit(high)
 
+    overflow = request("overflow")
     with pytest.raises(SchedulerFull):
-        scheduler.submit(request("overflow"))
+        scheduler.submit(overflow)
     assert scheduler.pop() is high
     assert scheduler.pop() is low
 

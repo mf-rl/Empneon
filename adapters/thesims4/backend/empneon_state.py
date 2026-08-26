@@ -38,6 +38,10 @@ from empneon.core.memory.recall import (
 )
 from empneon.core.memory.vector import VectorMemoryStore
 from empneon.core.contracts import ActionResult
+
+ACTOR_PROFILE_DOCUMENT_KEY = "thesims4.actor-profile"
+SQLITE_READONLY_URI_SUFFIX = "?mode=ro"
+RESTORE_GOAL_PREFIX = "Restore "
 from empneon.core.runtime import ActionProposal
 from empneon.core.state import load_agent_state
 from empneon.db.connection import db_session, open_db
@@ -66,7 +70,7 @@ def prepare_database(target: str, legacy_core: str, legacy_adapter: str) -> Migr
         core_source = legacy_paths[0]
         if not destination.exists() and core_source.exists() and core_source != destination:
             with contextlib.closing(
-                sqlite3.connect(core_source.as_uri() + "?mode=ro", uri=True)
+                sqlite3.connect(core_source.as_uri() + SQLITE_READONLY_URI_SUFFIX, uri=True)
             ) as source, contextlib.closing(sqlite3.connect(destination)) as output:
                 source.backup(output)
             backup = _backup(core_source)
@@ -365,7 +369,7 @@ def apply_confirmed_consequences(
             if value <= 25:
                 goal = goal or Goal(
                     actor_id,
-                    "Restore " + need,
+                    RESTORE_GOAL_PREFIX + need,
                     priority=_clamp((25 - value) / 25, 0.6, 1.0),
                     id=goal_id,
                 )
@@ -474,6 +478,14 @@ def add_experience(
     )
 
 
+def _matches_conversation(data: dict, conversation_id: str, pair: set[str]) -> bool:
+    if data.get("kind") != "confirmed_interaction":
+        return False
+    if str(data.get("conversation_id") or "") != str(conversation_id):
+        return False
+    return {str(data.get("speaker_id") or ""), str(data.get("listener_id") or "")} == pair
+
+
 def recent_conversations(
     conn: sqlite3.Connection,
     speaker_id: str,
@@ -488,11 +500,7 @@ def recent_conversations(
     rows = []
     for event in EpisodicMemoryStore(conn).get_for_agent(str(speaker_id)):
         data = _event_data(event.description)
-        if data.get("kind") != "confirmed_interaction":
-            continue
-        if str(data.get("conversation_id") or "") != str(conversation_id):
-            continue
-        if {str(data.get("speaker_id") or ""), str(data.get("listener_id") or "")} != pair:
+        if not _matches_conversation(data, conversation_id, pair):
             continue
         rows.append(
             {
@@ -970,7 +978,7 @@ def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
     conn.execute("SAVEPOINT " + savepoint)
     try:
         with contextlib.closing(
-            sqlite3.connect(source_file.as_uri() + "?mode=ro", uri=True)
+            sqlite3.connect(source_file.as_uri() + SQLITE_READONLY_URI_SUFFIX, uri=True)
         ) as source:
             source.row_factory = sqlite3.Row
             _import_profiles(conn, source)
@@ -981,7 +989,7 @@ def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
         conn.execute("RELEASE " + savepoint)
         conn.commit()
         with contextlib.closing(
-            sqlite3.connect(source_file.as_uri() + "?mode=ro", uri=True)
+            sqlite3.connect(source_file.as_uri() + SQLITE_READONLY_URI_SUFFIX, uri=True)
         ) as source:
             source.row_factory = sqlite3.Row
             _import_episodic(conn, source)
@@ -1033,13 +1041,13 @@ def _sync_sim(
         stores.agents.update(agent, commit=False)
 
     documents = DocumentMemoryStore(conn)
-    stored_profile = documents.get("thesims4.actor-profile", agent_id) or {}
+    stored_profile = documents.get(ACTOR_PROFILE_DOCUMENT_KEY, agent_id) or {}
     if "traits" in sim:
         traits = [
             str(value) for value in sim.get("traits", []) if str(value).strip()
         ]
         documents.set(
-            "thesims4.actor-profile",
+            ACTOR_PROFILE_DOCUMENT_KEY,
             agent_id,
             {"traits": traits},
             commit=False,
@@ -1122,7 +1130,7 @@ def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> N
             if float(raw) <= 25:
                 goal = existing or Goal(
                     agent_id,
-                    "Restore " + need,
+                    RESTORE_GOAL_PREFIX + need,
                     priority=_clamp((25 - float(raw)) / 25, 0.6, 1.0),
                     id=goal_id,
                 )
@@ -1135,7 +1143,7 @@ def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> N
                 existing.updated_at = int(time.time())
                 store.set(existing, commit=False)
         for goal in store.get_all(agent_id, GOAL_ACTIVE):
-            if goal.description.startswith("Restore ") and goal.id not in current_ids:
+            if goal.description.startswith(RESTORE_GOAL_PREFIX) and goal.id not in current_ids:
                 goal.status = GOAL_COMPLETED
                 goal.updated_at = int(time.time())
                 store.set(goal, commit=False)
@@ -1178,7 +1186,7 @@ def _profile(
 ) -> dict[str, object]:
     stores = identity_stores(conn)
     if traits is None:
-        stored = DocumentMemoryStore(conn).get("thesims4.actor-profile", agent.id) or {}
+        stored = DocumentMemoryStore(conn).get(ACTOR_PROFILE_DOCUMENT_KEY, agent.id) or {}
         traits = [str(value) for value in stored.get("traits", [])]
     personality = stores.personality.get(agent.id)
     voice = stores.voice.get(agent.id)

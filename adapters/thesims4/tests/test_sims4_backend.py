@@ -6355,7 +6355,8 @@ def test_dialogue_delivery_records_experience_and_empneon_trust_once(
         relationship = RelationshipStore(conn).get("karmine", "bernard")
         observations = len(ObservationStore(conn).get_for_agent("karmine"))
     assert proposal is not None
-    assert relationship is not None and relationship.trust == pytest.approx(0.51)
+    assert relationship is not None
+    assert relationship.trust == pytest.approx(0.51)
     assert observations == 1
     assert ai_sims_server.confirm_dialogue_delivery(
         {"decision_id": decision_id, "status": "displayed"}
@@ -6387,7 +6388,8 @@ def test_dialogue_delivery_closes_none_action_without_native_changes(
     with open_db(core_db) as conn:
         record = ActionRecordStore(conn).get(decision.id)
         relationship = RelationshipStore(conn).get("karmine", "bernard")
-    assert record is not None and record.result.status == "succeeded"
+    assert record is not None
+    assert record.result.status == "succeeded"
     assert record.result.applied_changes == ()
     assert relationship is None
 
@@ -6454,7 +6456,8 @@ def test_dialogue_delivery_concurrent_acknowledgements_apply_effects_once(
     with open_db(core_db) as conn:
         relationship = RelationshipStore(conn).get("karmine", "bernard")
         observations = ObservationStore(conn).get_for_agent("karmine")
-    assert relationship is not None and relationship.trust == pytest.approx(0.51)
+    assert relationship is not None
+    assert relationship.trust == pytest.approx(0.51)
     assert len(observations) == 1
 
 
@@ -6505,10 +6508,12 @@ def test_dialogue_delivery_retry_rolls_back_failed_none_closure(
     ) == {"decision_id": decision.id, "status": "displayed"}
     with open_db(core_db) as conn:
         relationship = RelationshipStore(conn).get("karmine", "bernard")
-        assert relationship is not None and relationship.trust == pytest.approx(0.51)
+        assert relationship is not None
+        assert relationship.trust == pytest.approx(0.51)
         assert len(ObservationStore(conn).get_for_agent("karmine")) == 1
         record = ActionRecordStore(conn).get(decision.id)
-        assert record is not None and record.result.applied_changes == ()
+        assert record is not None
+        assert record.result.applied_changes == ()
 
 
 def test_relationship_source_diagnostic_separates_native_and_empneon(tmp_path) -> None:

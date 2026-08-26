@@ -14,7 +14,7 @@ from empneon.core.identity.voice import VoiceProfile, VoiceProfileStore
 from empneon.db.connection import open_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def stores() -> IdentityStores:
     return _stores()
 

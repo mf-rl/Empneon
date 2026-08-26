@@ -89,7 +89,7 @@ EXPECTED_TRIGGERS = frozenset(
 )
 
 
-@pytest.fixture()
+@pytest.fixture
 def db() -> sqlite3.Connection:
     return open_db(":memory:")
 

@@ -382,7 +382,8 @@ def build_blinded_believability_evaluation(
             (comparison.expensive_decision.intent, comparison.expensive_strategy),
             (comparison.cheap_decision.intent, comparison.cheap_strategy),
         ]
-        if random.randrange(2):
+        # Seeded Random(seed) for reproducible benchmarks, not security-sensitive.
+        if random.randrange(2):  # NOSONAR
             options.reverse()
         samples.append(
             BelievabilitySample(

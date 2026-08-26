@@ -4,6 +4,7 @@ import dataclasses
 import json
 import sqlite3
 from dataclasses import dataclass, replace
+from typing import cast
 
 from empneon.core.clod.fallback import Resolver, resolve_with_fallback
 from empneon.core.clod.rules import resolve_clod1
@@ -186,11 +187,14 @@ class CognitiveRuntime:
         )
         if plan.resolver is None:
             return resolve_clod1(request)
-        selected = replace(
-            request,
-            preferred_clod=plan.clod,
-            max_tokens=plan.completion_tokens,
-            max_context_tokens=plan.context_tokens,
+        selected = cast(
+            CognitiveRequest,
+            replace(
+                request,
+                preferred_clod=plan.clod,
+                max_tokens=plan.completion_tokens,
+                max_context_tokens=plan.context_tokens,
+            ),
         )
         return await self.decide(selected, plan.resolver, plan.estimate)
 

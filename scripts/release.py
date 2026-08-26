@@ -28,6 +28,13 @@ SIMS_BACKEND_FILES = (
     "empneon_state.py",
     "server.py",
 )
+CORE_DIST_DIR = "core/dist"
+README_FILENAME = "README.md"
+CONFIG_JSON_PATH = "config/config.json"
+TS4_PACKAGE_PATH = "dist/Empneon_TheSims4.package"
+TS4_SCRIPT_PATH = "dist/Empneon_TheSims4.ts4script"
+INSTALL_MOD_SCRIPT = "install_mod.ps1"
+RUN_BACKEND_SCRIPT = "run_backend.ps1"
 
 
 def parse_release_tag(tag: str) -> tuple[str, str]:
@@ -122,11 +129,11 @@ def package_component(root: Path, component: str, version: str, output: Path) ->
     validate_versions(root, component, version)
     output.mkdir(parents=True, exist_ok=True)
     path, _, distribution, _ = _project(root, component)
-    core_wheel = _single(root / "core/dist", f"empneon-{version}-*.whl")
+    core_wheel = _single(root / CORE_DIST_DIR, f"empneon-{version}-*.whl")
     assets: list[Path]
 
     if component == "core":
-        source_distribution = _single(root / "core/dist", f"empneon-{version}.tar.gz")
+        source_distribution = _single(root / CORE_DIST_DIR, f"empneon-{version}.tar.gz")
         assets = []
         for source in (core_wheel, source_distribution):
             target = output / source.name
@@ -135,7 +142,7 @@ def package_component(root: Path, component: str, version: str, output: Path) ->
     else:
         adapter_wheel = _single(path / "dist", f"{distribution}-{version}-*.whl")
         runtime: dict[str, Path] = {
-            "README.md": path / "README.md",
+            README_FILENAME: path / README_FILENAME,
             f"wheels/{core_wheel.name}": core_wheel,
             f"wheels/{adapter_wheel.name}": adapter_wheel,
         }
@@ -144,15 +151,14 @@ def package_component(root: Path, component: str, version: str, output: Path) ->
                 {
                     "backend/ai_sims_server.py": path / "backend/ai_sims_server.py",
                     "backend/empneon_state.py": path / "backend/empneon_state.py",
-                    "config/config.json": path / "config/config.json",
-                    "dist/Empneon_TheSims4.package": path / "dist/Empneon_TheSims4.package",
-                    "dist/Empneon_TheSims4.ts4script": path
-                    / "dist/Empneon_TheSims4.ts4script",
+                    CONFIG_JSON_PATH: path / CONFIG_JSON_PATH,
+                    TS4_PACKAGE_PATH: path / TS4_PACKAGE_PATH,
+                    TS4_SCRIPT_PATH: path / TS4_SCRIPT_PATH,
                     "docs/setup.md": path / "docs/setup.md",
                     "docs/in-game-core-feature-test-plan.md": path
                     / "docs/in-game-core-feature-test-plan.md",
-                    "install_mod.ps1": path / "install_mod.ps1",
-                    "run_backend.ps1": path / "run_backend.ps1",
+                    INSTALL_MOD_SCRIPT: path / INSTALL_MOD_SCRIPT,
+                    RUN_BACKEND_SCRIPT: path / RUN_BACKEND_SCRIPT,
                 }
             )
             archive = output / f"Empneon-TheSims4-{version}.zip"
@@ -173,7 +179,7 @@ def package_unified(root: Path, version: str, output: Path) -> list[Path]:
         validate_versions(root, component, version)
 
     output.mkdir(parents=True, exist_ok=True)
-    core_wheel = _single(root / "core/dist", f"empneon-{version}-*.whl")
+    core_wheel = _single(root / CORE_DIST_DIR, f"empneon-{version}-*.whl")
     sims_wheel = _single(
         root / "adapters/thesims4/dist",
         f"empneon_thesims4-{version}-*.whl",
@@ -182,17 +188,17 @@ def package_unified(root: Path, version: str, output: Path) -> list[Path]:
 
     core_files = {
         "LICENSE": root / "LICENSE",
-        "README.md": root / "core/README.md",
+        README_FILENAME: root / "core/README.md",
         f"wheels/{core_wheel.name}": core_wheel,
     }
     sims_files = {
         "LICENSE": root / "LICENSE",
-        "README.md": sims / "README.md",
-        "config/config.json": sims / "config/config.json",
-        "dist/Empneon_TheSims4.package": sims / "dist/Empneon_TheSims4.package",
-        "dist/Empneon_TheSims4.ts4script": sims / "dist/Empneon_TheSims4.ts4script",
-        "install_mod.ps1": sims / "install_mod.ps1",
-        "run_backend.ps1": sims / "run_backend.ps1",
+        README_FILENAME: sims / README_FILENAME,
+        CONFIG_JSON_PATH: sims / CONFIG_JSON_PATH,
+        TS4_PACKAGE_PATH: sims / TS4_PACKAGE_PATH,
+        TS4_SCRIPT_PATH: sims / TS4_SCRIPT_PATH,
+        INSTALL_MOD_SCRIPT: sims / INSTALL_MOD_SCRIPT,
+        RUN_BACKEND_SCRIPT: sims / RUN_BACKEND_SCRIPT,
         f"wheels/{core_wheel.name}": core_wheel,
         f"wheels/{sims_wheel.name}": sims_wheel,
         **{f"backend/{name}": sims / "backend" / name for name in SIMS_BACKEND_FILES},
@@ -211,7 +217,7 @@ def release_notes(component: str, version: str) -> str:
         instructions = "Install the wheel with `python -m pip install ./empneon-*.whl`."
     elif component == "thesims4":
         instructions = (
-            "Extract the ZIP, then run `install_mod.ps1` and `run_backend.ps1`. "
+            f"Extract the ZIP, then run `{INSTALL_MOD_SCRIPT}` and `{RUN_BACKEND_SCRIPT}`. "
             "The backend script automatically installs the bundled wheels into a local `.venv`."
         )
     elif component == "godot":

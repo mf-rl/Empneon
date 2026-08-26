@@ -36,7 +36,7 @@ class OpenAICompatibleProvider:
     async def health_check(self) -> bool:
         try:
             await asyncio.to_thread(self._request, "/models")
-        except (MemoryError, OSError, ValueError, KeyError, json.JSONDecodeError):
+        except (MemoryError, OSError, ValueError, KeyError):
             return False
         return True
 

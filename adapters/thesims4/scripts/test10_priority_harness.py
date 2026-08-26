@@ -210,13 +210,12 @@ def collect_evidence(
         if float(item.get("recorded_at") or 0) >= started_at
     ]
     evaluation = evaluate_lifecycle(recent, actor_ids)
-    status = (
-        "passed"
-        if evaluation["passed"]
-        else "inconclusive"
-        if evaluation.get("inconclusive")
-        else "failed"
-    )
+    if evaluation["passed"]:
+        status = "passed"
+    elif evaluation.get("inconclusive"):
+        status = "inconclusive"
+    else:
+        status = "failed"
     return {
         "status": status,
         "reason": evaluation["reason"],

@@ -5,7 +5,7 @@ from empneon.core.identity.store import AgentStore
 from empneon.db.connection import open_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def store() -> AgentStore:
     return AgentStore(open_db(":memory:"))
 

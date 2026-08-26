@@ -57,6 +57,27 @@ def _validate_social_context(facts: Mapping[str, object]) -> None:
         raise ValueError("event available social category is invalid")
 
 
+def _validate_needs(needs: Mapping[str, object]) -> None:
+    for need in needs.values():
+        if not isinstance(need, Mapping):
+            continue
+        _bounded(need, "level", 0.0, 1.0)
+        _bounded(need, "urgency", 0.0, 1.0)
+        status = need.get("status")
+        if status is not None and status not in ("satisfied", "low", "critical"):
+            raise ValueError("agent state need status is invalid")
+
+
+def _validate_relationships(relationships: Mapping[str, object]) -> None:
+    for relationship in relationships.values():
+        if not isinstance(relationship, Mapping):
+            continue
+        _bounded(relationship, "affinity", -1.0, 1.0)
+        _bounded(relationship, "romance", 0.0, 1.0)
+        _bounded(relationship, "trust", 0.0, 1.0)
+        _bounded(relationship, "attraction", -1.0, 1.0)
+
+
 @dataclass(frozen=True)
 class AgentStateSnapshot:
     schema_version: int
@@ -80,26 +101,11 @@ class AgentStateSnapshot:
         _bounded(self.affect, "valence", -1.0, 1.0)
         _bounded(self.affect, "arousal", 0.0, 1.0)
         _bounded(self.affect, "intensity", 0.0, 1.0)
-        for need in self.needs.values():
-            if isinstance(need, Mapping):
-                _bounded(need, "level", 0.0, 1.0)
-                _bounded(need, "urgency", 0.0, 1.0)
-                status = need.get("status")
-                if status is not None and status not in (
-                    "satisfied",
-                    "low",
-                    "critical",
-                ):
-                    raise ValueError("agent state need status is invalid")
+        _validate_needs(self.needs)
         for effect in self.effects:
             if isinstance(effect, Mapping):
                 _bounded(effect, "intensity", 0.0, 1.0)
-        for relationship in self.relationships.values():
-            if isinstance(relationship, Mapping):
-                _bounded(relationship, "affinity", -1.0, 1.0)
-                _bounded(relationship, "romance", 0.0, 1.0)
-                _bounded(relationship, "trust", 0.0, 1.0)
-                _bounded(relationship, "attraction", -1.0, 1.0)
+        _validate_relationships(self.relationships)
         try:
             json.dumps(dataclasses.asdict(self), allow_nan=False)
         except (TypeError, ValueError) as exc:

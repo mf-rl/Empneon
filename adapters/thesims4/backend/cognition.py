@@ -18,9 +18,12 @@ from empneon.providers.llm import ProviderError
 from backend import empneon_state
 from empneon_thesims4 import Sims4Adapter
 
+UNKNOWN_SIM_NAME = "Unknown Sim"
+UNKNOWN_ACTOR_NAME = "Unknown actor"
+
 
 def sim_name(sim):
-    return str(sim.get("name") or sim.get("id") or "Unknown Sim")
+    return str(sim.get("name") or sim.get("id") or UNKNOWN_SIM_NAME)
 
 
 def dumps(value):
@@ -329,7 +332,7 @@ def extract_json(text):
         pass
     # ponytail: handles common local-model JSON-ish output; replace with
     # schema-constrained decoding if needed.
-    quoted_keys = re.sub(r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)", r'\1"\2"\3', candidate)
+    quoted_keys = re.sub(r"([{,]\s*)([A-Za-z_]\w*)(\s*:)", r'\1"\2"\3', candidate)
     return json.loads(quoted_keys)
 
 
@@ -429,7 +432,7 @@ Return exactly {{"event_ids":[]}} when no memory is relevant.
     )
     try:
         raw = extract_json(content)
-    except (ValueError, json.JSONDecodeError):
+    except ValueError:
         return []
     event_ids = raw.get("event_ids")
     if not isinstance(event_ids, list) or len(event_ids) > 3:
@@ -456,7 +459,7 @@ def semantic_recalled_memories(query, candidates, fallback, select_memories, log
         return fallback
     try:
         selected = select_memories(query, candidates)
-    except (ProviderError, ValueError, json.JSONDecodeError, OSError):
+    except (ProviderError, ValueError, OSError):
         log_warning("semantic memory selection failed; using deterministic recall")
         return fallback
     if any(item.get("facts") for item in fallback) and not any(
@@ -527,8 +530,8 @@ def build_context(
 
 
 def _exchange_text(turns, context, *, limit, max_chars):
-    speaker_name = context["speaker"].get("name") or "Unknown Sim"
-    listener_name = context["listener"].get("name") or "Unknown Sim"
+    speaker_name = context["speaker"].get("name") or UNKNOWN_SIM_NAME
+    listener_name = context["listener"].get("name") or UNKNOWN_SIM_NAME
     blocks = []
     for turn in list(turns or [])[-limit:]:
         if turn.get("speaker_id") == context.get("speaker_id"):
@@ -556,8 +559,8 @@ def _exchange_text(turns, context, *, limit, max_chars):
 
 def _recalled_memory_text(context):
     names = {
-        context.get("speaker_id"): context["speaker"].get("name") or "Unknown Sim",
-        context.get("listener_id"): context["listener"].get("name") or "Unknown Sim",
+        context.get("speaker_id"): context["speaker"].get("name") or UNKNOWN_SIM_NAME,
+        context.get("listener_id"): context["listener"].get("name") or UNKNOWN_SIM_NAME,
     }
     lines = []
     for memory in list(context.get("recalled_memories") or [])[-3:]:
@@ -715,7 +718,7 @@ Grounding rules:
 Player says:
 {message}
 """.format(
-        speaker_name=speaker_profile.get("name") or "Unknown Sim",
+        speaker_name=speaker_profile.get("name") or UNKNOWN_SIM_NAME,
         speaker_identity=dumps(context["speaker_identity"]),
         speaker_traits=speaker_traits,
         personality=dumps(speaker_profile.get("personality") or {}),
@@ -729,7 +732,7 @@ Player says:
         career=game_state["career"],
         skills=dumps(game_state["skills"]),
         household=household_name or "unknown",
-        listener_name=listener_profile.get("name") or "Unknown Sim",
+        listener_name=listener_profile.get("name") or UNKNOWN_SIM_NAME,
         listener_identity=dumps(context["listener_identity"]),
         listener_traits=listener_traits,
         speaker_state=dumps(context["speaker_state"]),
@@ -1135,10 +1138,10 @@ def _codeword_fact_parts(fact):
 def _attributed_fact_text(fact, context):
     actor_id = str(fact.get("actor_id") or "")
     names = {
-        context.get("speaker_id"): context["speaker"].get("name") or "Unknown actor",
-        context.get("listener_id"): context["listener"].get("name") or "Unknown actor",
+        context.get("speaker_id"): context["speaker"].get("name") or UNKNOWN_ACTOR_NAME,
+        context.get("listener_id"): context["listener"].get("name") or UNKNOWN_ACTOR_NAME,
     }
-    actor = names.get(actor_id, actor_id or "Unknown actor")
+    actor = names.get(actor_id, actor_id or UNKNOWN_ACTOR_NAME)
     parts = _codeword_fact_parts(fact)
     if parts is not None:
         possessive, identifier = parts
@@ -1565,7 +1568,7 @@ class CognitionRuntime:
                 raise
             try:
                 response = normalize_response(extract_json(content), categories)
-            except (ValueError, json.JSONDecodeError):
+            except ValueError:
                 response = fallback_response(content, categories)
             explicit_category = explicit_social_category(response["dialogue"])
             if (
@@ -1652,7 +1655,7 @@ class CognitionRuntime:
         )
         try:
             raw = extract_json(content)
-        except (ValueError, json.JSONDecodeError):
+        except ValueError:
             raw = {
                 "hook": str(content).strip()[:500],
                 "target": "",

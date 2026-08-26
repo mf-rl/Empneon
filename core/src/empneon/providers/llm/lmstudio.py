@@ -13,6 +13,17 @@ from empneon.providers.llm.base import (
     ProviderError,
 )
 
+API_V1_PREFIX = "/api/v1"
+
+
+def _extract_message_text(output: list[object]) -> str | None:
+    for item in reversed(output):
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "message" and str(item.get("content") or "").strip():
+            return str(item["content"]).strip()
+    return None
+
 
 @dataclass(frozen=True)
 class LMStudioProvider:
@@ -33,7 +44,7 @@ class LMStudioProvider:
     async def health_check(self) -> bool:
         try:
             await asyncio.to_thread(self._request, "/models")
-        except (MemoryError, OSError, ValueError, KeyError, json.JSONDecodeError):
+        except (MemoryError, OSError, ValueError, KeyError):
             return False
         return True
 
@@ -64,17 +75,15 @@ class LMStudioProvider:
             "output_tokens", usage.get("completion_tokens")
         )
         latency_ms = max(0, round((time.perf_counter() - started) * 1000))
-        for item in reversed(output):
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") == "message" and str(item.get("content") or "").strip():
-                return GenerationResult(
-                    str(item["content"]).strip(),
-                    int(prompt_tokens) if prompt_tokens is not None else None,
-                    int(completion_tokens) if completion_tokens is not None else None,
-                    latency_ms,
-                )
-        raise ValueError("LM Studio returned empty content")
+        text = _extract_message_text(output)
+        if text is None:
+            raise ValueError("LM Studio returned empty content")
+        return GenerationResult(
+            text,
+            int(prompt_tokens) if prompt_tokens is not None else None,
+            int(completion_tokens) if completion_tokens is not None else None,
+            latency_ms,
+        )
 
     def _generate_structured(self, request: GenerationRequest) -> GenerationResult:
         started = time.perf_counter()
@@ -139,9 +148,9 @@ class LMStudioProvider:
         native: bool = True,
     ) -> dict[str, object]:
         root = self.base_url.rstrip("/")
-        if root.endswith("/api/v1"):
-            root = root[: -len("/api/v1")]
-        prefix = "/api/v1" if native else "/v1"
+        if root.endswith(API_V1_PREFIX):
+            root = root[: -len(API_V1_PREFIX)]
+        prefix = API_V1_PREFIX if native else "/v1"
         request = urllib.request.Request(
             f"{root}{prefix}{path}",
             data=json.dumps(body).encode() if body is not None else None,

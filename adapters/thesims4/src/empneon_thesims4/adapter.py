@@ -117,7 +117,12 @@ def cognition_priority(
 def _need_state(value: int | float) -> dict[str, object]:
     native = max(-100.0, min(100.0, float(value)))
     level = (native + 100.0) / 200.0
-    status = "critical" if native < -50 else "low" if native < -25 else "satisfied"
+    if native < -50:
+        status = "critical"
+    elif native < -25:
+        status = "low"
+    else:
+        status = "satisfied"
     return {
         "level": level,
         "urgency": 1.0 - level,
@@ -201,13 +206,13 @@ class Sims4Adapter:
         sim_data = self._sim_data()
         actor_id = str(sim_data.get("id") or sim_data.get("name") or "unknown-sim")
         listener = self._payload.get("listener")
-        listener_data = listener if isinstance(listener, Mapping) else {}
+        listener_data = _mapping(listener)
         listener_id = str(listener_data.get("id") or listener_data.get("name") or "")
         message = str(self._payload.get("message") or "")
         relationship = self._payload.get("relationship")
-        relationship_data = relationship if isinstance(relationship, Mapping) else {}
+        relationship_data = _mapping(relationship)
         social_event = self._payload.get("event")
-        social_event_data = social_event if isinstance(social_event, Mapping) else {}
+        social_event_data = _mapping(social_event)
         event_type = str(
             social_event_data.get("type") or ("conversation" if message else "autonomous_tick")
         )

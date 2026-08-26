@@ -30,7 +30,8 @@ def test_supported_api_and_version_source() -> None:
     assert set(empneon.__all__) == expected
     assert all(hasattr(empneon, name) for name in expected)
 
-    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     assert pyproject["project"]["dynamic"] == ["version"]
     assert pyproject["tool"]["setuptools"]["dynamic"]["version"] == {
         "attr": "empneon.__version__"

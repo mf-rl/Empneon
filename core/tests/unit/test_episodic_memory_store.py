@@ -17,7 +17,7 @@ from empneon.core.memory.episodic import (
 from empneon.db.connection import open_db
 
 
-@pytest.fixture()
+@pytest.fixture
 def stores() -> tuple[AgentStore, EpisodicMemoryStore]:
     conn = open_db(":memory:")
     return AgentStore(conn), EpisodicMemoryStore(conn)
@@ -289,10 +289,9 @@ def test_belief_rejects_missing_source_and_invalid_confidence() -> None:
     alice = AgentStore(conn).create(Agent.new("Alice"))
     beliefs = BeliefStore(conn)
 
+    belief = Belief(alice.id, "Claim", "observation", "missing", 0.5, "Interpretation")
     with pytest.raises(ValueError, match="source"):
-        beliefs.create(
-            Belief(alice.id, "Claim", "observation", "missing", 0.5, "Interpretation")
-        )
+        beliefs.create(belief)
     with pytest.raises(ValueError, match="confidence"):
         Belief(alice.id, "Claim", "observation", "missing", 1.1, "Interpretation")
 
@@ -434,3 +433,84 @@ def test_propagation_respects_total_recipient_bound() -> None:
     propagated = beliefs.propagate(source.id, max_recipients=1)
 
     assert [belief.agent_id for belief in propagated] == [bob.id]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"max_hops": 0},
+        {"max_recipients": 0},
+        {"min_confidence": 1.5},
+        {"decay": -0.1},
+    ],
+)
+def test_propagation_rejects_invalid_bounds(kwargs: dict[str, float]) -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent("alice", "Alice"))
+    event = events.create(Event("Alice found a key", [alice.id]))
+    observation = observations.create(Observation(event.id, alice.id, "Alice saw the key"))
+    source = beliefs.create(
+        Belief(alice.id, "The key exists", "observation", observation.id, 1.0, "Direct sight")
+    )
+
+    with pytest.raises(ValueError):
+        beliefs.propagate(source.id, **kwargs)
+
+
+def test_propagation_rejects_missing_source_belief() -> None:
+    conn = open_db(":memory:")
+    beliefs = BeliefStore(conn)
+
+    with pytest.raises(ValueError, match="source belief does not exist"):
+        beliefs.propagate("missing-belief")
+
+
+def test_propagation_of_already_revised_belief_returns_nothing() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent("alice", "Alice"))
+    event = events.create(Event("Alice found a key", [alice.id]))
+    observation = observations.create(Observation(event.id, alice.id, "Alice saw the key"))
+    original = beliefs.create(
+        Belief(alice.id, "The key exists", "observation", observation.id, 1.0, "Direct sight")
+    )
+    revision = Belief(alice.id, "The key is gone", "observation", observation.id, 1.0, "Revised")
+    beliefs.revise(original.id, revision, "Corrected")
+
+    assert beliefs.propagate(original.id) == []
+
+
+def test_propagation_seeds_visited_set_from_source_lineage_and_skips_cycles() -> None:
+    conn = open_db(":memory:")
+    agents = AgentStore(conn)
+    relationships = RelationshipStore(conn)
+    events = EpisodicMemoryStore(conn)
+    observations = ObservationStore(conn)
+    beliefs = BeliefStore(conn)
+    alice = agents.create(Agent("alice", "Alice"))
+    bob = agents.create(Agent("bob", "Bob"))
+    carol = agents.create(Agent("carol", "Carol"))
+    relationships.set(Relationship(bob.id, alice.id, "friend", trust=1.0))
+    relationships.set(Relationship(carol.id, bob.id, "friend", trust=1.0))
+    relationships.set(Relationship(alice.id, carol.id, "friend", trust=1.0))
+    event = events.create(Event("Alice found a key", [alice.id]))
+    observation = observations.create(Observation(event.id, alice.id, "Alice saw the key"))
+    source = beliefs.create(
+        Belief(alice.id, "The key exists", "observation", observation.id, 1.0, "Direct sight")
+    )
+
+    first_hop = beliefs.propagate(source.id, max_hops=1, max_recipients=1, decay=1.0)
+    assert [belief.agent_id for belief in first_hop] == [bob.id]
+
+    # Re-propagating from bob's belief (which carries alice in its lineage) must not
+    # relay the belief back to alice, even though alice -> carol -> bob forms a cycle.
+    second_hop = beliefs.propagate(first_hop[0].id, max_hops=2, max_recipients=5, decay=1.0)
+
+    assert [belief.agent_id for belief in second_hop] == [carol.id]

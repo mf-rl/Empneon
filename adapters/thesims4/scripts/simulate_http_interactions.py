@@ -26,6 +26,9 @@ COUNT_TABLES = (
     "action_results",
     "cognition_usage",
 )
+DIAGNOSTICS_SIM_PATH = "/diagnostics/sim"
+DIAGNOSTICS_REPLAY_PATH = "/diagnostics/replay"
+BLUE_BENCH_FACT = "blue bench"
 
 
 def request_json(
@@ -180,7 +183,7 @@ def run_scenarios(
     informed = sim_payload(run_id, "b", mood="uncomfortable", needs={"bladder": 10})
     uninformed = sim_payload(run_id, "c")
     fact_code = f"PRIVATE-GARDEN-{run_id}"
-    fact = f"{fact_code} is under the blue bench."
+    fact = f"{fact_code} is under the {BLUE_BENCH_FACT}."
     state: dict[str, Any] = {}
 
     def get_diagnostic(path: str, name: str, identifier: str) -> dict[str, Any]:
@@ -195,7 +198,7 @@ def run_scenarios(
 
     def canonical_state() -> dict[str, Any]:
         state["successful"] = propose(informed, player, fact)
-        diagnostic = get_diagnostic("/diagnostics/sim", "sim_id", informed["id"])
+        diagnostic = get_diagnostic(DIAGNOSTICS_SIM_PATH, "sim_id", informed["id"])
         goals = diagnostic.get("goals") or []
         emotions = diagnostic.get("emotions") or []
         assert diagnostic.get("agent", {}).get("adapter") == "sims4"
@@ -212,7 +215,7 @@ def run_scenarios(
         proposal = cast(dict[str, Any], state["successful"])
         confirmation = confirm(proposal, "succeeded")
         replay = get_diagnostic(
-            "/diagnostics/replay", "decision_id", str(proposal["decision_id"])
+            DIAGNOSTICS_REPLAY_PATH, "decision_id", str(proposal["decision_id"])
         )
         assert confirmation.get("status") == "succeeded"
         assert replay.get("result", {}).get("status") == "succeeded"
@@ -226,7 +229,7 @@ def run_scenarios(
         state["failed"] = proposal
         confirmation = confirm(proposal, "failed", "simulated native cancellation")
         replay = get_diagnostic(
-            "/diagnostics/replay", "decision_id", str(proposal["decision_id"])
+            DIAGNOSTICS_REPLAY_PATH, "decision_id", str(proposal["decision_id"])
         )
         assert confirmation.get("status") == "failed"
         assert replay.get("result", {}).get("status") == "failed"
@@ -236,12 +239,12 @@ def run_scenarios(
     record("failed_confirmation", failed_confirmation)
 
     def private_fact() -> dict[str, Any]:
-        informed_state = get_diagnostic("/diagnostics/sim", "sim_id", informed["id"])
+        informed_state = get_diagnostic(DIAGNOSTICS_SIM_PATH, "sim_id", informed["id"])
         uninformed_response = propose(
             uninformed, player, f"Where is {fact_code}?"
         )
         confirm(uninformed_response, "succeeded")
-        uninformed_state = get_diagnostic("/diagnostics/sim", "sim_id", uninformed["id"])
+        uninformed_state = get_diagnostic(DIAGNOSTICS_SIM_PATH, "sim_id", uninformed["id"])
         informed_text = json.dumps(
             {
                 "beliefs": informed_state.get("beliefs"),
@@ -254,9 +257,9 @@ def run_scenarios(
                 "memories": uninformed_state.get("accessible_memories"),
             }
         )
-        assert fact_code in informed_text and "blue bench" in informed_text
-        assert "blue bench" not in str(uninformed_response.get("dialogue", "")).casefold()
-        assert "blue bench" not in uninformed_text.casefold()
+        assert fact_code in informed_text and BLUE_BENCH_FACT in informed_text
+        assert BLUE_BENCH_FACT not in str(uninformed_response.get("dialogue", "")).casefold()
+        assert BLUE_BENCH_FACT not in uninformed_text.casefold()
         return {
             "informed": informed_state,
             "uninformed_response": uninformed_response,
@@ -268,8 +271,8 @@ def run_scenarios(
     def topical_retrieval() -> dict[str, Any]:
         proposal = propose(informed, player, "Where is the garden code item?")
         confirmation = confirm(proposal, "succeeded")
-        diagnostic = get_diagnostic("/diagnostics/sim", "sim_id", informed["id"])
-        assert "blue bench" in str(proposal.get("dialogue", "")).casefold()
+        diagnostic = get_diagnostic(DIAGNOSTICS_SIM_PATH, "sim_id", informed["id"])
+        assert BLUE_BENCH_FACT in str(proposal.get("dialogue", "")).casefold()
         assert fact_code in json.dumps(diagnostic.get("accessible_memories") or [])
         return {"proposal": proposal, "confirmation": confirmation, "diagnostic": diagnostic}
 
@@ -306,10 +309,10 @@ def run_scenarios(
         successful = cast(dict[str, Any], state["successful"])
         failed = cast(dict[str, Any], state["failed"])
         success_replay = get_diagnostic(
-            "/diagnostics/replay", "decision_id", str(successful["decision_id"])
+            DIAGNOSTICS_REPLAY_PATH, "decision_id", str(successful["decision_id"])
         )
         failed_replay = get_diagnostic(
-            "/diagnostics/replay", "decision_id", str(failed["decision_id"])
+            DIAGNOSTICS_REPLAY_PATH, "decision_id", str(failed["decision_id"])
         )
         types = {entry.get("type") for entry in timeline.get("entries") or []}
         assert {"event", "decision"} <= types
