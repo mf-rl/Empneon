@@ -319,44 +319,51 @@ class EmpneonWaitingInteraction(SocialSuperInteraction):
         kwargs["empneon_session_id"] = self._empneon_session_id
         return kwargs
 
+    def _start_waiting_social_group(self, session):
+        social_group = getattr(self, "social_group", None) if session is not None else None
+        if session is None or session.closed or social_group is None:
+            if session is not None and not session.closed:
+                session.fail("Could not start the Waiting for response social group.")
+            return False
+        social_group.on_social_super_interaction_run()
+        return True
+
+    def _run_waiting_tick(self, timeline):
+        idle = element_utils.sleep_until_next_tick_element()
+        child = (
+            waiting_conversation_animation(self, idle)
+            if getattr(self, "initiated", True)
+            else idle
+        )
+        try:
+            yield from element_utils.run_child(timeline, child)
+            if (
+                child is not idle
+                and not getattr(self, "_empneon_animation_executed", False)
+            ):
+                self._empneon_animation_executed = True
+                write_marker("Waiting conversation animation element completed")
+        except Exception:
+            if child is idle:
+                raise
+            write_marker(
+                "Waiting conversation animation execution failed:\n"
+                + traceback.format_exc()
+            )
+            yield from element_utils.run_child(timeline, idle)
+
     def _run_interaction_gen(self, timeline):
         session = find_conversation_session(
             getattr(self, "_empneon_session_id", None)
         )
-        if session is None or session.closed:
+        if not self._start_waiting_social_group(session):
             return False
-        social_group = getattr(self, "social_group", None)
-        if social_group is None:
-            session.fail("Could not start the Waiting for response social group.")
-            return False
-        social_group.on_social_super_interaction_run()
         try:
             while not session.closed and not session.response_received:
                 if session.actor is None or session.target is None:
                     session.fail("Could not continue Waiting for response.")
                     break
-                idle = element_utils.sleep_until_next_tick_element()
-                child = (
-                    waiting_conversation_animation(self, idle)
-                    if getattr(self, "initiated", True)
-                    else idle
-                )
-                try:
-                    yield from element_utils.run_child(timeline, child)
-                    if (
-                        child is not idle
-                        and not getattr(self, "_empneon_animation_executed", False)
-                    ):
-                        self._empneon_animation_executed = True
-                        write_marker("Waiting conversation animation element completed")
-                except Exception:
-                    if child is idle:
-                        raise
-                    write_marker(
-                        "Waiting conversation animation execution failed:\n"
-                        + traceback.format_exc()
-                    )
-                    yield from element_utils.run_child(timeline, idle)
+                yield from self._run_waiting_tick(timeline)
             return True
         finally:
             if not session.closed and not session.response_received:
@@ -638,9 +645,7 @@ def sim_effects(sim_info):
     return records
 
 
-def sim_sentiments(sim_info):
-    tracker = getattr(sim_info, "sentiment_tracker", None)
-    items = None
+def _sentiment_tracker_items(tracker):
     for attr in ("get_all_sentiments", "sentiments", "values"):
         try:
             source = getattr(tracker, attr, None)
@@ -648,10 +653,26 @@ def sim_sentiments(sim_info):
                 continue
             candidate = source() if callable(source) else source
             if candidate is not None:
-                items = candidate
-                break
+                return candidate
         except Exception:
             pass
+    return None
+
+
+def _sentiment_record(target, sentiment):
+    try:
+        record = native_game_item(sentiment, "sentiment")
+        target_id = getattr(target, "sim_id", target)
+        if target_id not in (None, ""):
+            record["target_id"] = str(target_id)
+        return record
+    except Exception:
+        return None
+
+
+def sim_sentiments(sim_info):
+    tracker = getattr(sim_info, "sentiment_tracker", None)
+    items = _sentiment_tracker_items(tracker)
     if items is None:
         return []
     pairs = items.items() if isinstance(items, dict) else (
@@ -659,14 +680,9 @@ def sim_sentiments(sim_info):
     )
     records = []
     for target, sentiment in pairs:
-        try:
-            record = native_game_item(sentiment, "sentiment")
-            target_id = getattr(target, "sim_id", target)
-            if target_id not in (None, ""):
-                record["target_id"] = str(target_id)
+        record = _sentiment_record(target, sentiment)
+        if record is not None:
             records.append(record)
-        except Exception:
-            pass
     return records
 
 
@@ -831,8 +847,7 @@ def _wickedwhims_attraction(source_info, target_info):
         return None
 
 
-def _official_attraction(source_info, target_info):
-    track = None
+def _official_attraction_track():
     for resource_name in ("RELATIONSHIP_TRACK", "STATISTIC"):
         try:
             resource_type = getattr(sims4.resources.Types, resource_name, None)
@@ -840,6 +855,7 @@ def _official_attraction(source_info, target_info):
                 continue
             manager = services.get_instance_manager(resource_type)
             getter = getattr(manager, "get", None)
+            track = None
             if callable(getter):
                 track = getter(OFFICIAL_ATTRACTION_TRACK_ID)
             if track is None:
@@ -847,13 +863,13 @@ def _official_attraction(source_info, target_info):
                     OFFICIAL_ATTRACTION_TRACK_ID
                 )
             if track is not None:
-                break
+                return track
         except Exception:
             pass
-    if track is None:
-        return None
-    tracker = getattr(source_info, "relationship_tracker", None)
-    target_id = getattr(target_info, "sim_id", None)
+    return None
+
+
+def _official_attraction_score(tracker, target_info, target_id, track):
     for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
         method = getattr(tracker, method_name, None)
         if not callable(method):
@@ -872,6 +888,15 @@ def _official_attraction(source_info, target_info):
                 getattr(track, "__name__", "ATTRACTION_MAIN"),
             )
     return None
+
+
+def _official_attraction(source_info, target_info):
+    track = _official_attraction_track()
+    if track is None:
+        return None
+    tracker = getattr(source_info, "relationship_tracker", None)
+    target_id = getattr(target_info, "sim_id", None)
+    return _official_attraction_score(tracker, target_info, target_id, track)
 
 
 def attraction_payload(source_info, target_info):
@@ -898,6 +923,54 @@ def attraction_payload(source_info, target_info):
     return None
 
 
+def _apply_track_score(result, tracker, target_info, target_id, key, track):
+    for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
+        method = getattr(tracker, method_name, None)
+        if not callable(method):
+            continue
+        for target in (target_info, target_id):
+            try:
+                raw_score = float(method(target, track))
+            except Exception:
+                continue
+            low = -100 if key == "friendship" else 0
+            result[key] = int(max(low, min(100, round(raw_score))))
+            return True
+    return False
+
+
+def _apply_track_scores(result, tracker, target_info, target_id):
+    found_track = False
+    for key, tuning_name in (
+        ("friendship", "LTR_Friendship_Main"),
+        ("romance", "LTR_Romance_Main"),
+    ):
+        track = find_relationship_track(tuning_name)
+        if track is None:
+            continue
+        if _apply_track_score(result, tracker, target_info, target_id, key, track):
+            found_track = True
+    return found_track
+
+
+def _fallback_relationship_score(result, tracker, target_info, target_id):
+    for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
+        method = getattr(tracker, method_name, None)
+        if not callable(method):
+            continue
+        for target in (target_info, target_id):
+            if target is None:
+                continue
+            try:
+                raw_score = float(method(target))
+            except Exception:
+                continue
+            result["friendship"] = int(max(0, min(100, round((raw_score + 100) / 2))))
+            result["raw_score"] = raw_score
+            return True
+    return False
+
+
 def relationship_payload(source_info, target_info):
     result = {"friendship": 0, "romance": 0, "trust": 50, "resentment": 0}
     if target_info is None:
@@ -908,47 +981,9 @@ def relationship_payload(source_info, target_info):
         result["native"] = {"attraction": attraction["native"]}
     tracker = getattr(source_info, "relationship_tracker", None)
     target_id = getattr(target_info, "sim_id", None)
-    found_track = False
-    for key, tuning_name in (
-        ("friendship", "LTR_Friendship_Main"),
-        ("romance", "LTR_Romance_Main"),
-    ):
-        track = find_relationship_track(tuning_name)
-        if track is None:
-            continue
-        track_read = False
-        for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
-            method = getattr(tracker, method_name, None)
-            if not callable(method):
-                continue
-            for target in (target_info, target_id):
-                try:
-                    raw_score = float(method(target, track))
-                    low = -100 if key == "friendship" else 0
-                    result[key] = int(max(low, min(100, round(raw_score))))
-                    found_track = True
-                    track_read = True
-                    break
-                except Exception:
-                    pass
-            if track_read:
-                break
-    if found_track:
+    if _apply_track_scores(result, tracker, target_info, target_id):
         return result
-    for method_name in ("get_relationship_score", "get_relationship_score_by_sim_id"):
-        method = getattr(tracker, method_name, None)
-        if not callable(method):
-            continue
-        for target in (target_info, target_id):
-            if target is None:
-                continue
-            try:
-                raw_score = float(method(target))
-                result["friendship"] = int(max(0, min(100, round((raw_score + 100) / 2))))
-                result["raw_score"] = raw_score
-                return result
-            except Exception:
-                pass
+    _fallback_relationship_score(result, tracker, target_info, target_id)
     return result
 
 
@@ -1047,34 +1082,32 @@ def apply_relationship_outcome(session, action):
     return changes, None
 
 
+def _yield_manager_items(manager, attrs, call_source):
+    for attr in attrs:
+        try:
+            source = getattr(manager, attr, None)
+            if call_source and not source:
+                continue
+            items = source() if (call_source and callable(source)) else source
+            if isinstance(items, dict):
+                items = items.values()
+            for item in items or []:
+                yield item
+            return True
+        except Exception:
+            pass
+    return False
+
+
 def iter_sim_infos():
     try:
         manager = services.sim_info_manager()
     except Exception:
         return
-    for attr in ("get_all", "values"):
-        try:
-            source = getattr(manager, attr, None)
-            if not source:
-                continue
-            items = source() if callable(source) else source
-            if isinstance(items, dict):
-                items = items.values()
-            for item in items or []:
-                yield item
-            return
-        except Exception:
-            pass
-    for attr in ("_objects", "objects"):
-        try:
-            items = getattr(manager, attr, None)
-            if isinstance(items, dict):
-                items = items.values()
-            for item in items or []:
-                yield item
-            return
-        except Exception:
-            pass
+    found = yield from _yield_manager_items(manager, ("get_all", "values"), True)
+    if found:
+        return
+    yield from _yield_manager_items(manager, ("_objects", "objects"), False)
 
 
 def instanced_npc_infos():
@@ -1164,8 +1197,8 @@ def _outbox_delay(attempts):
     return 2 ** min(attempts, 5)
 
 
-def process_autonomy_responses(_alarm_handle):
-    global _AUTONOMY_IN_FLIGHT, _AUTONOMY_OPERATION_ID, _RESPONSE_PUMP_TICK
+def _pop_autonomy_response_batch():
+    global _RESPONSE_PUMP_TICK
     with _AUTONOMY_RESPONSES_LOCK:
         _RESPONSE_PUMP_TICK += 1
         chat_item = _CHAT_RESPONSES.pop(0) if _CHAT_RESPONSES else None
@@ -1180,124 +1213,173 @@ def process_autonomy_responses(_alarm_handle):
             else None
         )
         item = _AUTONOMY_RESPONSES.pop(0) if _AUTONOMY_RESPONSES else None
-    if chat_item is not None:
-        session_id, turn_id, data, error = chat_item
-        session = find_conversation_session(session_id)
-        if session is None or session.closed:
-            report_canceled_proposal(data)
-        else:
-            try:
-                session.accept_backend_result(turn_id, data, error)
-            except Exception:
-                write_marker(traceback.format_exc())
-    if console_item is not None:
-        connection, speaker_name, data, error = console_item
-        if error:
-            out(connection, "AI chat error: {}".format(error))
-        else:
-            deliver_console_chat(connection, speaker_name, data)
-    if session_event is not None:
-        session_id, turn_id, event, detail = session_event
-        session = find_conversation_session(session_id)
-        if session is not None:
-            if event == "dialogue_displayed" and turn_id == session.turn_id:
-                session.dialogue_acknowledged = True
-                complete_delivered_turn(session)
-            elif event == "dialogue_failed" and turn_id == session.turn_id:
-                session.fail(detail)
-            elif event == "native_finished":
-                session.after_native_action(turn_id)
-            elif event == "native_failed" and turn_id == session.turn_id:
-                session.fail(detail)
-            elif event == "action_confirmation_failed" and turn_id == session.turn_id:
-                session.action_confirmation_failed(turn_id, detail)
-    if action_result is not None:
-        outbox_id, error, permanent = action_result
-        outbox_item = next(
-            (entry for entry in _ACTION_RESULT_OUTBOX if entry["id"] == outbox_id),
-            None,
+    return chat_item, console_item, session_event, action_result, dialogue_delivery, item
+
+
+def _handle_chat_response_item(chat_item):
+    if chat_item is None:
+        return
+    session_id, turn_id, data, error = chat_item
+    session = find_conversation_session(session_id)
+    if session is None or session.closed:
+        report_canceled_proposal(data)
+    else:
+        try:
+            session.accept_backend_result(turn_id, data, error)
+        except Exception:
+            write_marker(traceback.format_exc())
+
+
+def _handle_console_response_item(console_item):
+    if console_item is None:
+        return
+    connection, speaker_name, data, error = console_item
+    if error:
+        out(connection, "AI chat error: {}".format(error))
+    else:
+        deliver_console_chat(connection, speaker_name, data)
+
+
+def _handle_session_event_item(session_event):
+    if session_event is None:
+        return
+    session_id, turn_id, event, detail = session_event
+    session = find_conversation_session(session_id)
+    if session is None:
+        return
+    if event == "dialogue_displayed" and turn_id == session.turn_id:
+        session.dialogue_acknowledged = True
+        complete_delivered_turn(session)
+    elif event == "dialogue_failed" and turn_id == session.turn_id:
+        session.fail(detail)
+    elif event == "native_finished":
+        session.after_native_action(turn_id)
+    elif event == "native_failed" and turn_id == session.turn_id:
+        session.fail(detail)
+    elif event == "action_confirmation_failed" and turn_id == session.turn_id:
+        session.action_confirmation_failed(turn_id, detail)
+
+
+def _handle_action_result_success(outbox_item):
+    global _AUTONOMY_IN_FLIGHT, _AUTONOMY_OPERATION_ID
+    _ACTION_RESULT_OUTBOX.remove(outbox_item)
+    operation_id = outbox_item["autonomy_operation_id"]
+    if operation_id is not None and operation_id == _AUTONOMY_OPERATION_ID:
+        _AUTONOMY_IN_FLIGHT = False
+        _AUTONOMY_OPERATION_ID = None
+    if outbox_item["session_id"] is not None:
+        body = outbox_item["body"]
+        event = (
+            "native_finished"
+            if body["status"] == "succeeded"
+            else "native_failed"
         )
-        if outbox_item is not None:
-            outbox_item["in_flight"] = False
-            if error is None:
-                _ACTION_RESULT_OUTBOX.remove(outbox_item)
-                operation_id = outbox_item["autonomy_operation_id"]
-                if operation_id is not None and operation_id == _AUTONOMY_OPERATION_ID:
-                    _AUTONOMY_IN_FLIGHT = False
-                    _AUTONOMY_OPERATION_ID = None
-                if outbox_item["session_id"] is not None:
-                    body = outbox_item["body"]
-                    event = (
-                        "native_finished"
-                        if body["status"] == "succeeded"
-                        else "native_failed"
-                    )
-                    _SESSION_EVENTS.append(
-                        (
-                            outbox_item["session_id"],
-                            outbox_item["turn_id"],
-                            event,
-                            body.get("reason") or "Native action failed",
-                        )
-                    )
-            else:
-                outbox_item["attempts"] += 1
-                session = find_conversation_session(outbox_item["session_id"])
-                if permanent:
-                    outbox_item["paused"] = True
-                    if (
-                        outbox_item["body"]["status"] == "succeeded"
-                        and session is not None
-                    ):
-                        _SESSION_EVENTS.append(
-                            (
-                                outbox_item["session_id"],
-                                outbox_item["turn_id"],
-                                "action_confirmation_failed",
-                                "Action result confirmation failed: {}".format(error),
-                            )
-                        )
-                else:
-                    outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
-                        outbox_item["attempts"]
-                    )
-                    if (
-                        outbox_item["attempts"] >= 3
-                        and outbox_item["body"]["status"] == "succeeded"
-                        and session is not None
-                    ):
-                        outbox_item["paused"] = True
-                        _SESSION_EVENTS.append(
-                            (
-                                outbox_item["session_id"],
-                                outbox_item["turn_id"],
-                                "action_confirmation_failed",
-                                "Action result confirmation failed: {}".format(error),
-                            )
-                        )
-    if dialogue_delivery is not None:
-        outbox_id, error = dialogue_delivery
-        outbox_item = next(
+        _SESSION_EVENTS.append(
             (
-                entry
-                for entry in _DIALOGUE_DELIVERY_OUTBOX
-                if entry["id"] == outbox_id
-            ),
-            None,
+                outbox_item["session_id"],
+                outbox_item["turn_id"],
+                event,
+                body.get("reason") or "Native action failed",
+            )
         )
-        if outbox_item is not None:
-            outbox_item["in_flight"] = False
-            if error is None:
-                _DIALOGUE_DELIVERY_OUTBOX.remove(outbox_item)
-            else:
-                outbox_item["attempts"] += 1
-                outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
-                    outbox_item["attempts"]
+
+
+def _handle_action_result_failure(outbox_item, error, permanent):
+    outbox_item["attempts"] += 1
+    session = find_conversation_session(outbox_item["session_id"])
+    if permanent:
+        outbox_item["paused"] = True
+        if (
+            outbox_item["body"]["status"] == "succeeded"
+            and session is not None
+        ):
+            _SESSION_EVENTS.append(
+                (
+                    outbox_item["session_id"],
+                    outbox_item["turn_id"],
+                    "action_confirmation_failed",
+                    "Action result confirmation failed: {}".format(error),
                 )
-                out(
-                    outbox_item["connection"],
-                    "AI chat delivery retrying: {}".format(error),
-                )
+            )
+        return
+    outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
+        outbox_item["attempts"]
+    )
+    if (
+        outbox_item["attempts"] >= 3
+        and outbox_item["body"]["status"] == "succeeded"
+        and session is not None
+    ):
+        outbox_item["paused"] = True
+        _SESSION_EVENTS.append(
+            (
+                outbox_item["session_id"],
+                outbox_item["turn_id"],
+                "action_confirmation_failed",
+                "Action result confirmation failed: {}".format(error),
+            )
+        )
+
+
+def _handle_action_result_item(action_result):
+    if action_result is None:
+        return
+    outbox_id, error, permanent = action_result
+    outbox_item = next(
+        (entry for entry in _ACTION_RESULT_OUTBOX if entry["id"] == outbox_id),
+        None,
+    )
+    if outbox_item is None:
+        return
+    outbox_item["in_flight"] = False
+    if error is None:
+        _handle_action_result_success(outbox_item)
+    else:
+        _handle_action_result_failure(outbox_item, error, permanent)
+
+
+def _handle_dialogue_delivery_item(dialogue_delivery):
+    if dialogue_delivery is None:
+        return
+    outbox_id, error = dialogue_delivery
+    outbox_item = next(
+        (
+            entry
+            for entry in _DIALOGUE_DELIVERY_OUTBOX
+            if entry["id"] == outbox_id
+        ),
+        None,
+    )
+    if outbox_item is None:
+        return
+    outbox_item["in_flight"] = False
+    if error is None:
+        _DIALOGUE_DELIVERY_OUTBOX.remove(outbox_item)
+    else:
+        outbox_item["attempts"] += 1
+        outbox_item["next_tick"] = _RESPONSE_PUMP_TICK + _outbox_delay(
+            outbox_item["attempts"]
+        )
+        out(
+            outbox_item["connection"],
+            "AI chat delivery retrying: {}".format(error),
+        )
+
+
+def process_autonomy_responses(_alarm_handle):
+    (
+        chat_item,
+        console_item,
+        session_event,
+        action_result,
+        dialogue_delivery,
+        item,
+    ) = _pop_autonomy_response_batch()
+    _handle_chat_response_item(chat_item)
+    _handle_console_response_item(console_item)
+    _handle_session_event_item(session_event)
+    _handle_action_result_item(action_result)
+    _handle_dialogue_delivery_item(dialogue_delivery)
     dispatch_action_result_outbox()
     dispatch_dialogue_delivery_outbox()
     if item is None:
@@ -1309,6 +1391,160 @@ def process_autonomy_responses(_alarm_handle):
         selected_interaction,
         autonomy_operation_id=operation_id,
     )
+
+
+def _resolve_action_participants(payload, interaction):
+    if not isinstance(payload, dict):
+        raise RuntimeError("missing Empneon action payload")
+    speaker_id = str(payload["speaker"]["id"])
+    listener_id = str(payload["listener"]["id"])
+    actor_info = find_sim_info_by_id(listener_id if interaction is None else speaker_id)
+    target_info = find_sim_info_by_id(speaker_id if interaction is None else listener_id)
+    actor = actor_info.get_sim_instance() if actor_info is not None else None
+    target = target_info.get_sim_instance() if target_info is not None else None
+    if actor is None or target is None:
+        raise RuntimeError("actor or target left the active zone")
+    return speaker_id, listener_id, actor_info, target_info, actor, target
+
+
+def _ensure_has_met_bit(actor_info, target_info, speaker_id, listener_id):
+    import sims4.resources
+
+    bit_manager = services.get_instance_manager(sims4.resources.Types.RELATIONSHIP_BIT)
+    has_met = next(
+        (
+            tuning
+            for tuning in bit_manager.types.values()
+            if getattr(tuning, "__name__", "") == "has_met"
+        ),
+        None,
+    )
+    tracker = getattr(actor_info, "relationship_tracker", None)
+    if has_met is not None and tracker is not None and not tracker.has_bit(target_info.sim_id, has_met):
+        tracker.add_relationship_bit(target_info.sim_id, has_met)
+        write_marker("established has_met: {} -> {}".format(listener_id, speaker_id))
+
+
+def _categorize_action_candidates(target, context, affordance):
+    candidates = tuple(target.potential_interactions(context))
+    failures = []
+    offered_candidates = []
+    fallback_candidates = []
+    for candidate in candidates:
+        available = getattr(candidate.affordance, "all_affordances_gen", None)
+        try:
+            offered = callable(available) and affordance in tuple(
+                available(context=context)
+            )
+        except Exception as exc:
+            failures.append(
+                "{}={!r}".format(
+                    getattr(candidate.affordance, "__name__", "unknown"), exc
+                )
+            )
+            offered = False
+        (offered_candidates if offered else fallback_candidates).append(candidate)
+    return offered_candidates, fallback_candidates, failures
+
+
+def _match_action_candidate(offered_candidates, fallback_candidates, affordance, target, context, failures):
+    from interactions.aop import AffordanceObjectPair
+
+    for candidate in offered_candidates + fallback_candidates:
+        candidate_name = getattr(candidate.affordance, "__name__", "unknown")
+        try:
+            proposed = AffordanceObjectPair(
+                affordance,
+                target,
+                candidate.affordance,
+                None,
+                push_super_on_prepare=True,
+            )
+            test_result = proposed.test(context)
+            factory_result = proposed.interaction_factory(context) if test_result else None
+            if factory_result:
+                return proposed, factory_result.interaction
+            failures.append("{}={}".format(candidate_name, test_result))
+        except Exception as exc:
+            failures.append("{}={!r}".format(candidate_name, exc))
+    return None, None
+
+
+def _resolve_matched_action_interaction(target, context, affordance, action):
+    offered_candidates, fallback_candidates, failures = _categorize_action_candidates(
+        target, context, affordance
+    )
+    mapped_aop, mapped_interaction = _match_action_candidate(
+        offered_candidates, fallback_candidates, affordance, target, context, failures
+    )
+    if mapped_aop is None:
+        details = "; ".join(failures[:8])
+        summary = "no compatible social super-interaction offers {}".format(
+            action
+        )
+        if details:
+            summary += ": " + details
+        raise RuntimeError(
+            "native social failed game selection for {}: {}".format(
+                action, summary
+            )
+        )
+    if mapped_interaction is None:
+        test_result = mapped_aop.test(context)
+        if not test_result:
+            raise RuntimeError("native social failed game tests: {}".format(test_result))
+        factory_result = mapped_aop.interaction_factory(context)
+        if not factory_result:
+            raise RuntimeError("native social could not be created: {}".format(factory_result))
+        mapped_interaction = factory_result.interaction
+    return mapped_aop, mapped_interaction
+
+
+def _make_action_finished_callback(
+    owned_session,
+    payload,
+    actor_info,
+    target_info,
+    decision_id,
+    action,
+    session_id,
+    turn_id,
+    autonomy_operation_id,
+):
+    def finished(completed_interaction):
+        session = owned_session
+        if session is not None and (session.canceled or session.action_result_started):
+            return
+        finishing_type = str(getattr(completed_interaction, "finishing_type", ""))
+        succeeded = finishing_type.lower().endswith("natural")
+        changes = []
+        if succeeded:
+            before = payload.get("relationship") or {}
+            after = relationship_payload(actor_info, target_info)
+            for key in ("friendship", "romance"):
+                delta = int(after.get(key, 0)) - int(before.get(key, 0))
+                if delta:
+                    changes.append(
+                        {
+                            "path": "relationship." + key,
+                            "operation": "increment",
+                            "value": delta,
+                        }
+                    )
+        if session is not None:
+            session.action_result_started = True
+        report_action_result(
+            decision_id,
+            action,
+            "succeeded" if succeeded else "failed",
+            None if succeeded else finishing_type or "interaction canceled",
+            changes,
+            session_id=session_id,
+            turn_id=turn_id,
+            autonomy_operation_id=autonomy_operation_id,
+        )
+
+    return finished
 
 
 def execute_sims_action(
@@ -1323,140 +1559,41 @@ def execute_sims_action(
     action = str(data.get("suggested_action") or data.get("animation") or "")
     owned_session = find_conversation_session(session_id) if session_id is not None else None
     try:
-        if not isinstance(payload, dict):
-            raise RuntimeError("missing Empneon action payload")
-        speaker_id = str(payload["speaker"]["id"])
-        listener_id = str(payload["listener"]["id"])
-        actor_info = find_sim_info_by_id(listener_id if interaction is None else speaker_id)
-        target_info = find_sim_info_by_id(speaker_id if interaction is None else listener_id)
-        actor = actor_info.get_sim_instance() if actor_info is not None else None
-        target = target_info.get_sim_instance() if target_info is not None else None
-        if actor is None or target is None:
-            raise RuntimeError("actor or target left the active zone")
+        speaker_id, listener_id, actor_info, target_info, actor, target = (
+            _resolve_action_participants(payload, interaction)
+        )
         affordance = find_action_affordance(action)
         if affordance is None:
             raise RuntimeError("no native social mapped for {}".format(action))
         from interactions.aop import AffordanceObjectPair
 
-        import sims4.resources
-
-        bit_manager = services.get_instance_manager(sims4.resources.Types.RELATIONSHIP_BIT)
-        has_met = next(
-            (
-                tuning
-                for tuning in bit_manager.types.values()
-                if getattr(tuning, "__name__", "") == "has_met"
-            ),
-            None,
-        )
-        tracker = getattr(actor_info, "relationship_tracker", None)
-        if has_met is not None and tracker is not None and not tracker.has_bit(target_info.sim_id, has_met):
-            tracker.add_relationship_bit(target_info.sim_id, has_met)
-            write_marker("established has_met: {} -> {}".format(listener_id, speaker_id))
+        _ensure_has_met_bit(actor_info, target_info, speaker_id, listener_id)
 
         context = InteractionContext(
             actor,
             InteractionContext.SOURCE_SCRIPT_WITH_USER_INTENT,
             Priority.High,
         )
-        mapped_aop = None
-        mapped_interaction = None
-        failures = []
-        candidates = tuple(target.potential_interactions(context))
-        offered_candidates = []
-        fallback_candidates = []
-        for candidate in candidates:
-            available = getattr(candidate.affordance, "all_affordances_gen", None)
-            try:
-                offered = callable(available) and affordance in tuple(
-                    available(context=context)
-                )
-            except Exception as exc:
-                failures.append(
-                    "{}={!r}".format(
-                        getattr(candidate.affordance, "__name__", "unknown"), exc
-                    )
-                )
-                offered = False
-            (offered_candidates if offered else fallback_candidates).append(candidate)
-        for candidate in offered_candidates + fallback_candidates:
-            candidate_name = getattr(candidate.affordance, "__name__", "unknown")
-            try:
-                proposed = AffordanceObjectPair(
-                    affordance,
-                    target,
-                    candidate.affordance,
-                    None,
-                    push_super_on_prepare=True,
-                )
-                test_result = proposed.test(context)
-                factory_result = proposed.interaction_factory(context) if test_result else None
-                if factory_result:
-                    mapped_aop = proposed
-                    mapped_interaction = factory_result.interaction
-                    break
-                failures.append("{}={}".format(candidate_name, test_result))
-            except Exception as exc:
-                failures.append("{}={!r}".format(candidate_name, exc))
-
-        if mapped_aop is None:
-            details = "; ".join(failures[:8])
-            summary = "no compatible social super-interaction offers {}".format(
-                action
-            )
-            if details:
-                summary += ": " + details
-            raise RuntimeError(
-                "native social failed game selection for {}: {}".format(
-                    action, summary
-                )
-            )
-        if mapped_interaction is None:
-            test_result = mapped_aop.test(context)
-            if not test_result:
-                raise RuntimeError("native social failed game tests: {}".format(test_result))
-            factory_result = mapped_aop.interaction_factory(context)
-            if not factory_result:
-                raise RuntimeError("native social could not be created: {}".format(factory_result))
-            mapped_interaction = factory_result.interaction
+        _, mapped_interaction = _resolve_matched_action_interaction(
+            target, context, affordance, action
+        )
         callback = getattr(mapped_interaction, "register_on_finishing_callback", None)
         if not callable(callback):
             raise RuntimeError("game interaction has no completion callback")
 
-        def finished(completed_interaction):
-            session = owned_session
-            if session is not None and (session.canceled or session.action_result_started):
-                return
-            finishing_type = str(getattr(completed_interaction, "finishing_type", ""))
-            succeeded = finishing_type.lower().endswith("natural")
-            changes = []
-            if succeeded:
-                before = payload.get("relationship") or {}
-                after = relationship_payload(actor_info, target_info)
-                for key in ("friendship", "romance"):
-                    delta = int(after.get(key, 0)) - int(before.get(key, 0))
-                    if delta:
-                        changes.append(
-                            {
-                                "path": "relationship." + key,
-                                "operation": "increment",
-                                "value": delta,
-                            }
-                        )
-            if session is not None:
-                session.action_result_started = True
-            report_action_result(
+        callback(
+            _make_action_finished_callback(
+                owned_session,
+                payload,
+                actor_info,
+                target_info,
                 decision_id,
                 action,
-                "succeeded" if succeeded else "failed",
-                None if succeeded else finishing_type or "interaction canceled",
-                changes,
-                session_id=session_id,
-                turn_id=turn_id,
-                autonomy_operation_id=autonomy_operation_id,
+                session_id,
+                turn_id,
+                autonomy_operation_id,
             )
-
-        callback(finished)
+        )
         if session_id is not None:
             session = owned_session
             if session is not None:
@@ -1692,73 +1829,86 @@ class _VisualOutcomeActions:
         return getattr(self._actions, name)
 
 
+def _get_or_build_waiting_mixer(interaction, affordance):
+    mixer = getattr(interaction, "_empneon_waiting_mixer", None)
+    if mixer is not None:
+        return mixer
+    from interactions.aop import AffordanceObjectPair
+
+    mapped = AffordanceObjectPair(
+        affordance,
+        interaction.target,
+        interaction.affordance,
+        interaction,
+    ).interaction_factory(interaction.context)
+    mixer = getattr(mapped, "interaction", None)
+    if mixer is None:
+        raise RuntimeError("could not create waiting conversation mixer")
+    interaction._empneon_waiting_mixer = mixer
+    return mixer
+
+
+def _build_waiting_animation(interaction, mixer, actions):
+    animation_ref = getattr(actions, "animation_ref", None)
+    if not callable(animation_ref):
+        return None
+    from interactions.utils.outcome import build_outcome_actions
+
+    mixer.build_outcome = lambda: element_utils.build_element(())
+    mixer.relationship_scoring = False
+    visual = build_outcome_actions(mixer, _VisualOutcomeActions(actions))
+    mode = getattr(interaction, "_empneon_animation_mode", None)
+    linked_group = getattr(
+        getattr(mixer, "super_interaction", None),
+        "social_group",
+        None,
+    )
+    if mode == "initiator_only" or linked_group is None:
+        interaction._empneon_animation_mode = "initiator_only"
+        animation = visual
+        if not getattr(
+            interaction,
+            "_empneon_animation_fallback_diagnostic",
+            False,
+        ):
+            interaction._empneon_animation_fallback_diagnostic = True
+            interaction._empneon_animation_diagnostic = True
+            write_marker(
+                "Waiting conversation animation using "
+                "initiator-only fallback: linked social group "
+                "unavailable"
+            )
+    else:
+        animation = mixer.build_basic_elements(visual)
+    return animation
+
+
 def waiting_conversation_animation(interaction, sequence):
     if getattr(interaction, "_empneon_animation_disabled", False):
         return sequence
     try:
-        from interactions.aop import AffordanceObjectPair
-        from interactions.utils.outcome import build_outcome_actions
-
         affordance = find_action_affordance("friendly_chat")
-        mixer = getattr(interaction, "_empneon_waiting_mixer", None)
-        if mixer is None:
-            mapped = AffordanceObjectPair(
-                affordance,
-                interaction.target,
-                interaction.affordance,
-                interaction,
-            ).interaction_factory(interaction.context)
-            mixer = getattr(mapped, "interaction", None)
-            if mixer is None:
-                raise RuntimeError("could not create waiting conversation mixer")
-            interaction._empneon_waiting_mixer = mixer
+        mixer = _get_or_build_waiting_mixer(interaction, affordance)
         outcome = getattr(affordance, "outcome", None)
         fallback_outcomes = tuple(getattr(outcome, "_fallback_outcomes", ()))
         for weighted_outcome in fallback_outcomes:
             actions = getattr(weighted_outcome, "outcome", None)
-            animation_ref = getattr(actions, "animation_ref", None)
-            if callable(animation_ref):
-                mixer.build_outcome = lambda: element_utils.build_element(())
-                mixer.relationship_scoring = False
-                visual = build_outcome_actions(
-                    mixer, _VisualOutcomeActions(actions)
-                )
-                mode = getattr(interaction, "_empneon_animation_mode", None)
-                linked_group = getattr(
-                    getattr(mixer, "super_interaction", None),
-                    "social_group",
-                    None,
-                )
-                if mode == "initiator_only" or linked_group is None:
-                    interaction._empneon_animation_mode = "initiator_only"
-                    animation = visual
-                    if not getattr(
-                        interaction,
-                        "_empneon_animation_fallback_diagnostic",
-                        False,
-                    ):
-                        interaction._empneon_animation_fallback_diagnostic = True
-                        interaction._empneon_animation_diagnostic = True
-                        write_marker(
-                            "Waiting conversation animation using "
-                            "initiator-only fallback: linked social group "
-                            "unavailable"
-                        )
-                else:
-                    animation = mixer.build_basic_elements(visual)
-                if not getattr(interaction, "_empneon_animation_diagnostic", False):
-                    interaction._empneon_animation_diagnostic = True
-                    write_marker(
-                        "Waiting conversation animation built: affordance={} outcome={} "
-                        "fallbacks={} owner={} animation={}".format(
-                            getattr(affordance, "__name__", type(affordance).__name__),
-                            type(outcome).__name__,
-                            len(fallback_outcomes),
-                            type(mixer).__name__,
-                            type(animation).__name__,
-                        )
+            animation = _build_waiting_animation(interaction, mixer, actions)
+            if animation is None:
+                continue
+            if not getattr(interaction, "_empneon_animation_diagnostic", False):
+                interaction._empneon_animation_diagnostic = True
+                write_marker(
+                    "Waiting conversation animation built: affordance={} outcome={} "
+                    "fallbacks={} owner={} animation={}".format(
+                        getattr(affordance, "__name__", type(affordance).__name__),
+                        type(outcome).__name__,
+                        len(fallback_outcomes),
+                        type(mixer).__name__,
+                        type(animation).__name__,
                     )
-                return element_utils.build_element((animation, sequence))
+                )
+            return element_utils.build_element((animation, sequence))
         if not getattr(interaction, "_empneon_animation_diagnostic", False):
             interaction._empneon_animation_diagnostic = True
             write_marker(
@@ -2100,6 +2250,48 @@ def submit_empneon_chat(session, message):
     thread.start()
 
 
+def _deliver_dialogue_result(payload, data, queue_native, session_id, turn_id, decision_id):
+    try:
+        delivered = post_json(
+            "/dialogue-result",
+            {"decision_id": decision_id, "status": "displayed"},
+            timeout=10,
+        )
+        status = delivered.get("status")
+        acknowledged = status in ("displayed", "already_displayed")
+        if session_id is not None:
+            event = (
+                "dialogue_displayed"
+                if acknowledged
+                else "dialogue_failed"
+            )
+            detail = (
+                None
+                if acknowledged
+                else "Dialogue was not freshly displayed"
+            )
+            with _AUTONOMY_RESPONSES_LOCK:
+                _SESSION_EVENTS.append((session_id, turn_id, event, detail))
+            return
+        action = str(data.get("suggested_action") or data.get("animation") or "")
+        if (
+            status == "displayed"
+            and queue_native
+            and payload is not None
+            and action != "none"
+        ):
+            with _AUTONOMY_RESPONSES_LOCK:
+                _AUTONOMY_RESPONSES.append((payload, data, None))
+    except Exception as exc:
+        message = "Dialogue delivery confirmation failed: {}".format(exc)
+        write_marker(message)
+        if session_id is not None:
+            with _AUTONOMY_RESPONSES_LOCK:
+                _SESSION_EVENTS.append(
+                    (session_id, turn_id, "dialogue_failed", message)
+                )
+
+
 def report_dialogue_delivery(
     payload,
     data,
@@ -2110,45 +2302,9 @@ def report_dialogue_delivery(
     decision_id = str(data.get("decision_id") or "")
 
     def worker():
-        try:
-            delivered = post_json(
-                "/dialogue-result",
-                {"decision_id": decision_id, "status": "displayed"},
-                timeout=10,
-            )
-            status = delivered.get("status")
-            acknowledged = status in ("displayed", "already_displayed")
-            if session_id is not None:
-                event = (
-                    "dialogue_displayed"
-                    if acknowledged
-                    else "dialogue_failed"
-                )
-                detail = (
-                    None
-                    if acknowledged
-                    else "Dialogue was not freshly displayed"
-                )
-                with _AUTONOMY_RESPONSES_LOCK:
-                    _SESSION_EVENTS.append((session_id, turn_id, event, detail))
-                return
-            action = str(data.get("suggested_action") or data.get("animation") or "")
-            if (
-                status == "displayed"
-                and queue_native
-                and payload is not None
-                and action != "none"
-            ):
-                with _AUTONOMY_RESPONSES_LOCK:
-                    _AUTONOMY_RESPONSES.append((payload, data, None))
-        except Exception as exc:
-            message = "Dialogue delivery confirmation failed: {}".format(exc)
-            write_marker(message)
-            if session_id is not None:
-                with _AUTONOMY_RESPONSES_LOCK:
-                    _SESSION_EVENTS.append(
-                        (session_id, turn_id, "dialogue_failed", message)
-                    )
+        _deliver_dialogue_result(
+            payload, data, queue_native, session_id, turn_id, decision_id
+        )
 
     thread = threading.Thread(target=worker)
     thread.daemon = True

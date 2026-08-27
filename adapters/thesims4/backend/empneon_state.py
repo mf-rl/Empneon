@@ -324,6 +324,65 @@ def sim_diagnostics(conn: sqlite3.Connection, agent_id: str) -> dict[str, object
     }
 
 
+def _apply_relationship_change(
+    relationships: RelationshipStore, actor_id: str, target_id: str, change
+) -> None:
+    if not target_id:
+        raise ValueError("relationship consequence requires a target Sim")
+    parts = change.path.split(".")
+    relationship = relationships.get(actor_id, target_id) or Relationship(
+        actor_id,
+        target_id,
+        "acquaintance",
+        id=_stable_id(actor_id, "relationship", target_id),
+    )
+    amount = float(change.value) / 100
+    if parts[1] == "friendship":
+        relationship.strength = _clamp(relationship.strength + amount, -1.0, 1.0)
+    elif parts[1] == "trust":
+        relationship.trust = _clamp(relationship.trust + amount)
+    elif parts[1] == "romance" and amount > 0:
+        relationship.relationship_type = "romantic"
+    relationships.set(relationship, commit=False)
+
+
+def _apply_emotion_change(emotions: EmotionalStateStore, actor_id: str, change) -> None:
+    parts = change.path.split(".")
+    current = emotions.get(actor_id, parts[1])
+    value = float(change.value) / 100
+    if change.operation == "increment":
+        value += current.value if current else 0.0
+    emotions.set(EmotionalState(actor_id, parts[1], _clamp(value)), commit=False)
+
+
+def _apply_need_change(goals: GoalStore, actor_id: str, change) -> None:
+    parts = change.path.split(".")
+    need = parts[1].casefold()
+    goal_id = _stable_id(actor_id, "need", need)
+    goal = goals.get(goal_id)
+    value = float(change.value)
+    if value <= 25:
+        goal = goal or Goal(
+            actor_id,
+            RESTORE_GOAL_PREFIX + need,
+            priority=_clamp((25 - value) / 25, 0.6, 1.0),
+            id=goal_id,
+        )
+        goal.status = GOAL_ACTIVE
+        goals.set(goal, commit=False)
+    elif goal is not None:
+        goal.status = GOAL_COMPLETED
+        goals.set(goal, commit=False)
+
+
+def _apply_goal_status_change(goals: GoalStore, actor_id: str, change) -> None:
+    goal = goals.get(change.path.split(".")[1])
+    if goal is None or goal.agent_id != actor_id:
+        raise ValueError("confirmed goal does not belong to acting Sim")
+    goal.status = str(change.value)
+    goals.set(goal, commit=False)
+
+
 def apply_confirmed_consequences(
     conn: sqlite3.Connection, proposal: ActionProposal, result: ActionResult
 ) -> None:
@@ -335,55 +394,15 @@ def apply_confirmed_consequences(
     emotions = EmotionalStateStore(conn)
     goals = GoalStore(conn)
     for change in result.applied_changes:
-        parts = change.path.split(".")
-        if parts[0] == "relationship":
-            if not target_id:
-                raise ValueError("relationship consequence requires a target Sim")
-            relationship = relationships.get(actor_id, target_id) or Relationship(
-                actor_id,
-                target_id,
-                "acquaintance",
-                id=_stable_id(actor_id, "relationship", target_id),
-            )
-            amount = float(change.value) / 100
-            if parts[1] == "friendship":
-                relationship.strength = _clamp(relationship.strength + amount, -1.0, 1.0)
-            elif parts[1] == "trust":
-                relationship.trust = _clamp(relationship.trust + amount)
-            elif parts[1] == "romance" and amount > 0:
-                relationship.relationship_type = "romantic"
-            relationships.set(relationship, commit=False)
-        elif parts[0] == "emotion":
-            current = emotions.get(actor_id, parts[1])
-            value = float(change.value) / 100
-            if change.operation == "increment":
-                value += current.value if current else 0.0
-            emotions.set(
-                EmotionalState(actor_id, parts[1], _clamp(value)), commit=False
-            )
-        elif parts[0] == "need":
-            need = parts[1].casefold()
-            goal_id = _stable_id(actor_id, "need", need)
-            goal = goals.get(goal_id)
-            value = float(change.value)
-            if value <= 25:
-                goal = goal or Goal(
-                    actor_id,
-                    RESTORE_GOAL_PREFIX + need,
-                    priority=_clamp((25 - value) / 25, 0.6, 1.0),
-                    id=goal_id,
-                )
-                goal.status = GOAL_ACTIVE
-                goals.set(goal, commit=False)
-            elif goal is not None:
-                goal.status = GOAL_COMPLETED
-                goals.set(goal, commit=False)
-        elif parts[0] == "goal":
-            goal = goals.get(parts[1])
-            if goal is None or goal.agent_id != actor_id:
-                raise ValueError("confirmed goal does not belong to acting Sim")
-            goal.status = str(change.value)
-            goals.set(goal, commit=False)
+        kind = change.path.split(".")[0]
+        if kind == "relationship":
+            _apply_relationship_change(relationships, actor_id, target_id, change)
+        elif kind == "emotion":
+            _apply_emotion_change(emotions, actor_id, change)
+        elif kind == "need":
+            _apply_need_change(goals, actor_id, change)
+        elif kind == "goal":
+            _apply_goal_status_change(goals, actor_id, change)
 
 
 def record_observed_event(
@@ -641,44 +660,56 @@ def _possessive_identifier_fact(
     return {"actor_id": actor_id, "statement": statement}
 
 
+def _reattributed_fact(
+    stored: object, speaker_id: str, listener_id: str, recall_answer: bool
+) -> dict[str, object] | None:
+    if not isinstance(stored, dict):
+        return None
+    fact = dict(stored)
+    match = _ATTRIBUTED_RECALL_FACT.match(str(fact.get("statement") or ""))
+    if match and str(fact.get("actor_id") or "") == speaker_id:
+        fact["actor_id"] = (
+            listener_id
+            if match.group("cue").casefold() == "you told me"
+            else speaker_id
+        )
+        fact["statement"] = match.group("statement")
+    if recall_answer and str(fact.get("actor_id") or "") == speaker_id:
+        return None
+    return fact
+
+
+def _append_unique_fact(
+    facts: list[dict[str, object]], fact: dict[str, object] | None
+) -> None:
+    if fact is not None and fact not in facts:
+        facts.append(fact)
+
+
 def _authoritative_facts(
     data: dict[str, object],
 ) -> list[dict[str, object]]:
     speaker_id = str(data.get("speaker_id") or "")
     listener_id = str(data.get("listener_id") or "")
     recall_answer = _is_recall_question(str(data.get("message") or ""))
-    facts = []
+    facts: list[dict[str, object]] = []
     for stored in data.get("facts") or []:
-        if not isinstance(stored, dict):
-            continue
-        fact = dict(stored)
-        match = _ATTRIBUTED_RECALL_FACT.match(
-            str(fact.get("statement") or "")
-        )
-        if match and str(fact.get("actor_id") or "") == speaker_id:
-            fact["actor_id"] = (
-                listener_id
-                if match.group("cue").casefold() == "you told me"
-                else speaker_id
-            )
-            fact["statement"] = match.group("statement")
-        if recall_answer and str(fact.get("actor_id") or "") == speaker_id:
-            continue
-        facts.append(fact)
-    possessive_fact = None if recall_answer else _possessive_identifier_fact(data)
-    if possessive_fact is not None and possessive_fact not in facts:
-        facts.append(possessive_fact)
-    legacy_fact = (
+        fact = _reattributed_fact(stored, speaker_id, listener_id, recall_answer)
+        if fact is not None:
+            facts.append(fact)
+    _append_unique_fact(
+        facts, None if recall_answer else _possessive_identifier_fact(data)
+    )
+    _append_unique_fact(
+        facts,
         None
         if recall_answer
         else _durable_fact(
             str(data.get("listener_id") or ""),
             str(data.get("message") or ""),
             allow_identifier_assignment=True,
-        )
+        ),
     )
-    if legacy_fact is not None and legacy_fact not in facts:
-        facts.append(legacy_fact)
     return facts
 
 
@@ -746,6 +777,65 @@ def _recall_event_rows(
     return targeted_rows + [row for row in boundary_rows if row["id"] not in seen]
 
 
+def _recall_candidate_rank(
+    event: sqlite3.Row,
+    owner_id: str | None,
+    recall_query,
+    terms: set[str],
+) -> tuple | None:
+    data = _event_data(event["description"])
+    facts = _authoritative_facts(data)
+    if owner_id is not None:
+        facts = [
+            fact
+            for fact in facts
+            if str(fact.get("actor_id") or "") == owner_id
+        ]
+        if not facts:
+            return None
+    supporting_facts = [
+        fact
+        for fact in facts
+        if fact_supports_query(fact, recall_query)
+    ]
+    searchable = " ".join(
+        (
+            str(data.get("message") or ""),
+            str(data.get("dialogue") or ""),
+            *(str(fact.get("statement") or "") for fact in facts),
+        )
+    )
+    candidate = {
+        "event_id": event["id"],
+        "created_at": event["happened_at"],
+        "speaker_id": str(data.get("speaker_id") or ""),
+        "listener_id": str(data.get("listener_id") or ""),
+        "message": str(data.get("message") or ""),
+        "dialogue": str(data.get("dialogue") or ""),
+        "facts": facts,
+    }
+    return (
+        bool(supporting_facts),
+        bool(terms & _recall_terms(searchable)),
+        bool(facts),
+        event["happened_at"],
+        candidate,
+    )
+
+
+def _select_recall_candidates(
+    ranked: list[tuple], max_chars: int
+) -> list[dict[str, object]]:
+    selected: list[dict[str, object]] = []
+    for _supports, _overlap, _has_facts, _created_at, candidate in ranked:
+        trial = json.dumps(
+            selected + [candidate], ensure_ascii=True, sort_keys=True
+        )
+        if len(trial) <= max(2, int(max_chars)):
+            selected.append(candidate)
+    return selected
+
+
 def recall_candidates(
     conn: sqlite3.Connection,
     actor_id: str,
@@ -758,58 +848,90 @@ def recall_candidates(
     owner_id = codeword_recall_owner_id(query, actor_id, other_id)
     ranked = []
     for event in _recall_event_rows(conn, str(actor_id), str(other_id), terms):
-        data = _event_data(event["description"])
-        facts = _authoritative_facts(data)
-        if owner_id is not None:
-            facts = [
-                fact
-                for fact in facts
-                if str(fact.get("actor_id") or "") == owner_id
-            ]
-            if not facts:
-                continue
-        supporting_facts = [
-            fact
-            for fact in facts
-            if fact_supports_query(fact, recall_query)
-        ]
-        searchable = " ".join(
-            (
-                str(data.get("message") or ""),
-                str(data.get("dialogue") or ""),
-                *(str(fact.get("statement") or "") for fact in facts),
-            )
-        )
-        candidate = {
-            "event_id": event["id"],
-            "created_at": event["happened_at"],
-            "speaker_id": str(data.get("speaker_id") or ""),
-            "listener_id": str(data.get("listener_id") or ""),
-            "message": str(data.get("message") or ""),
-            "dialogue": str(data.get("dialogue") or ""),
-            "facts": facts,
-        }
-        ranked.append(
-            (
-                bool(supporting_facts),
-                bool(terms & _recall_terms(searchable)),
-                bool(facts),
-                event["happened_at"],
-                candidate,
-            )
-        )
+        rank = _recall_candidate_rank(event, owner_id, recall_query, terms)
+        if rank is not None:
+            ranked.append(rank)
     ranked.sort(
         key=lambda item: (item[0], item[1], item[2], item[3]),
         reverse=True,
     )
-    selected = []
-    for _supports, _overlap, _has_facts, _created_at, candidate in ranked:
-        trial = json.dumps(
-            selected + [candidate], ensure_ascii=True, sort_keys=True
+    return _select_recall_candidates(ranked, max_chars)
+
+
+def _recalled_memory_match(
+    event: sqlite3.Row,
+    owner_id: str | None,
+    recall_query,
+    terms: set[str],
+    explicit: bool,
+) -> tuple | None:
+    data = _event_data(event["description"])
+    facts = _authoritative_facts(data)
+    if owner_id is not None:
+        facts = [
+            fact
+            for fact in facts
+            if str(fact.get("actor_id") or "") == owner_id
+        ]
+        if not facts:
+            return None
+    supporting_facts = [
+        fact
+        for fact in facts
+        if fact_supports_query(fact, recall_query)
+    ]
+    answers_requested = bool(supporting_facts)
+    searchable = " ".join(
+        [str(data.get("message") or ""), str(data.get("dialogue") or "")]
+        if explicit
+        else [str(fact.get("statement") or "") for fact in facts]
+    )
+    overlap = terms & _recall_terms(searchable)
+    if explicit and not terms:
+        overlap = {"history"}
+    if not overlap and not answers_requested:
+        return None
+    selected = dict(data)
+    selected["event_id"] = event["id"]
+    selected["created_at"] = event["happened_at"]
+    selected["explicit"] = explicit
+    selected["facts"] = [
+        fact
+        for fact in facts
+        if fact in supporting_facts
+        or terms & _recall_terms(str(fact.get("statement") or ""))
+    ]
+    return (len(overlap), event["happened_at"], selected, answers_requested)
+
+
+def _sort_recalled_matches(
+    matches: list[tuple], query: str, first_time: bool
+) -> list[tuple]:
+    if any(item[3] for item in matches):
+        matches = [item for item in matches if item[3]]
+    if first_time:
+        matches.sort(key=lambda item: item[1])
+    elif re.search(r"\blast time\b", str(query), re.IGNORECASE):
+        matches.sort(key=lambda item: item[1], reverse=True)
+    else:
+        matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return matches
+
+
+def _dedupe_recalled_facts(
+    memory: dict[str, object], seen_facts: set[tuple[str, str]]
+) -> list[dict[str, object]]:
+    unique_facts = []
+    for fact in memory["facts"]:
+        key = (
+            str(fact.get("actor_id") or ""),
+            str(fact.get("statement") or "").casefold(),
         )
-        if len(trial) <= max(2, int(max_chars)):
-            selected.append(candidate)
-    return selected
+        if key in seen_facts:
+            continue
+        seen_facts.add(key)
+        unique_facts.append(fact)
+    return unique_facts
 
 
 def recalled_memories(
@@ -823,8 +945,8 @@ def recalled_memories(
     recall_query = analyze_recall_query(query)
     explicit = recall_query.explicit
     owner_id = codeword_recall_owner_id(query, actor_id, other_id)
-    matches = []
     first_time = bool(re.search(r"\bfirst time\b", str(query), re.IGNORECASE))
+    matches = []
     for event in _recall_event_rows(
         conn,
         str(actor_id),
@@ -832,66 +954,14 @@ def recalled_memories(
         terms,
         oldest_first=first_time,
     ):
-        data = _event_data(event["description"])
-        facts = _authoritative_facts(data)
-        if owner_id is not None:
-            facts = [
-                fact
-                for fact in facts
-                if str(fact.get("actor_id") or "") == owner_id
-            ]
-            if not facts:
-                continue
-        supporting_facts = [
-            fact
-            for fact in facts
-            if fact_supports_query(fact, recall_query)
-        ]
-        answers_requested = bool(supporting_facts)
-        searchable = " ".join(
-            [str(data.get("message") or ""), str(data.get("dialogue") or "")]
-            if explicit
-            else [str(fact.get("statement") or "") for fact in facts]
-        )
-        overlap = terms & _recall_terms(searchable)
-        if explicit and not terms:
-            overlap = {"history"}
-        if not overlap and not answers_requested:
-            continue
-        selected = dict(data)
-        selected["event_id"] = event["id"]
-        selected["created_at"] = event["happened_at"]
-        selected["explicit"] = explicit
-        selected["facts"] = [
-            fact
-            for fact in facts
-            if fact in supporting_facts
-            or terms & _recall_terms(str(fact.get("statement") or ""))
-        ]
-        matches.append(
-            (len(overlap), event["happened_at"], selected, answers_requested)
-        )
-    if any(item[3] for item in matches):
-        matches = [item for item in matches if item[3]]
-    if first_time:
-        matches.sort(key=lambda item: item[1])
-    elif re.search(r"\blast time\b", str(query), re.IGNORECASE):
-        matches.sort(key=lambda item: item[1], reverse=True)
-    else:
-        matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        match = _recalled_memory_match(event, owner_id, recall_query, terms, explicit)
+        if match is not None:
+            matches.append(match)
+    matches = _sort_recalled_matches(matches, query, first_time)
     recalled = []
-    seen_facts = set()
+    seen_facts: set[tuple[str, str]] = set()
     for _score, _created_at, memory, _answers_when in matches:
-        unique_facts = []
-        for fact in memory["facts"]:
-            key = (
-                str(fact.get("actor_id") or ""),
-                str(fact.get("statement") or "").casefold(),
-            )
-            if key in seen_facts:
-                continue
-            seen_facts.add(key)
-            unique_facts.append(fact)
+        unique_facts = _dedupe_recalled_facts(memory, seen_facts)
         memory["facts"] = unique_facts
         if explicit or unique_facts:
             recalled.append(memory)
@@ -1009,18 +1079,13 @@ def import_legacy_adapter(conn: sqlite3.Connection, source_path: str) -> bool:
         return True
 
 
-def _sync_sim(
-    conn: sqlite3.Connection, sim: Mapping[str, object]
-) -> dict[str, object]:
-    agent_id = str(sim.get("id") or "").strip()
-    if not agent_id:
-        raise ValueError("observed Sim id is required")
-    stores = identity_stores(conn)
-    name = str(sim.get("name") or agent_id)
-    career = str(sim.get("career") or "").strip()
-    occupation = None if not career or career.casefold() == "unknown" else career
-    raw_age = sim.get("age")
-    age = raw_age if isinstance(raw_age, int) and not isinstance(raw_age, bool) and raw_age >= 0 else None
+def _upsert_sim_agent(
+    stores: IdentityStores,
+    agent_id: str,
+    name: str,
+    age: int | None,
+    occupation: str | None,
+) -> Agent:
     agent = stores.agents.get(agent_id)
     if agent is None:
         agent = Agent(
@@ -1039,8 +1104,15 @@ def _sync_sim(
         agent.game_id = agent_id
         agent.adapter = "sims4"
         stores.agents.update(agent, commit=False)
+    return agent
 
-    documents = DocumentMemoryStore(conn)
+
+def _sync_sim_traits(
+    documents: DocumentMemoryStore,
+    stores: IdentityStores,
+    sim: Mapping[str, object],
+    agent_id: str,
+) -> list[str]:
     stored_profile = documents.get(ACTOR_PROFILE_DOCUMENT_KEY, agent_id) or {}
     if "traits" in sim:
         traits = [
@@ -1056,6 +1128,25 @@ def _sync_sim(
         traits = [str(value) for value in stored_profile.get("traits", [])]
     if "traits" in sim or stores.personality.get(agent_id) is None:
         stores.personality.set(_personality(agent_id, traits), commit=False)
+    return traits
+
+
+def _sync_sim(
+    conn: sqlite3.Connection, sim: Mapping[str, object]
+) -> dict[str, object]:
+    agent_id = str(sim.get("id") or "").strip()
+    if not agent_id:
+        raise ValueError("observed Sim id is required")
+    stores = identity_stores(conn)
+    name = str(sim.get("name") or agent_id)
+    career = str(sim.get("career") or "").strip()
+    occupation = None if not career or career.casefold() == "unknown" else career
+    raw_age = sim.get("age")
+    age = raw_age if isinstance(raw_age, int) and not isinstance(raw_age, bool) and raw_age >= 0 else None
+    agent = _upsert_sim_agent(stores, agent_id, name, age, occupation)
+
+    documents = DocumentMemoryStore(conn)
+    traits = _sync_sim_traits(documents, stores, sim, agent_id)
     _sync_goals(stores.goals, agent_id, sim)
     _sync_emotion(stores.emotions, agent_id, sim)
     voice = sim.get("voice")
@@ -1092,61 +1183,81 @@ def _personality(agent_id: str, traits: list[str]) -> Personality:
     return Personality(agent_id, **values)
 
 
+def _sync_aspiration_goal(store: GoalStore, agent_id: str, aspiration: str) -> None:
+    goal_id = _stable_id(agent_id, "aspiration", aspiration)
+    for goal in store.get_all(agent_id, GOAL_ACTIVE):
+        if goal.description.startswith("Aspiration: ") and goal.id != goal_id:
+            goal.status = GOAL_COMPLETED
+            goal.updated_at = int(time.time())
+            store.set(goal, commit=False)
+    existing = store.get(goal_id)
+    store.set(
+        existing
+        or Goal(
+            agent_id,
+            "Aspiration: " + aspiration,
+            priority=0.8,
+            id=goal_id,
+        ),
+        commit=False,
+    )
+
+
+def _sync_need_goal(store: GoalStore, agent_id: str, name: object, raw: object) -> str | None:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    need = str(name).strip().casefold()
+    if need.startswith("motive_"):
+        need = need[7:]
+    allowed = {"bladder", "energy", "fun", "hunger", "hygiene", "social"}
+    if need not in allowed:
+        return None
+    goal_id = _stable_id(agent_id, "need", need)
+    existing = store.get(goal_id)
+    if float(raw) <= 25:
+        goal = existing or Goal(
+            agent_id,
+            RESTORE_GOAL_PREFIX + need,
+            priority=_clamp((25 - float(raw)) / 25, 0.6, 1.0),
+            id=goal_id,
+        )
+        if existing is not None and goal.status != GOAL_ACTIVE:
+            goal.updated_at = int(time.time())
+        goal.status = GOAL_ACTIVE
+        store.set(goal, commit=False)
+    elif existing is not None and existing.status == GOAL_ACTIVE:
+        existing.status = GOAL_COMPLETED
+        existing.updated_at = int(time.time())
+        store.set(existing, commit=False)
+    return goal_id
+
+
+def _complete_stale_need_goals(
+    store: GoalStore, agent_id: str, current_ids: set[str]
+) -> None:
+    for goal in store.get_all(agent_id, GOAL_ACTIVE):
+        if goal.description.startswith(RESTORE_GOAL_PREFIX) and goal.id not in current_ids:
+            goal.status = GOAL_COMPLETED
+            goal.updated_at = int(time.time())
+            store.set(goal, commit=False)
+
+
+def _sync_needs_goals(store: GoalStore, agent_id: str, needs: Mapping[str, object]) -> None:
+    current_ids: set[str] = set()
+    for name, raw in needs.items():
+        goal_id = _sync_need_goal(store, agent_id, name, raw)
+        if goal_id is not None:
+            current_ids.add(goal_id)
+    _complete_stale_need_goals(store, agent_id, current_ids)
+
+
 def _sync_goals(store: GoalStore, agent_id: str, sim: Mapping[str, object]) -> None:
     aspiration = str(sim.get("aspiration") or "").strip()
     if aspiration and aspiration.casefold() != "unknown":
-        goal_id = _stable_id(agent_id, "aspiration", aspiration)
-        for goal in store.get_all(agent_id, GOAL_ACTIVE):
-            if goal.description.startswith("Aspiration: ") and goal.id != goal_id:
-                goal.status = GOAL_COMPLETED
-                goal.updated_at = int(time.time())
-                store.set(goal, commit=False)
-        existing = store.get(goal_id)
-        store.set(
-            existing
-            or Goal(
-                agent_id,
-                "Aspiration: " + aspiration,
-                priority=0.8,
-                id=goal_id,
-            ),
-            commit=False,
-        )
+        _sync_aspiration_goal(store, agent_id, aspiration)
     needs = sim.get("needs")
     if isinstance(needs, Mapping):
-        allowed = {"bladder", "energy", "fun", "hunger", "hygiene", "social"}
-        current_ids: set[str] = set()
-        for name, raw in needs.items():
-            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-                continue
-            need = str(name).strip().casefold()
-            if need.startswith("motive_"):
-                need = need[7:]
-            if need not in allowed:
-                continue
-            goal_id = _stable_id(agent_id, "need", need)
-            current_ids.add(goal_id)
-            existing = store.get(goal_id)
-            if float(raw) <= 25:
-                goal = existing or Goal(
-                    agent_id,
-                    RESTORE_GOAL_PREFIX + need,
-                    priority=_clamp((25 - float(raw)) / 25, 0.6, 1.0),
-                    id=goal_id,
-                )
-                if existing is not None and goal.status != GOAL_ACTIVE:
-                    goal.updated_at = int(time.time())
-                goal.status = GOAL_ACTIVE
-                store.set(goal, commit=False)
-            elif existing is not None and existing.status == GOAL_ACTIVE:
-                existing.status = GOAL_COMPLETED
-                existing.updated_at = int(time.time())
-                store.set(existing, commit=False)
-        for goal in store.get_all(agent_id, GOAL_ACTIVE):
-            if goal.description.startswith(RESTORE_GOAL_PREFIX) and goal.id not in current_ids:
-                goal.status = GOAL_COMPLETED
-                goal.updated_at = int(time.time())
-                store.set(goal, commit=False)
+        _sync_needs_goals(store, agent_id, needs)
 
 
 def _sync_emotion(
@@ -1294,48 +1405,60 @@ def _import_voices(conn: sqlite3.Connection, source: sqlite3.Connection) -> None
         )
 
 
+def _import_legacy_memory_row(conn: sqlite3.Connection, row: sqlite3.Row) -> None:
+    agent_id = str(row["sim_id"] or row["speaker_id"] or "").strip()
+    target_id = str(row["target_id"] or row["listener_id"] or "").strip()
+    summary = str(row["summary"] or row["event"] or "").strip()
+    if agent_id and summary:
+        add_experience(
+            conn,
+            agent_id,
+            target_id,
+            summary,
+            location=str(row["location"] or ""),
+            happened_at=int(row["created_at"] or 0),
+            event_id=_stable_id(agent_id, "legacy-memory", str(row["id"])),
+        )
+
+
+def _import_legacy_summary_row(conn: sqlite3.Connection, row: sqlite3.Row) -> None:
+    agent_id = str(row["sim_id"] or "").strip()
+    summary = str(row["summary"] or "").strip()
+    if agent_id and summary:
+        add_experience(
+            conn,
+            agent_id,
+            str(row["target_id"] or ""),
+            summary,
+            happened_at=int(row["updated_at"] or 0),
+            event_id=_stable_id(agent_id, "legacy-summary", str(row["target_id"])),
+        )
+
+
+def _import_legacy_conversation_row(conn: sqlite3.Connection, row: sqlite3.Row) -> None:
+    agent_id = str(row["speaker_id"] or "").strip()
+    target_id = str(row["listener_id"] or "").strip()
+    response = _json(row, "response_json", {})
+    dialogue = str(response.get("dialogue") or "") if isinstance(response, dict) else ""
+    summary = "{} {}".format(str(row["message"] or ""), dialogue).strip()
+    if agent_id and summary:
+        add_experience(
+            conn,
+            agent_id,
+            target_id,
+            summary,
+            happened_at=int(row["created_at"] or 0),
+            event_id=_stable_id(agent_id, "legacy-conversation", str(row["id"])),
+        )
+
+
 def _import_episodic(conn: sqlite3.Connection, source: sqlite3.Connection) -> None:
     for row in _rows(source, "memories"):
-        agent_id = str(row["sim_id"] or row["speaker_id"] or "").strip()
-        target_id = str(row["target_id"] or row["listener_id"] or "").strip()
-        summary = str(row["summary"] or row["event"] or "").strip()
-        if agent_id and summary:
-            add_experience(
-                conn,
-                agent_id,
-                target_id,
-                summary,
-                location=str(row["location"] or ""),
-                happened_at=int(row["created_at"] or 0),
-                event_id=_stable_id(agent_id, "legacy-memory", str(row["id"])),
-            )
+        _import_legacy_memory_row(conn, row)
     for row in _rows(source, "memory_summaries"):
-        agent_id = str(row["sim_id"] or "").strip()
-        summary = str(row["summary"] or "").strip()
-        if agent_id and summary:
-            add_experience(
-                conn,
-                agent_id,
-                str(row["target_id"] or ""),
-                summary,
-                happened_at=int(row["updated_at"] or 0),
-                event_id=_stable_id(agent_id, "legacy-summary", str(row["target_id"])),
-            )
+        _import_legacy_summary_row(conn, row)
     for row in _rows(source, "conversations"):
-        agent_id = str(row["speaker_id"] or "").strip()
-        target_id = str(row["listener_id"] or "").strip()
-        response = _json(row, "response_json", {})
-        dialogue = str(response.get("dialogue") or "") if isinstance(response, dict) else ""
-        summary = "{} {}".format(str(row["message"] or ""), dialogue).strip()
-        if agent_id and summary:
-            add_experience(
-                conn,
-                agent_id,
-                target_id,
-                summary,
-                happened_at=int(row["created_at"] or 0),
-                event_id=_stable_id(agent_id, "legacy-conversation", str(row["id"])),
-            )
+        _import_legacy_conversation_row(conn, row)
 
 
 def _ensure_agent(conn: sqlite3.Connection, agent_id: str) -> None:

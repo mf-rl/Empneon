@@ -77,7 +77,8 @@ async def generate_requests(
         if len(results) != len(requests):
             raise ProviderError("batch result count does not match request count")
         return results
-    return tuple([await provider.generate(request) for request in requests])
+    # A generator here would be an async generator (breaks tuple()) since it awaits inside
+    return tuple([await provider.generate(request) for request in requests])  # NOSONAR
 
 
 def _shared_prefix(message_sets: tuple[tuple[Message, ...], ...]) -> tuple[Message, ...]:

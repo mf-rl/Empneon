@@ -1,7 +1,0 @@
-{
-  "status": "failed",
-  "error": {
-    "type": "TimeoutError",
-    "message": "no Empneon Social began before timeout"
-  }
-}

@@ -300,21 +300,25 @@ class Sims4Adapter:
         }
         for change in decision.state_changes:
             if change.path == "animation":
-                action = str(change.value)
-                if action in RELATIONSHIP_ACTIONS.values() or action == "none":
-                    return action
-                if action in SOCIAL_ACTIONS:
-                    configured_categories = self._payload.get(
-                        "available_response_categories"
-                    )
-                    categories = (
-                        _items(configured_categories)
-                        if configured_categories is not None
-                        else list(SOCIAL_CATEGORIES)
-                    )
-                    return action if action.removeprefix("social.") in categories else None
-                return action if action == "none" or action in available else None
+                return self._action_for_animation_change(change, available)
         return self._action_for(decision.intent)
+
+    def _action_for_animation_change(self, change: StateDelta, available: set[str]) -> str | None:
+        action = str(change.value)
+        if action in RELATIONSHIP_ACTIONS.values() or action == "none":
+            return action
+        if action in SOCIAL_ACTIONS:
+            return self._action_for_social(action)
+        return action if action == "none" or action in available else None
+
+    def _action_for_social(self, action: str) -> str | None:
+        configured_categories = self._payload.get("available_response_categories")
+        categories = (
+            _items(configured_categories)
+            if configured_categories is not None
+            else list(SOCIAL_CATEGORIES)
+        )
+        return action if action.removeprefix("social.") in categories else None
 
     def decision_from_response(self, response: Mapping[str, object], event_id: str) -> Decision:
         memory = response.get("memory")

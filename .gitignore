@@ -36,3 +36,10 @@ coverage-*.xml
 .scannerwork/
 .sonarqube/
 sonar-report.json
+
+# Ad-hoc runtime capture/harness output (curated files under output/ like the
+# stage3-/stage5-* published benchmark evidence are intentionally tracked)
+adapters/thesims4/output/live-resource-capture-*.json
+adapters/thesims4/output/live-resource-capture-*.presentmon.csv
+adapters/thesims4/output/test10-priority-*.json
+adapters/thesims4/output/http-simulation-*.json

@@ -741,6 +741,233 @@ class CognitionRuntime(backend_cognition.CognitionRuntime):
 COGNITION_RUNTIME = CognitionRuntime()
 
 
+def _validate_chat_ids(speaker_id, listener_id, conversation_id):
+    if not speaker_id:
+        raise ValueError("speaker id is required")
+    if not listener_id:
+        raise ValueError("listener id is required")
+    if not conversation_id:
+        raise ValueError("conversation id is required")
+
+
+def _chat_recall(speaker_id, listener_id, conversation_id, query):
+    with db_session(CORE_DB_PATH) as conn:
+        deterministic_recalled = empneon_state.recalled_memories(
+            conn,
+            speaker_id,
+            listener_id,
+            query,
+            limit=3,
+        )
+        candidates = empneon_state.recall_candidates(
+            conn,
+            speaker_id,
+            listener_id,
+            query,
+        )
+        conversation = empneon_state.recent_conversations(
+            conn, speaker_id, listener_id, conversation_id, limit=6
+        )
+    GENERATION_CONTEXT.attempts = []
+    try:
+        recalled = semantic_recalled_memories(
+            query,
+            candidates,
+            deterministic_recalled,
+        )
+    finally:
+        generations = list(GENERATION_CONTEXT.attempts)
+        GENERATION_CONTEXT.attempts = None
+    return recalled, conversation, generations
+
+
+def _chat_dialogue_resolver(task, payload, context, adapter, event, selected, response_rejections, generations):
+    async def resolve_dialogue(current):
+        def invoke():
+            GENERATION_CONTEXT.task = task
+            GENERATION_CONTEXT.attempts = []
+            try:
+                return COGNITION_RUNTIME.dialogue(payload, context)
+            finally:
+                generated = list(GENERATION_CONTEXT.attempts)
+                generations.extend(generated)
+                GENERATION_CONTEXT.task = None
+                GENERATION_CONTEXT.attempts = None
+
+        try:
+            response = await asyncio.to_thread(invoke)
+        except RuntimeError as exc:
+            raise ProviderError("Sims dialogue provider failed") from exc
+        selected.update(clod=current.preferred_clod, task=task)
+        response_rejections.extend(
+            _response_rejection_diagnostics(response.pop("_response_rejections", []))
+        )
+        return adapter.decision_from_response(response, event.id)
+
+    return resolve_dialogue
+
+
+def _chat_record_usage(conn, request, selected, generations):
+    usage = UsageStore(conn)
+    if generations:
+        for task, config, generation in generations:
+            usage.record(
+                request,
+                ResourceEstimate(
+                    ram_mb=int(config.get("ram_mb") or 64),
+                    vram_mb=int(config.get("vram_mb") or 0),
+                    context_tokens=int(config.get("context_tokens") or 4096),
+                    completion_tokens=int(config.get("max_tokens") or 300),
+                    latency_ms=int(config.get("latency_ms") or 3000),
+                ),
+                str(config["name"]),
+                str(config["model"]),
+                generation,
+                {
+                    "small": 2,
+                    "large": 3,
+                    "deep": 4,
+                }.get(task, int(selected["clod"])),
+            )
+    else:
+        usage.record(
+            request,
+            ResourceEstimate(),
+            "core-rules" if selected["clod"] == 1 else "test-double",
+            "clod1" if selected["clod"] == 1 else str(selected["task"]),
+            GenerationResult("", 0, 0, 0),
+            int(selected["clod"]),
+        )
+
+
+def _chat_persist_decision(
+    request,
+    resolvers,
+    deeper_value,
+    selected,
+    payload,
+    context,
+    adapter,
+    event,
+    speaker,
+    listener,
+    response_rejections,
+    generations,
+):
+    with db_session(CORE_DB_PATH) as conn:
+        actions = ActionRecordStore(conn)
+        runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
+        decision = COGNITION_QUEUE.run(
+            request,
+            lambda: run_async(
+                runtime.decide_dynamic(
+                    request,
+                    cognition_routes(resolvers),
+                    deeper_value,
+                )
+            ),
+        )
+        if selected["clod"] == 1:
+            decision = adapter.decision_from_response(
+                reasoning_fallback_response(payload, context),
+                event.id,
+            )
+        action = adapter.action_for(decision)
+        if action is None:
+            raise ValueError("no supported Sims action available")
+        persist_core_agent(conn, speaker)
+        persist_core_agent(conn, listener)
+        persist_core_event(conn, event)
+        if event.agent_state is not None:
+            save_agent_state(conn, event.agent_state)
+        actions.propose(event.id, decision, action)
+        if response_rejections:
+            DocumentMemoryStore(conn).set(
+                "thesims4.response-rejections",
+                decision.id,
+                {"response_rejections": response_rejections},
+            )
+        _chat_record_usage(conn, request, selected, generations)
+    return decision, action
+
+
+def _chat_with_speaker(
+    payload, speaker, listener, speaker_id, listener_id, conversation_id, speaker_profile
+):
+    listener_profile = upsert_profile(listener)
+    emotions = get_emotion(speaker_id)
+    if emotions.get("current_mood") in ("neutral", "unknown") and speaker.get("current_mood"):
+        emotions = save_emotion(speaker_id, default_emotion(speaker.get("current_mood")))
+    relationship = relationship_with_payload(
+        speaker_id, listener_id, payload.get("relationship") or {}
+    )
+    query = str(payload.get("message") or "")
+    recalled, conversation, generations = _chat_recall(
+        speaker_id, listener_id, conversation_id, query
+    )
+    model_config = task_model_config("large")
+    context = build_context(
+        payload,
+        speaker_profile,
+        listener_profile,
+        relationship,
+        emotions,
+        recalled,
+    )
+    context["conversation"] = conversation
+    context["speaker_id"] = speaker_id
+    context["listener_id"] = listener_id
+    context["max_context_tokens"] = int(model_config.get("context_tokens") or 4096)
+    context["max_completion_tokens"] = int(model_config.get("max_tokens") or 350)
+    adapter = Sims4Adapter(payload)
+    event = adapter.observe()[0]
+    numeric_emotions = [
+        float(value) / 100
+        for key, value in emotions.items()
+        if key != "current_mood" and isinstance(value, (int, float))
+    ]
+    urgency, preferred_clod, deeper_value = cognition_priority(
+        payload,
+        novel=not conversation,
+        emotion_intensity=max(numeric_emotions, default=0.0),
+        goal_relevant=bool(speaker_profile.get("goals")),
+    )
+    request = CognitiveRequest(
+        speaker_id,
+        preferred_clod,
+        event,
+        urgency=urgency,
+        max_tokens=int(model_config.get("max_tokens") or 350),
+        max_context_tokens=int(model_config.get("context_tokens") or 4096),
+        deadline_ms=int(model_config.get("latency_ms") or 3000),
+    )
+    selected = {"clod": 1, "task": "core-rules"}
+    response_rejections = []
+    resolvers = {
+        task: _chat_dialogue_resolver(
+            task, payload, context, adapter, event, selected, response_rejections, generations
+        )
+        for task in ("small", "large", "deep")
+    }
+    decision, action = _chat_persist_decision(
+        request,
+        resolvers,
+        deeper_value,
+        selected,
+        payload,
+        context,
+        adapter,
+        event,
+        speaker,
+        listener,
+        response_rejections,
+        generations,
+    )
+    result = adapter.response_for(decision)
+    result["animation"] = action
+    return result, decision, selected
+
+
 def chat(payload):
     payload = dict(payload)
     payload["incoming_category"] = classify_social_category(payload.get("message"))
@@ -749,179 +976,12 @@ def chat(payload):
     speaker_id = str(speaker.get("id") or "").strip()
     listener_id = str(listener.get("id") or "").strip()
     conversation_id = str(payload.get("conversation_id") or "").strip()
-    if not speaker_id:
-        raise ValueError("speaker id is required")
-    if not listener_id:
-        raise ValueError("listener id is required")
-    if not conversation_id:
-        raise ValueError("conversation id is required")
+    _validate_chat_ids(speaker_id, listener_id, conversation_id)
     payload["conversation_id"] = conversation_id
     with AGENTS.session(speaker, reason="player_interaction", priority=1) as speaker_profile:
-        listener_profile = upsert_profile(listener)
-        emotions = get_emotion(speaker_id)
-        if emotions.get("current_mood") in ("neutral", "unknown") and speaker.get("current_mood"):
-            emotions = save_emotion(speaker_id, default_emotion(speaker.get("current_mood")))
-        relationship = relationship_with_payload(
-            speaker_id, listener_id, payload.get("relationship") or {}
+        result, decision, selected = _chat_with_speaker(
+            payload, speaker, listener, speaker_id, listener_id, conversation_id, speaker_profile
         )
-        query = str(payload.get("message") or "")
-        with db_session(CORE_DB_PATH) as conn:
-            deterministic_recalled = empneon_state.recalled_memories(
-                conn,
-                speaker_id,
-                listener_id,
-                query,
-                limit=3,
-            )
-            candidates = empneon_state.recall_candidates(
-                conn,
-                speaker_id,
-                listener_id,
-                query,
-            )
-            conversation = empneon_state.recent_conversations(
-                conn, speaker_id, listener_id, conversation_id, limit=6
-            )
-        GENERATION_CONTEXT.attempts = []
-        try:
-            recalled = semantic_recalled_memories(
-                query,
-                candidates,
-                deterministic_recalled,
-            )
-        finally:
-            generations = list(GENERATION_CONTEXT.attempts)
-            GENERATION_CONTEXT.attempts = None
-        model_config = task_model_config("large")
-        context = build_context(
-            payload,
-            speaker_profile,
-            listener_profile,
-            relationship,
-            emotions,
-            recalled,
-        )
-        context["conversation"] = conversation
-        context["speaker_id"] = speaker_id
-        context["listener_id"] = listener_id
-        context["max_context_tokens"] = int(model_config.get("context_tokens") or 4096)
-        context["max_completion_tokens"] = int(model_config.get("max_tokens") or 350)
-        adapter = Sims4Adapter(payload)
-        event = adapter.observe()[0]
-        numeric_emotions = [
-            float(value) / 100
-            for key, value in emotions.items()
-            if key != "current_mood" and isinstance(value, (int, float))
-        ]
-        urgency, preferred_clod, deeper_value = cognition_priority(
-            payload,
-            novel=not conversation,
-            emotion_intensity=max(numeric_emotions, default=0.0),
-            goal_relevant=bool(speaker_profile.get("goals")),
-        )
-        request = CognitiveRequest(
-            speaker_id,
-            preferred_clod,
-            event,
-            urgency=urgency,
-            max_tokens=int(model_config.get("max_tokens") or 350),
-            max_context_tokens=int(model_config.get("context_tokens") or 4096),
-            deadline_ms=int(model_config.get("latency_ms") or 3000),
-        )
-        selected = {"clod": 1, "task": "core-rules"}
-        response_rejections = []
-
-        def resolver(task):
-            async def resolve_dialogue(current):
-                def invoke():
-                    GENERATION_CONTEXT.task = task
-                    GENERATION_CONTEXT.attempts = []
-                    try:
-                        return COGNITION_RUNTIME.dialogue(payload, context)
-                    finally:
-                        generated = list(GENERATION_CONTEXT.attempts)
-                        generations.extend(generated)
-                        GENERATION_CONTEXT.task = None
-                        GENERATION_CONTEXT.attempts = None
-
-                try:
-                    response = await asyncio.to_thread(invoke)
-                except RuntimeError as exc:
-                    raise ProviderError("Sims dialogue provider failed") from exc
-                selected.update(clod=current.preferred_clod, task=task)
-                response_rejections.extend(
-                    _response_rejection_diagnostics(response.pop("_response_rejections", []))
-                )
-                return adapter.decision_from_response(response, event.id)
-
-            return resolve_dialogue
-
-        resolvers = {task: resolver(task) for task in ("small", "large", "deep")}
-        with db_session(CORE_DB_PATH) as conn:
-            actions = ActionRecordStore(conn)
-            runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
-            decision = COGNITION_QUEUE.run(
-                request,
-                lambda: run_async(
-                    runtime.decide_dynamic(
-                        request,
-                        cognition_routes(resolvers),
-                        deeper_value,
-                    )
-                ),
-            )
-            if selected["clod"] == 1:
-                decision = adapter.decision_from_response(
-                    reasoning_fallback_response(payload, context),
-                    event.id,
-                )
-            action = adapter.action_for(decision)
-            if action is None:
-                raise ValueError("no supported Sims action available")
-            persist_core_agent(conn, speaker)
-            persist_core_agent(conn, listener)
-            persist_core_event(conn, event)
-            if event.agent_state is not None:
-                save_agent_state(conn, event.agent_state)
-            actions.propose(event.id, decision, action)
-            if response_rejections:
-                DocumentMemoryStore(conn).set(
-                    "thesims4.response-rejections",
-                    decision.id,
-                    {"response_rejections": response_rejections},
-                )
-            usage = UsageStore(conn)
-            if generations:
-                for task, config, generation in generations:
-                    usage.record(
-                        request,
-                        ResourceEstimate(
-                            ram_mb=int(config.get("ram_mb") or 64),
-                            vram_mb=int(config.get("vram_mb") or 0),
-                            context_tokens=int(config.get("context_tokens") or 4096),
-                            completion_tokens=int(config.get("max_tokens") or 300),
-                            latency_ms=int(config.get("latency_ms") or 3000),
-                        ),
-                        str(config["name"]),
-                        str(config["model"]),
-                        generation,
-                        {
-                            "small": 2,
-                            "large": 3,
-                            "deep": 4,
-                        }.get(task, int(selected["clod"])),
-                    )
-            else:
-                usage.record(
-                    request,
-                    ResourceEstimate(),
-                    "core-rules" if selected["clod"] == 1 else "test-double",
-                    "clod1" if selected["clod"] == 1 else str(selected["task"]),
-                    GenerationResult("", 0, 0, 0),
-                    int(selected["clod"]),
-                )
-        result = adapter.response_for(decision)
-        result["animation"] = action
     relationship_state = get_relationship(speaker_id, listener_id)
     emotion_state = get_emotion(speaker_id)
     result["relationship_state"] = relationship_state
@@ -1037,6 +1097,83 @@ def persist_core_event(conn, event):
     )
 
 
+def _validate_confirmed_change(change):
+    if not isinstance(change, dict):
+        raise ValueError("invalid confirmed consequence")
+    path = str(change.get("path") or "")
+    operation = str(change.get("operation") or "")
+    value = change.get("value")
+    parts = path.split(".")
+    numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if not _confirmed_change_is_valid(path, parts, operation, value, numeric):
+        raise ValueError("invalid or unsupported confirmed consequence")
+    return StateDelta(path, operation, value)
+
+
+def _confirmed_change_is_valid(path, parts, operation, value, numeric):
+    if path in ("relationship.friendship", "relationship.romance"):
+        return operation == "increment" and numeric and -100 <= value <= 100
+    if (
+        len(parts) == 2
+        and parts[0] == "emotion"
+        and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", parts[1])
+    ):
+        return _valid_emotion_change(operation, value, numeric)
+    if (
+        len(parts) == 2
+        and parts[0] == "need"
+        and re.fullmatch(r"[a-zA-Z0-9 _-]{1,64}", parts[1])
+    ):
+        return operation == "set" and numeric and 0 <= value <= 100
+    if len(parts) == 3 and parts[0] == "goal" and parts[2] == "status":
+        return _valid_goal_status_change(parts[1], operation, value)
+    return False
+
+
+def _valid_emotion_change(operation, value, numeric):
+    if operation not in ("set", "increment") or not numeric:
+        return False
+    return -100 <= value <= 100 if operation == "increment" else 0 <= value <= 100
+
+
+def _valid_goal_status_change(goal_id, operation, value):
+    try:
+        uuid.UUID(goal_id)
+    except (ValueError, AttributeError):
+        return False
+    return operation == "set" and value in ("active", "completed", "abandoned")
+
+
+def _confirmed_action_changes(status, action, payload):
+    changes = []
+    if status == "succeeded":
+        changes.append(StateDelta("animation", "set", action))
+        for change in payload.get("changes") or []:
+            changes.append(_validate_confirmed_change(change))
+    elif payload.get("changes"):
+        raise ValueError("unsuccessful action cannot apply consequences")
+    return changes
+
+
+def _replayed_confirm_result(conn, actions, decision_id, action, result):
+    existing = actions.get(decision_id)
+    receipt = DocumentMemoryStore(conn).get("thesims4.action-result", decision_id)
+    if (
+        existing is not None
+        and isinstance(receipt, dict)
+        and receipt.get("action") == action
+        and existing.result.status == result.status
+        and existing.result.applied_changes == result.applied_changes
+        and existing.result.reason == result.reason
+    ):
+        return {
+            "decision_id": existing.decision.id,
+            "status": existing.result.status,
+            "consequences": len(existing.result.applied_changes),
+        }
+    return None
+
+
 def confirm_action(payload):
     decision_id = str(payload.get("decision_id") or "").strip()
     action = str(payload.get("action") or "").strip()
@@ -1046,75 +1183,15 @@ def confirm_action(payload):
         raise ValueError("decision_id and action are required")
     if status not in ("succeeded", "failed", "rejected"):
         raise ValueError("invalid action result status")
-    changes = []
-    if status == "succeeded":
-        changes.append(StateDelta("animation", "set", action))
-        for change in payload.get("changes") or []:
-            if not isinstance(change, dict):
-                raise ValueError("invalid confirmed consequence")
-            path = str(change.get("path") or "")
-            operation = str(change.get("operation") or "")
-            value = change.get("value")
-            parts = path.split(".")
-            numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
-            valid = False
-            if path in (
-                "relationship.friendship",
-                "relationship.romance",
-            ):
-                valid = operation == "increment" and numeric and -100 <= value <= 100
-            elif (
-                len(parts) == 2
-                and parts[0] == "emotion"
-                and re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", parts[1])
-            ):
-                valid = (
-                    operation in ("set", "increment")
-                    and numeric
-                    and (-100 <= value <= 100 if operation == "increment" else 0 <= value <= 100)
-                )
-            elif (
-                len(parts) == 2
-                and parts[0] == "need"
-                and re.fullmatch(r"[a-zA-Z0-9 _-]{1,64}", parts[1])
-            ):
-                valid = operation == "set" and numeric and 0 <= value <= 100
-            elif len(parts) == 3 and parts[0] == "goal" and parts[2] == "status":
-                try:
-                    uuid.UUID(parts[1])
-                except (ValueError, AttributeError):
-                    valid = False
-                else:
-                    valid = operation == "set" and value in (
-                        "active",
-                        "completed",
-                        "abandoned",
-                    )
-            if not valid:
-                raise ValueError("invalid or unsupported confirmed consequence")
-            changes.append(StateDelta(path, operation, value))
-    elif payload.get("changes"):
-        raise ValueError("unsuccessful action cannot apply consequences")
+    changes = _confirmed_action_changes(status, action, payload)
     result = ActionResult(decision_id, status, tuple(changes), reason)
     with db_session(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
         proposal = actions.get_proposal(decision_id)
         if proposal is None:
-            existing = actions.get(decision_id)
-            receipt = DocumentMemoryStore(conn).get("thesims4.action-result", decision_id)
-            if (
-                existing is not None
-                and isinstance(receipt, dict)
-                and receipt.get("action") == action
-                and existing.result.status == result.status
-                and existing.result.applied_changes == result.applied_changes
-                and existing.result.reason == result.reason
-            ):
-                return {
-                    "decision_id": existing.decision.id,
-                    "status": existing.result.status,
-                    "consequences": len(existing.result.applied_changes),
-                }
+            replay = _replayed_confirm_result(conn, actions, decision_id, action, result)
+            if replay is not None:
+                return replay
             raise ValueError("unknown or conflicting action proposal")
         if proposal.adapter_action != action:
             raise ValueError("confirmed action does not match its proposal")

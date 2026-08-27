@@ -10,47 +10,45 @@ from pathlib import Path
 from simulate_http_interactions import request_json
 
 
-def evaluate_lifecycle(recent, synthetic_actor_ids):
+def _index_of(recent, actor_id, state, event_type=None):
+    for index, item in enumerate(recent):
+        if item.get("actor_id") != actor_id or item.get("state") != state:
+            continue
+        if event_type is None or item.get("event_type") == event_type:
+            return index
+    return None
+
+
+def _index_of_player_event(recent, synthetic_actor_ids, state):
+    return next(
+        (
+            index
+            for index, item in enumerate(recent)
+            if item.get("event_type") == "player_conversation"
+            and item.get("state") == state
+            and item.get("actor_id") not in synthetic_actor_ids
+        ),
+        None,
+    )
+
+
+def _lifecycle_indices(recent, synthetic_actor_ids):
     blocker_id, waiting_id = synthetic_actor_ids
-
-    def index_of(actor_id, state, event_type=None):
-        for index, item in enumerate(recent):
-            if item.get("actor_id") != actor_id or item.get("state") != state:
-                continue
-            if event_type is None or item.get("event_type") == event_type:
-                return index
-        return None
-
-    blocker_started = index_of(blocker_id, "started")
-    waiting_submitted = index_of(waiting_id, "submitted")
-    player_submitted = next(
-        (
-            index
-            for index, item in enumerate(recent)
-            if item.get("event_type") == "player_conversation"
-            and item.get("state") == "submitted"
-            and item.get("actor_id") not in synthetic_actor_ids
-        ),
-        None,
-    )
-    player_started = next(
-        (
-            index
-            for index, item in enumerate(recent)
-            if item.get("event_type") == "player_conversation"
-            and item.get("state") == "started"
-            and item.get("actor_id") not in synthetic_actor_ids
-        ),
-        None,
-    )
-    waiting_started = index_of(waiting_id, "started")
-    indices = {
-        "blocker_started": blocker_started,
-        "waiting_submitted": waiting_submitted,
-        "player_submitted": player_submitted,
-        "player_started": player_started,
-        "waiting_started": waiting_started,
+    return {
+        "blocker_started": _index_of(recent, blocker_id, "started"),
+        "waiting_submitted": _index_of(recent, waiting_id, "submitted"),
+        "player_submitted": _index_of_player_event(recent, synthetic_actor_ids, "submitted"),
+        "player_started": _index_of_player_event(recent, synthetic_actor_ids, "started"),
+        "waiting_started": _index_of(recent, waiting_id, "started"),
     }
+
+
+def _lifecycle_failure(indices):
+    blocker_started = indices["blocker_started"]
+    waiting_submitted = indices["waiting_submitted"]
+    player_submitted = indices["player_submitted"]
+    player_started = indices["player_started"]
+    waiting_started = indices["waiting_started"]
     if blocker_started is None:
         return {
             "passed": False,
@@ -90,6 +88,14 @@ def evaluate_lifecycle(recent, synthetic_actor_ids):
             "reason": "waiting ambient work started before player work",
             "indices": indices,
         }
+    return None
+
+
+def evaluate_lifecycle(recent, synthetic_actor_ids):
+    indices = _lifecycle_indices(recent, synthetic_actor_ids)
+    failure = _lifecycle_failure(indices)
+    if failure is not None:
+        return failure
     return {"passed": True, "reason": "", "indices": indices}
 
 
@@ -108,6 +114,70 @@ def _wait_for_snapshot(base_url, predicate, timeout):
     return snapshot
 
 
+def _health_check_failure(health):
+    if health.get("active_agent_limit") != 1:
+        return {
+            "status": "inconclusive",
+            "reason": "active_agent_limit must be 1",
+            "health": health,
+        }
+    return None
+
+
+def _post_arm(gate_url, run_id, setup_timeout):
+    return request_json(
+        "POST",
+        gate_url,
+        {"action": "arm", "run_id": run_id},
+        timeout=max(1, setup_timeout),
+    )
+
+
+def _extract_actor_ids(gate):
+    actors = gate.get("actor_ids") or {}
+    actor_ids = (str(actors.get("blocker") or ""), str(actors.get("waiting") or ""))
+    if not all(actor_ids):
+        raise ValueError("gate response lacks actor IDs")
+    return actor_ids
+
+
+def _player_observed(value, actor_ids, state, started_at):
+    return any(
+        item.get("event_type") == "player_conversation"
+        and item.get("actor_id") not in actor_ids
+        and item.get("state") == state
+        and float(item.get("recorded_at") or 0) >= started_at
+        for item in value.get("recent", [])
+    )
+
+
+def _waiting_actor_started(value, waiting_actor_id):
+    return any(
+        item.get("actor_id") == waiting_actor_id and item.get("state") == "started"
+        for item in value.get("recent", [])
+    )
+
+
+def _release_gate_quietly(gate_url, run_id):
+    try:
+        request_json(
+            "POST",
+            gate_url,
+            {"action": "release", "run_id": run_id},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+def _classify_status(evaluation):
+    if evaluation["passed"]:
+        return "passed"
+    if evaluation.get("inconclusive"):
+        return "inconclusive"
+    return "failed"
+
+
 def collect_evidence(
     base_url,
     *,
@@ -118,12 +188,9 @@ def collect_evidence(
 ):
     base_url = base_url.rstrip("/")
     health = request_json("GET", base_url + "/health", timeout=10)
-    if health.get("active_agent_limit") != 1:
-        return {
-            "status": "inconclusive",
-            "reason": "active_agent_limit must be 1",
-            "health": health,
-        }
+    failure = _health_check_failure(health)
+    if failure is not None:
+        return failure
 
     prompt(
         "In The Sims 4, open Empneon Social and type the message, but do not submit it. "
@@ -136,35 +203,18 @@ def collect_evidence(
     snapshot = None
     actor_ids = ()
     try:
-        gate = request_json(
-            "POST",
-            gate_url,
-            {"action": "arm", "run_id": run_id},
-            timeout=max(1, setup_timeout),
-        )
+        gate = _post_arm(gate_url, run_id, setup_timeout)
         armed = True
-        actors = gate.get("actor_ids") or {}
-        actor_ids = (str(actors.get("blocker") or ""), str(actors.get("waiting") or ""))
-        if not all(actor_ids):
-            raise ValueError("gate response lacks actor IDs")
+        actor_ids = _extract_actor_ids(gate)
 
         prompt("Submit the prepared Empneon Social message now, then press Enter immediately.")
 
-        def player_observed(value, state):
-            return any(
-                item.get("event_type") == "player_conversation"
-                and item.get("actor_id") not in actor_ids
-                and item.get("state") == state
-                and float(item.get("recorded_at") or 0) >= started_at
-                for item in value.get("recent", [])
-            )
-
         snapshot = _wait_for_snapshot(
             base_url,
-            lambda value: player_observed(value, "submitted"),
+            lambda value: _player_observed(value, actor_ids, "submitted", started_at),
             min(completion_timeout, 50),
         )
-        if snapshot is None or not player_observed(snapshot, "submitted"):
+        if snapshot is None or not _player_observed(snapshot, actor_ids, "submitted", started_at):
             return {
                 "status": "inconclusive",
                 "reason": "player request was not submitted while the gate was active",
@@ -183,26 +233,14 @@ def collect_evidence(
         snapshot = _wait_for_snapshot(
             base_url,
             lambda value: (
-                player_observed(value, "started")
-                and any(
-                    item.get("actor_id") == actor_ids[1]
-                    and item.get("state") == "started"
-                    for item in value.get("recent", [])
-                )
+                _player_observed(value, actor_ids, "started", started_at)
+                and _waiting_actor_started(value, actor_ids[1])
             ),
             completion_timeout,
         )
     finally:
         if armed:
-            try:
-                request_json(
-                    "POST",
-                    gate_url,
-                    {"action": "release", "run_id": run_id},
-                    timeout=10,
-                )
-            except Exception:
-                pass
+            _release_gate_quietly(gate_url, run_id)
 
     recent = [
         item
@@ -210,12 +248,7 @@ def collect_evidence(
         if float(item.get("recorded_at") or 0) >= started_at
     ]
     evaluation = evaluate_lifecycle(recent, actor_ids)
-    if evaluation["passed"]:
-        status = "passed"
-    elif evaluation.get("inconclusive"):
-        status = "inconclusive"
-    else:
-        status = "failed"
+    status = _classify_status(evaluation)
     return {
         "status": status,
         "reason": evaluation["reason"],

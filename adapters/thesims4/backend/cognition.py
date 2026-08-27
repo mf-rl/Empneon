@@ -198,40 +198,47 @@ def sanitize_action_proposal(response, actions):
     return response
 
 
-def validated_relationship_outcome(response):
-    value = str(response.get("relationship_outcome") or "none")
-    dialogue = str(response.get("dialogue") or "").casefold()
-    category = str(response.get("response_category") or "")
-    tone_tags = {str(tag).strip().casefold() for tag in response.get("tone_tags") or ()}
-    warm_romance = (
+def _is_warm_romance(category, tone_tags, dialogue):
+    return (
         category == "romance"
         and bool(tone_tags & {"warm", "playful", "romantic"})
         and not tone_tags & {"hesitant", "neutral", "uncertain", "hostile"}
         and not ROMANTIC_REJECTION.search(dialogue)
     )
-    if value not in RELATIONSHIP_OUTCOMES:
-        return "none"
+
+
+def _relationship_outcome_rejected(value, category, dialogue, warm_romance):
     if value == "friendship_positive" and category not in ("friendly", "funny"):
-        return "none"
+        return True
     if value == "friendship_negative" and category not in ("mean", "mischief"):
-        return "none"
+        return True
     if value == "romance_positive" and (
         category != "romance" or not (ROMANTIC_RECIPROCATION.search(dialogue) or warm_romance)
     ):
-        return "none"
+        return True
     if value == "romance_negative" and (
         category != "romance" or not ROMANTIC_REJECTION.search(dialogue)
     ):
+        return True
+    return False
+
+
+def validated_relationship_outcome(response):
+    value = str(response.get("relationship_outcome") or "none")
+    dialogue = str(response.get("dialogue") or "").casefold()
+    category = str(response.get("response_category") or "")
+    tone_tags = {str(tag).strip().casefold() for tag in response.get("tone_tags") or ()}
+    warm_romance = _is_warm_romance(category, tone_tags, dialogue)
+    if value not in RELATIONSHIP_OUTCOMES:
+        return "none"
+    if _relationship_outcome_rejected(value, category, dialogue, warm_romance):
         return "none"
     if value == "none" and warm_romance:
         return "romance_positive"
     return value
 
 
-def normalize_response(raw, available_categories=None):
-    if not isinstance(raw, dict):
-        raw = {}
-
+def _normalized_category(raw, available_categories):
     categories = (
         available_response_categories(available_categories)
         if available_categories is not None
@@ -251,6 +258,10 @@ def normalize_response(raw, available_categories=None):
     category = legacy_categories.get(raw_category, raw_category)
     if category not in categories:
         raise ValueError("response_category is invalid or unavailable")
+    return category
+
+
+def _validated_tone_tags(raw):
     tone_tags = raw.get("tone_tags") or []
     if (
         not isinstance(tone_tags, list)
@@ -259,12 +270,25 @@ def normalize_response(raw, available_categories=None):
         or any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", str(tag)) for tag in tone_tags)
     ):
         raise ValueError("tone_tags are invalid")
+    return tone_tags
 
+
+def _normalized_memory(raw):
     memory = raw.get("memory")
     if isinstance(memory, str):
         memory = {"summary": memory, "importance": 0.5}
     elif not isinstance(memory, dict):
         memory = {}
+    return memory
+
+
+def normalize_response(raw, available_categories=None):
+    if not isinstance(raw, dict):
+        raw = {}
+
+    category = _normalized_category(raw, available_categories)
+    tone_tags = _validated_tone_tags(raw)
+    memory = _normalized_memory(raw)
 
     dialogue = str(raw.get("dialogue") or "").strip() or "..."
     expressed_emotion = (
@@ -296,8 +320,7 @@ def normalize_response(raw, available_categories=None):
     return response
 
 
-def extract_json(text):
-    text = str(text or "").strip()
+def _strip_code_fence(text):
     if text.startswith("```"):
         lines = text.splitlines()
         if lines and lines[0].startswith("```"):
@@ -305,7 +328,10 @@ def extract_json(text):
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
+    return text
 
+
+def _decode_json_object_at(text):
     decoder = json.JSONDecoder()
     for match in re.finditer(r"\{", text):
         try:
@@ -314,6 +340,16 @@ def extract_json(text):
             continue
         if isinstance(parsed, dict):
             return parsed
+    return None
+
+
+def extract_json(text):
+    text = str(text or "").strip()
+    text = _strip_code_fence(text)
+
+    parsed = _decode_json_object_at(text)
+    if parsed is not None:
+        return parsed
 
     start = text.find("{")
     end = text.rfind("}")
@@ -370,15 +406,16 @@ _FULL_EXCHANGE_QUERY = re.compile(
 )
 
 
-def select_recalled_memories(query, candidates, generate):
+def _facts_filtered_candidates(query, candidates):
     if any(candidate.get("facts") for candidate in candidates) and not (
         _FULL_EXCHANGE_QUERY.search(str(query or ""))
     ):
-        candidates = [candidate for candidate in candidates if candidate.get("facts")]
+        return [candidate for candidate in candidates if candidate.get("facts")]
+    return candidates
+
+
+def _memory_selector_blocks(aliased):
     blocks = []
-    aliased = [
-        (f"m{index}", candidate) for index, candidate in enumerate(candidates, start=1)
-    ]
     for memory_id, candidate in aliased:
         facts = " | ".join(
             "{}: {}".format(
@@ -396,7 +433,11 @@ def select_recalled_memories(query, candidates, generate):
                 dialogue=candidate.get("dialogue") or "",
             )
         )
-    prompt = """Current message:
+    return blocks
+
+
+def _memory_selector_prompt(query, blocks):
+    return """Current message:
 {query}
 
 Candidate memories:
@@ -413,6 +454,38 @@ Return exactly {{"event_ids":[]}} when no memory is relevant.
         query=str(query),
         candidates="\n\n".join(blocks),
     )
+
+
+def _validated_selector_event_ids(raw, by_id):
+    event_ids = raw.get("event_ids")
+    if not isinstance(event_ids, list) or len(event_ids) > 3:
+        return None
+    if any(not isinstance(event_id, str) for event_id in event_ids):
+        return None
+    if len(set(event_ids)) != len(event_ids):
+        return None
+    if any(event_id not in by_id for event_id in event_ids):
+        return None
+    return event_ids
+
+
+def _finalized_selected_memories(selected):
+    grounded = [item for item in selected if item.get("facts")]
+    if grounded:
+        selected = grounded
+    result = [dict(item, explicit=True) for item in selected]
+    if result and result[0].get("facts"):
+        result[0]["semantic_primary"] = True
+    return result
+
+
+def select_recalled_memories(query, candidates, generate):
+    candidates = _facts_filtered_candidates(query, candidates)
+    aliased = [
+        (f"m{index}", candidate) for index, candidate in enumerate(candidates, start=1)
+    ]
+    blocks = _memory_selector_blocks(aliased)
+    prompt = _memory_selector_prompt(query, blocks)
     content = generate(
         [
             {
@@ -434,24 +507,12 @@ Return exactly {{"event_ids":[]}} when no memory is relevant.
         raw = extract_json(content)
     except ValueError:
         return []
-    event_ids = raw.get("event_ids")
-    if not isinstance(event_ids, list) or len(event_ids) > 3:
-        return []
-    if any(not isinstance(event_id, str) for event_id in event_ids):
-        return []
-    if len(set(event_ids)) != len(event_ids):
-        return []
     by_id = dict(aliased)
-    if any(event_id not in by_id for event_id in event_ids):
+    event_ids = _validated_selector_event_ids(raw, by_id)
+    if event_ids is None:
         return []
     selected = [by_id[event_id] for event_id in event_ids]
-    grounded = [item for item in selected if item.get("facts")]
-    if grounded:
-        selected = grounded
-    result = [dict(item, explicit=True) for item in selected]
-    if result and result[0].get("facts"):
-        result[0]["semantic_primary"] = True
-    return result
+    return _finalized_selected_memories(selected)
 
 
 def semantic_recalled_memories(query, candidates, fallback, select_memories, log_warning):
@@ -481,6 +542,23 @@ def _actor_snapshot(payload, role):
     return dataclasses.asdict(Sims4Adapter(actor_payload).agent_state())
 
 
+def _entity_traits(identity, entity, profile):
+    if isinstance(identity, dict) and "traits" in identity:
+        return identity.get("traits") or []
+    return entity.get("traits") or profile.get("identity", {}).get("traits") or []
+
+
+def _speaker_game_state(speaker):
+    return {
+        "needs": speaker.get("needs") or {},
+        "moodlets": speaker.get("moodlets") or [],
+        "aspiration": speaker.get("aspiration") or "unknown",
+        "career": speaker.get("career") or "unknown",
+        "skills": speaker.get("skills") or {},
+        "household": speaker.get("household") or {},
+    }
+
+
 def build_context(
     payload,
     speaker_profile,
@@ -508,24 +586,9 @@ def build_context(
         "listener_identity": listener_identity,
         "speaker_state": speaker_state,
         "listener_state": listener_state,
-        "speaker_traits": (
-            speaker_identity.get("traits") or []
-            if isinstance(speaker_identity, dict) and "traits" in speaker_identity
-            else speaker.get("traits") or speaker_profile.get("identity", {}).get("traits") or []
-        ),
-        "listener_traits": (
-            listener_identity.get("traits") or []
-            if isinstance(listener_identity, dict) and "traits" in listener_identity
-            else listener.get("traits") or listener_profile.get("identity", {}).get("traits") or []
-        ),
-        "game_state": {
-            "needs": speaker.get("needs") or {},
-            "moodlets": speaker.get("moodlets") or [],
-            "aspiration": speaker.get("aspiration") or "unknown",
-            "career": speaker.get("career") or "unknown",
-            "skills": speaker.get("skills") or {},
-            "household": speaker.get("household") or {},
-        },
+        "speaker_traits": _entity_traits(speaker_identity, speaker, speaker_profile),
+        "listener_traits": _entity_traits(listener_identity, listener, listener_profile),
+        "game_state": _speaker_game_state(speaker),
     }
 
 
@@ -557,6 +620,30 @@ def _exchange_text(turns, context, *, limit, max_chars):
     return "\n".join(reversed(selected)) or "None yet"
 
 
+def _explicit_memory_line(memory, context, names):
+    if not memory.get("explicit"):
+        return None
+    asker_id = (
+        context.get("listener_id")
+        if memory.get("speaker_id") == context.get("speaker_id")
+        else context.get("speaker_id")
+    )
+    message = str(memory.get("message") or "").strip()
+    if not message:
+        return None
+    return f"{names.get(asker_id, asker_id)} said: {message}"
+
+
+def _memory_fact_lines(memory, names):
+    lines = []
+    for fact in memory.get("facts") or []:
+        actor_id = str(fact.get("actor_id") or "")
+        statement = str(fact.get("statement") or "").strip()
+        if statement:
+            lines.append(f"{names.get(actor_id, actor_id)} said: {statement}")
+    return lines
+
+
 def _recalled_memory_text(context):
     names = {
         context.get("speaker_id"): context["speaker"].get("name") or UNKNOWN_SIM_NAME,
@@ -564,21 +651,83 @@ def _recalled_memory_text(context):
     }
     lines = []
     for memory in list(context.get("recalled_memories") or [])[-3:]:
-        if memory.get("explicit"):
-            asker_id = (
-                context.get("listener_id")
-                if memory.get("speaker_id") == context.get("speaker_id")
-                else context.get("speaker_id")
-            )
-            message = str(memory.get("message") or "").strip()
-            if message:
-                lines.append(f"{names.get(asker_id, asker_id)} said: {message}")
-        for fact in memory.get("facts") or []:
-            actor_id = str(fact.get("actor_id") or "")
-            statement = str(fact.get("statement") or "").strip()
-            if statement:
-                lines.append(f"{names.get(actor_id, actor_id)} said: {statement}")
+        explicit_line = _explicit_memory_line(memory, context, names)
+        if explicit_line:
+            lines.append(explicit_line)
+        lines.extend(_memory_fact_lines(memory, names))
     return "\n".join(lines) or "None yet"
+
+
+def _nearby_sims_text(nearby_sims):
+    return (
+        ", ".join(
+            sim_name(item) if isinstance(item, dict) else str(item) for item in nearby_sims
+        )
+        or "none"
+    )
+
+
+def _traits_text(traits):
+    return (
+        ", ".join(
+            str(item.get("label") or item.get("id") or "unknown")
+            if isinstance(item, dict)
+            else str(item)
+            for item in traits
+        )
+        or "unknown"
+    )
+
+
+def _prompt_response_categories(payload):
+    if payload.get("available_response_categories") is None:
+        return SOCIAL_CATEGORIES
+    return available_response_categories(payload.get("available_response_categories"))
+
+
+def _chat_prompt_speaker_fields(speaker_profile, game_state, goals, speaker_traits, household_name, context):
+    return {
+        "speaker_name": speaker_profile.get("name") or UNKNOWN_SIM_NAME,
+        "speaker_identity": dumps(context["speaker_identity"]),
+        "speaker_traits": speaker_traits,
+        "personality": dumps(speaker_profile.get("personality") or {}),
+        "values": ", ".join(speaker_profile.get("values") or []) or "unknown",
+        "rules": ", ".join(speaker_profile.get("behavioral_rules") or []) or "none",
+        "knowledge": dumps(speaker_profile.get("knowledge") or {}),
+        "goals": ", ".join(str(goal) for goal in goals) or "none",
+        "needs": dumps(game_state["needs"]),
+        "moodlets": ", ".join(str(item) for item in game_state["moodlets"]) or "none",
+        "aspiration": game_state["aspiration"],
+        "career": game_state["career"],
+        "skills": dumps(game_state["skills"]),
+        "household": household_name or "unknown",
+        "speaker_state": dumps(context["speaker_state"]),
+    }
+
+
+def _chat_prompt_listener_fields(listener_profile, listener_traits, context):
+    return {
+        "listener_name": listener_profile.get("name") or UNKNOWN_SIM_NAME,
+        "listener_identity": dumps(context["listener_identity"]),
+        "listener_traits": listener_traits,
+        "listener_state": dumps(context["listener_state"]),
+    }
+
+
+def _chat_prompt_scene_fields(
+    payload, context, relationship, emotions, recalled_history, nearby, conversation_marker, categories
+):
+    return {
+        "relationship": dumps(relationship),
+        "emotions": dumps(emotions),
+        "recent_conversation": conversation_marker,
+        "recalled_history": recalled_history,
+        "location": context["location"],
+        "nearby": nearby,
+        "incoming_category": payload.get("incoming_category") or "friendly",
+        "available_response_categories": ", ".join(categories) or "none",
+        "message": payload.get("message") or "",
+    }
 
 
 def build_chat_prompt(payload, context):
@@ -587,39 +736,15 @@ def build_chat_prompt(payload, context):
     relationship = context["relationship"]
     emotions = context["emotions"]
     recalled_history = _recalled_memory_text(context)
-    nearby = (
-        ", ".join(
-            sim_name(item) if isinstance(item, dict) else str(item)
-            for item in context["nearby_sims"]
-        )
-        or "none"
-    )
+    nearby = _nearby_sims_text(context["nearby_sims"])
     game_state = context["game_state"]
     household = game_state["household"]
     household_name = household.get("name") if isinstance(household, dict) else household
     goals = speaker_profile.get("goals") or []
-    speaker_traits = (
-        ", ".join(
-            str(item.get("label") or item.get("id") or "unknown")
-            if isinstance(item, dict)
-            else str(item)
-            for item in context["speaker_traits"]
-        )
-        or "unknown"
-    )
-    listener_traits = (
-        ", ".join(
-            str(item.get("label") or item.get("id") or "unknown")
-            if isinstance(item, dict)
-            else str(item)
-            for item in context["listener_traits"]
-        )
-        or "unknown"
-    )
+    speaker_traits = _traits_text(context["speaker_traits"])
+    listener_traits = _traits_text(context["listener_traits"])
     conversation_marker = "__EMPNEON_CURRENT_SOCIAL__"
-    categories = available_response_categories(payload.get("available_response_categories"))
-    if payload.get("available_response_categories") is None:
-        categories = SOCIAL_CATEGORIES
+    categories = _prompt_response_categories(payload)
 
     prompt = """Role assignment:
 You are {speaker_name}, the Speaker.
@@ -718,34 +843,20 @@ Grounding rules:
 Player says:
 {message}
 """.format(
-        speaker_name=speaker_profile.get("name") or UNKNOWN_SIM_NAME,
-        speaker_identity=dumps(context["speaker_identity"]),
-        speaker_traits=speaker_traits,
-        personality=dumps(speaker_profile.get("personality") or {}),
-        values=", ".join(speaker_profile.get("values") or []) or "unknown",
-        rules=", ".join(speaker_profile.get("behavioral_rules") or []) or "none",
-        knowledge=dumps(speaker_profile.get("knowledge") or {}),
-        goals=", ".join(str(goal) for goal in goals) or "none",
-        needs=dumps(game_state["needs"]),
-        moodlets=", ".join(str(item) for item in game_state["moodlets"]) or "none",
-        aspiration=game_state["aspiration"],
-        career=game_state["career"],
-        skills=dumps(game_state["skills"]),
-        household=household_name or "unknown",
-        listener_name=listener_profile.get("name") or UNKNOWN_SIM_NAME,
-        listener_identity=dumps(context["listener_identity"]),
-        listener_traits=listener_traits,
-        speaker_state=dumps(context["speaker_state"]),
-        listener_state=dumps(context["listener_state"]),
-        relationship=dumps(relationship),
-        emotions=dumps(emotions),
-        recent_conversation=conversation_marker,
-        recalled_history=recalled_history,
-        location=context["location"],
-        nearby=nearby,
-        incoming_category=payload.get("incoming_category") or "friendly",
-        available_response_categories=", ".join(categories) or "none",
-        message=payload.get("message") or "",
+        **_chat_prompt_speaker_fields(
+            speaker_profile, game_state, goals, speaker_traits, household_name, context
+        ),
+        **_chat_prompt_listener_fields(listener_profile, listener_traits, context),
+        **_chat_prompt_scene_fields(
+            payload,
+            context,
+            relationship,
+            emotions,
+            recalled_history,
+            nearby,
+            conversation_marker,
+            categories,
+        ),
     )
     prompt_chars = max(
         0,
@@ -995,17 +1106,7 @@ def _is_romantic_request(message):
     )
 
 
-def response_grounding_issue(payload, response, context):
-    message = str(payload.get("message") or "").casefold()
-    dialogue = str(response.get("dialogue") or "").casefold()
-    message_words = _dialogue_words(message, context)
-    dialogue_words = _dialogue_words(dialogue, context)
-    if (
-        len(message_words) >= 6
-        and len(dialogue_words) >= 4
-        and _dialogue_similarity(message_words, dialogue_words) >= 0.72
-    ):
-        return "respond naturally; do not copy the player's message"
+def _conversation_copy_issue(dialogue_words, message_words, context):
     for turn in context.get("conversation") or []:
         previous_message = _dialogue_words(turn.get("message"), context)
         if (
@@ -1022,6 +1123,10 @@ def response_grounding_issue(payload, response, context):
             and _dialogue_similarity(dialogue_words, previous_reply) >= 0.72
         ):
             return "do not reuse a previous reply for a different message"
+    return ""
+
+
+def _listener_name_issue(dialogue, context):
     listener_name = str(context.get("listener", {}).get("name") or "").strip()
     asks_listener_name = re.search(
         r"\b(?:what(?:'s| is) your (?:full )?name|tell me your (?:full )?name)\b",
@@ -1029,34 +1134,62 @@ def response_grounding_issue(payload, response, context):
     )
     if listener_name and asks_listener_name:
         return "do not ask for the known Listener's name"
-    supported_recall_issue = _supported_recall_issue(payload, response, context)
-    if supported_recall_issue:
-        return supported_recall_issue
+    return ""
+
+
+_RECALL_UNCERTAINTY_PHRASES = (
+    "don't know",
+    "do not know",
+    "not sure",
+    "don't remember",
+    "do not remember",
+    "what are you talking",
+)
+
+
+def _recall_uncertainty_issue(message, dialogue, context):
     asks_recalled_fact = analyze_recall_query(message).explicit
     has_evidence = _memory_supports_question(message, context)
-    uncertainty = (
-        "don't know",
-        "do not know",
-        "not sure",
-        "don't remember",
-        "do not remember",
-        "what are you talking",
-    )
-    if asks_recalled_fact and has_evidence and any(phrase in dialogue for phrase in uncertainty):
+    expresses_uncertainty = any(phrase in dialogue for phrase in _RECALL_UNCERTAINTY_PHRASES)
+    if asks_recalled_fact and has_evidence and expresses_uncertainty:
         return "use the supporting memory instead of denying it"
-    if (
-        asks_recalled_fact
-        and not has_evidence
-        and not any(phrase in dialogue for phrase in uncertainty)
-    ):
+    if asks_recalled_fact and not has_evidence and not expresses_uncertainty:
         return "state uncertainty because no supporting memory exists"
     return ""
 
 
-def _supported_recall_facts(message, context):
-    query = analyze_recall_query(str(message or ""))
-    memories = list(context.get("recalled_memories") or [])
-    primary_keys = {
+def response_grounding_issue(payload, response, context):
+    message = str(payload.get("message") or "").casefold()
+    dialogue = str(response.get("dialogue") or "").casefold()
+    message_words = _dialogue_words(message, context)
+    dialogue_words = _dialogue_words(dialogue, context)
+    if (
+        len(message_words) >= 6
+        and len(dialogue_words) >= 4
+        and _dialogue_similarity(message_words, dialogue_words) >= 0.72
+    ):
+        return "respond naturally; do not copy the player's message"
+    conversation_copy_issue = _conversation_copy_issue(dialogue_words, message_words, context)
+    if conversation_copy_issue:
+        return conversation_copy_issue
+    listener_name_issue = _listener_name_issue(dialogue, context)
+    if listener_name_issue:
+        return listener_name_issue
+    supported_recall_issue = _supported_recall_issue(payload, response, context)
+    if supported_recall_issue:
+        return supported_recall_issue
+    return _recall_uncertainty_issue(message, dialogue, context)
+
+
+_IDENTIFIER_TOKEN = re.compile(r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b", re.IGNORECASE)
+
+
+def _identifier_tokens(text):
+    return {match.group(0).casefold() for match in _IDENTIFIER_TOKEN.finditer(str(text or ""))}
+
+
+def _primary_fact_keys(memories):
+    return {
         (
             str(fact.get("actor_id") or ""),
             str(fact.get("statement") or "").strip(),
@@ -1066,15 +1199,10 @@ def _supported_recall_facts(message, context):
         for fact in memory.get("facts") or []
         if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
     }
-    identifiers = {
-        match.group(0).casefold()
-        for match in re.finditer(
-            r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
-            str(message or ""),
-            re.IGNORECASE,
-        )
-    }
-    facts = [
+
+
+def _recalled_facts(memories):
+    return [
         {
             "actor_id": str(fact.get("actor_id") or ""),
             "statement": str(fact.get("statement") or "").strip(),
@@ -1083,33 +1211,15 @@ def _supported_recall_facts(message, context):
         for fact in memory.get("facts") or []
         if isinstance(fact, dict) and str(fact.get("statement") or "").strip()
     ]
-    owner_id = empneon_state.codeword_recall_owner_id(
-        message,
-        str(context.get("speaker_id") or ""),
-        str(context.get("listener_id") or ""),
-    )
-    if owner_id is not None:
-        facts = [fact for fact in facts if fact["actor_id"] == owner_id]
-    if identifiers:
-        facts = [
-            fact
-            for fact in facts
-            if identifiers
-            <= {
-                match.group(0).casefold()
-                for match in re.finditer(
-                    r"\b(?=[A-Z0-9-]*\d)[A-Z0-9]+(?:-[A-Z0-9]+)+\b",
-                    fact["statement"],
-                    re.IGNORECASE,
-                )
-            }
-        ]
-    primary = [fact for fact in facts if (fact["actor_id"], fact["statement"]) in primary_keys]
-    if not query.explicit:
-        return primary
-    supporting = [fact for fact in facts if fact_supports_query(fact, query)]
-    if supporting:
-        return supporting
+
+
+def _identifier_filtered_facts(facts, identifiers):
+    if not identifiers:
+        return facts
+    return [fact for fact in facts if identifiers <= _identifier_tokens(fact["statement"])]
+
+
+def _lexical_recall_facts(facts, primary, message, context):
     question_terms = set(_dialogue_words(message, context))
     lexical = [
         fact for fact in facts if question_terms & set(_dialogue_words(fact["statement"], context))
@@ -1118,6 +1228,29 @@ def _supported_recall_facts(message, context):
     if primary_lexical:
         return primary_lexical
     return lexical or primary
+
+
+def _supported_recall_facts(message, context):
+    query = analyze_recall_query(str(message or ""))
+    memories = list(context.get("recalled_memories") or [])
+    primary_keys = _primary_fact_keys(memories)
+    identifiers = _identifier_tokens(message)
+    facts = _recalled_facts(memories)
+    owner_id = empneon_state.codeword_recall_owner_id(
+        message,
+        str(context.get("speaker_id") or ""),
+        str(context.get("listener_id") or ""),
+    )
+    if owner_id is not None:
+        facts = [fact for fact in facts if fact["actor_id"] == owner_id]
+    facts = _identifier_filtered_facts(facts, identifiers)
+    primary = [fact for fact in facts if (fact["actor_id"], fact["statement"]) in primary_keys]
+    if not query.explicit:
+        return primary
+    supporting = [fact for fact in facts if fact_supports_query(fact, query)]
+    if supporting:
+        return supporting
+    return _lexical_recall_facts(facts, primary, message, context)
 
 
 _CODEWORD_FACT = re.compile(
@@ -1178,11 +1311,11 @@ def _recalled_fact_dialogue(fact, context, message=""):
 
 
 _PREFERENCE_FACT = re.compile(
-    r"\bi prefer (?P<preferred>.+?) to (?P<alternative>.+?)(?:[.!?]|$)",
+    r"\bi prefer (?P<preferred>.+?) to (?P<alternative>[^.!?]+)(?:[.!?]|$)",
     re.IGNORECASE,
 )
 _PROMISE_FACT = re.compile(
-    r"\bi promise(?: that)? (?P<commitment>.+?)(?:[.!?]|$)",
+    r"\bi promise(?: that)? (?P<commitment>[^.!?]+)(?:[.!?]|$)",
     re.IGNORECASE,
 )
 
@@ -1238,6 +1371,66 @@ def _promise_issue(facts, dialogue, context):
     return "answer with the complete supported promise"
 
 
+_ANSWER_TERM_IGNORED_WORDS = {
+    "about",
+    "can",
+    "did",
+    "does",
+    "good",
+    "going",
+    "know",
+    "remember",
+    "said",
+    "say",
+    "sound",
+    "sounds",
+    "tell",
+    "that",
+    "the",
+    "this",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "with",
+    "would",
+    "you",
+}
+
+
+def _owner_codeword_issue(message, facts, dialogue, context):
+    owner_id = empneon_state.codeword_recall_owner_id(
+        message,
+        str(context.get("speaker_id") or ""),
+        str(context.get("listener_id") or ""),
+    )
+    if (
+        owner_id == str(context.get("speaker_id") or "")
+        and any(_codeword_fact_parts(fact) is not None for fact in facts)
+        and not re.search(
+            r"\bmy\s+(?:secret\s+)?code\s*word\b",
+            dialogue,
+            re.IGNORECASE,
+        )
+    ):
+        return "refer to the Speaker-owned code word in first person as my code word"
+    return ""
+
+
+def _unanswered_recall_issue(statements, message, dialogue, context):
+    question_terms = set(_dialogue_words(message, context))
+    answer_terms = set().union(
+        *(
+            set(_dialogue_words(statement, context)) - question_terms - _ANSWER_TERM_IGNORED_WORDS
+            for statement in statements
+        )
+    )
+    if answer_terms and answer_terms & set(_dialogue_words(dialogue, context)):
+        return ""
+    return "answer the recall question with the selected attributed fact"
+
+
 def _supported_recall_issue(payload, response, context):
     message = str(payload.get("message") or "")
     query = analyze_recall_query(message)
@@ -1251,17 +1444,7 @@ def _supported_recall_issue(payload, response, context):
     statements = [fact["statement"] for fact in facts]
     dialogue = str(response.get("dialogue") or "")
     lowered = dialogue.casefold()
-    if any(
-        phrase in lowered
-        for phrase in (
-            "don't know",
-            "do not know",
-            "not sure",
-            "don't remember",
-            "do not remember",
-            "what are you talking",
-        )
-    ):
+    if any(phrase in lowered for phrase in _RECALL_UNCERTAINTY_PHRASES):
         return "use the supporting memory instead of denying it"
     issue = validate_recall_response(
         query,
@@ -1278,59 +1461,12 @@ def _supported_recall_issue(payload, response, context):
     issue = _promise_issue(facts, dialogue, context)
     if issue:
         return issue
-    owner_id = empneon_state.codeword_recall_owner_id(
-        message,
-        str(context.get("speaker_id") or ""),
-        str(context.get("listener_id") or ""),
-    )
-    if (
-        owner_id == str(context.get("speaker_id") or "")
-        and any(_codeword_fact_parts(fact) is not None for fact in facts)
-        and not re.search(
-            r"\bmy\s+(?:secret\s+)?code\s*word\b",
-            dialogue,
-            re.IGNORECASE,
-        )
-    ):
-        return "refer to the Speaker-owned code word in first person as my code word"
+    issue = _owner_codeword_issue(message, facts, dialogue, context)
+    if issue:
+        return issue
     if "time" in query.requested_slots:
         return ""
-    question_terms = set(_dialogue_words(message, context))
-    ignored = {
-        "about",
-        "can",
-        "did",
-        "does",
-        "good",
-        "going",
-        "know",
-        "remember",
-        "said",
-        "say",
-        "sound",
-        "sounds",
-        "tell",
-        "that",
-        "the",
-        "this",
-        "what",
-        "when",
-        "where",
-        "which",
-        "who",
-        "with",
-        "would",
-        "you",
-    }
-    answer_terms = set().union(
-        *(
-            set(_dialogue_words(statement, context)) - question_terms - ignored
-            for statement in statements
-        )
-    )
-    if answer_terms and answer_terms & set(_dialogue_words(dialogue, context)):
-        return ""
-    return "answer the recall question with the selected attributed fact"
+    return _unanswered_recall_issue(statements, message, dialogue, context)
 
 
 def _memory_supports_question(message, context):
@@ -1362,6 +1498,177 @@ def _memory_supports_question(message, context):
     return bool(terms and any(term in evidence for term in terms))
 
 
+def _fallback_supported_fact_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if "?" in message and supported_facts:
+        dialogue = _recalled_fact_dialogue(supported_facts[0], context, message)
+        return dialogue, "confident", "recall", 0
+    return None
+
+
+def _fallback_romantic_invitation_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if interaction_kind == "romantic_invitation":
+        return "No, I would rather stay friends.", "awkward", "set_boundary", 0
+    return None
+
+
+def _fallback_recalled_memory_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if "?" in message and _memory_supports_question(message, context):
+        candidates = [
+            str(item.get(field) or "").strip()
+            for item in context.get("recalled_memories") or []
+            for field in ("message", "dialogue")
+            if str(item.get(field) or "").strip()
+        ]
+        dialogue = next((item for item in candidates if not item.endswith("?")), candidates[0])
+        return dialogue, "confident", "recall", 0
+    return None
+
+
+def _fallback_unsupported_recall_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if analyze_recall_query(message).explicit and not _memory_supports_question(message, context):
+        return "I don't know or remember that.", "uncertain", "admit_uncertainty", 0
+    return None
+
+
+def _fallback_avoidance_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
+        return (
+            "I wasn't trying to avoid you. I just needed a little space to sort through my feelings.",
+            "tense",
+            "reassure",
+            0,
+        )
+    return None
+
+
+def _fallback_apology_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if any(word in message for word in ("sorry", "apologize", "forgive")):
+        return "I appreciate you saying that. I need time, but I'm listening.", "softened", "accept_apology", 1
+    return None
+
+
+def _fallback_funny_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if incoming_category == "funny":
+        return (
+            "Here's a llama joke: What do llamas call a rushed vacation? An alpaca-to-go.",
+            "playful",
+            "tell_joke",
+            0,
+        )
+    return None
+
+
+def _fallback_mischief_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if incoming_category == "mischief":
+        return (
+            "How about a harmless trick: tell them the llama council promoted "
+            "them to Chief Snack Officer?",
+            "playful",
+            "suggest_prank",
+            0,
+        )
+    return None
+
+
+def _fallback_hostile_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if interaction_kind == "hostile":
+        return (
+            "I won't continue this conversation while you speak to me that way.",
+            "tense",
+            "set_boundary",
+            -1,
+        )
+    return None
+
+
+def _fallback_romantic_compliment_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if interaction_kind == "romantic_compliment":
+        return "That is flattering. Thank you for being honest with me.", "flattered", "acknowledge_flirtation", 0
+    return None
+
+
+def _fallback_intimacy_boundary_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if any(word in message for word in ("sex", "woohoo")):
+        return (
+            "Slow down. If there is something between us, I want it to feel right, not rushed.",
+            "awkward",
+            "set_boundary",
+            -1,
+        )
+    return None
+
+
+def _fallback_informational_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if interaction_kind == "informational":
+        return (
+            "I may not have every answer, but I'll tell you what I know.",
+            context.get("emotions", {}).get("current_mood", "neutral"),
+            "respond",
+            0,
+        )
+    return None
+
+
+def _fallback_friendly_reply(message, interaction_kind, supported_facts, incoming_category, context):
+    if interaction_kind == "friendly":
+        return "It's good to hear that. I enjoy talking with you.", "happy", "respond", 0
+    return None
+
+
+_FALLBACK_CONTENT_CHECKS = (
+    _fallback_supported_fact_reply,
+    _fallback_romantic_invitation_reply,
+    _fallback_recalled_memory_reply,
+    _fallback_unsupported_recall_reply,
+    _fallback_avoidance_reply,
+    _fallback_apology_reply,
+    _fallback_funny_reply,
+    _fallback_mischief_reply,
+    _fallback_hostile_reply,
+    _fallback_romantic_compliment_reply,
+    _fallback_intimacy_boundary_reply,
+    _fallback_informational_reply,
+    _fallback_friendly_reply,
+)
+
+
+def _reasoning_fallback_content(message, interaction_kind, supported_facts, incoming_category, context):
+    for check in _FALLBACK_CONTENT_CHECKS:
+        result = check(message, interaction_kind, supported_facts, incoming_category, context)
+        if result is not None:
+            return result
+    return (
+        "I hear you. Thank you for telling me.",
+        context.get("emotions", {}).get("current_mood", "neutral"),
+        "respond",
+        0,
+    )
+
+
+def _reasoning_fallback_retry_dialogue(message, dialogue, context):
+    candidates = []
+    if "?" in message and _memory_supports_question(message, context):
+        candidates.append(f"Here is the detail I remember: {dialogue}")
+    elif analyze_recall_query(message).explicit:
+        candidates.append("I'm not sure; I don't remember enough to answer that.")
+    candidates.extend(
+        (
+            "Let me think about that in my own words.",
+            "I understand. Give me a moment to respond.",
+            "There is more I want to consider before I answer.",
+        )
+    )
+    return candidates
+
+
+def _reasoning_fallback_retry(payload, fallback, dialogue, message, context, grounding_issue, role_confusion):
+    for candidate_dialogue in _reasoning_fallback_retry_dialogue(message, dialogue, context):
+        candidate = dict(fallback, dialogue=candidate_dialogue)
+        if not grounding_issue(payload, candidate, context) and not role_confusion(candidate, context):
+            return candidate
+    return None
+
+
 def reasoning_fallback_response(
     payload,
     context,
@@ -1379,87 +1686,9 @@ def reasoning_fallback_response(
         "funny": ("funny", "light"),
         "friendly": ("friendly", "neutral"),
     }.get(incoming_category, ("friendly", "neutral"))
-    if "?" in message and supported_facts:
-        dialogue = _recalled_fact_dialogue(supported_facts[0], context, message)
-        emotion = "confident"
-        intent = "recall"
-        trust_delta = 0
-    elif interaction_kind == "romantic_invitation":
-        dialogue = "No, I would rather stay friends."
-        emotion = "awkward"
-        intent = "set_boundary"
-        trust_delta = 0
-    elif "?" in message and _memory_supports_question(message, context):
-        candidates = [
-            str(item.get(field) or "").strip()
-            for item in context.get("recalled_memories") or []
-            for field in ("message", "dialogue")
-            if str(item.get(field) or "").strip()
-        ]
-        dialogue = next((item for item in candidates if not item.endswith("?")), candidates[0])
-        emotion = "confident"
-        intent = "recall"
-        trust_delta = 0
-    elif analyze_recall_query(message).explicit and not _memory_supports_question(message, context):
-        dialogue = "I don't know or remember that."
-        emotion = "uncertain"
-        intent = "admit_uncertainty"
-        trust_delta = 0
-    elif any(word in message for word in ("avoid", "avoiding", "ignored", "ignore")):
-        dialogue = "I wasn't trying to avoid you. I just needed a little space to sort through my feelings."
-        emotion = "tense"
-        intent = "reassure"
-        trust_delta = 0
-    elif any(word in message for word in ("sorry", "apologize", "forgive")):
-        dialogue = "I appreciate you saying that. I need time, but I'm listening."
-        emotion = "softened"
-        intent = "accept_apology"
-        trust_delta = 1
-    elif incoming_category == "funny":
-        dialogue = "Here's a llama joke: What do llamas call a rushed vacation? An alpaca-to-go."
-        emotion = "playful"
-        intent = "tell_joke"
-        trust_delta = 0
-    elif incoming_category == "mischief":
-        dialogue = (
-            "How about a harmless trick: tell them the llama council promoted "
-            "them to Chief Snack Officer?"
-        )
-        emotion = "playful"
-        intent = "suggest_prank"
-        trust_delta = 0
-    elif interaction_kind == "hostile":
-        dialogue = "I won't continue this conversation while you speak to me that way."
-        emotion = "tense"
-        intent = "set_boundary"
-        trust_delta = -1
-    elif interaction_kind == "romantic_compliment":
-        dialogue = "That is flattering. Thank you for being honest with me."
-        emotion = "flattered"
-        intent = "acknowledge_flirtation"
-        trust_delta = 0
-    elif any(word in message for word in ("sex", "woohoo")):
-        dialogue = (
-            "Slow down. If there is something between us, I want it to feel right, not rushed."
-        )
-        emotion = "awkward"
-        intent = "set_boundary"
-        trust_delta = -1
-    elif interaction_kind == "informational":
-        dialogue = "I may not have every answer, but I'll tell you what I know."
-        emotion = context.get("emotions", {}).get("current_mood", "neutral")
-        intent = "respond"
-        trust_delta = 0
-    elif interaction_kind == "friendly":
-        dialogue = "It's good to hear that. I enjoy talking with you."
-        emotion = "happy"
-        intent = "respond"
-        trust_delta = 0
-    else:
-        dialogue = "I hear you. Thank you for telling me."
-        emotion = context.get("emotions", {}).get("current_mood", "neutral")
-        intent = "respond"
-        trust_delta = 0
+    dialogue, emotion, intent, trust_delta = _reasoning_fallback_content(
+        message, interaction_kind, supported_facts, incoming_category, context
+    )
     fallback = normalize_response(
         {
             "dialogue": dialogue,
@@ -1478,24 +1707,9 @@ def reasoning_fallback_response(
     if not grounding_issue(payload, fallback, context) and not role_confusion(fallback, context):
         return fallback
 
-    candidates = []
-    if "?" in message and _memory_supports_question(message, context):
-        candidates.append(f"Here is the detail I remember: {dialogue}")
-    elif analyze_recall_query(message).explicit:
-        candidates.append("I'm not sure; I don't remember enough to answer that.")
-    candidates.extend(
-        (
-            "Let me think about that in my own words.",
-            "I understand. Give me a moment to respond.",
-            "There is more I want to consider before I answer.",
-        )
-    )
-    for candidate_dialogue in candidates:
-        candidate = dict(fallback, dialogue=candidate_dialogue)
-        if not grounding_issue(payload, candidate, context) and not role_confusion(
-            candidate, context
-        ):
-            return candidate
+    retry = _reasoning_fallback_retry(payload, fallback, dialogue, message, context, grounding_issue, role_confusion)
+    if retry is not None:
+        return retry
     return dict(
         fallback,
         dialogue="I need to pause this conversation for now.",
@@ -1541,6 +1755,91 @@ class CognitionRuntime:
         self._role_confusion = role_confusion
         self._reasoning_fallback = reasoning_fallback
 
+    def _generate_or_none(self, prompt, categories, supported_facts):
+        try:
+            return self._generate(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                schema=dialogue_schema(categories),
+                schema_name="sims_dialogue",
+                task="large",
+            )
+        except (ProviderError, OSError):
+            if supported_facts:
+                return None
+            raise
+
+    def _normalized_attempt_response(self, content, categories):
+        try:
+            return normalize_response(extract_json(content), categories)
+        except ValueError:
+            return fallback_response(content, categories)
+
+    def _apply_response_overrides(self, payload, response, categories, supported_facts):
+        explicit_category = explicit_social_category(response["dialogue"])
+        if (
+            self._rejection_enabled()
+            and explicit_category in categories
+            and explicit_category != response["response_category"]
+        ):
+            response["response_category"] = explicit_category
+            response["relationship_outcome"] = validated_relationship_outcome(response)
+            response["suggested_action"] = response["animation"] = "none"
+        if payload.get("incoming_category") == "funny" and response["response_category"] in (
+            "friendly",
+            "funny",
+        ):
+            response["trust_delta"] = 0
+            response["relationship_outcome"] = "none"
+            response["suggested_action"] = response["animation"] = "none"
+        if supported_facts:
+            response["relationship_outcome"] = "none"
+            response["suggested_action"] = response["animation"] = "none"
+        return response
+
+    def _response_issues(self, payload, response, context, recall_issue):
+        if self._rejection_enabled():
+            issue = self._grounding_issue(payload, response, context)
+            category_issue = response_category_issue(response)
+            role_confusion = self._role_confusion(response, context)
+        else:
+            issue = recall_issue
+            category_issue = ""
+            role_confusion = False
+        return issue, category_issue, role_confusion
+
+    def _augment_prompt_with_corrections(
+        self, prompt, context, issue, recall_issue, category_issue, supported_facts
+    ):
+        if self._rejection_enabled():
+            prompt += (
+                "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
+                "If using a name, use the Listener's name, '{}'."
+            ).format(context["speaker"]["name"], context["listener"]["name"])
+        if issue:
+            prompt += f"\nCorrection: {issue}."
+        if recall_issue:
+            prompt += (
+                "\nCorrection: Answer the recall question using this "
+                "attributed evidence: "
+                + " | ".join(_attributed_fact_text(fact, context) for fact in supported_facts)
+            )
+        if category_issue:
+            prompt += (
+                "\nCorrection: The response_category must describe the Speaker's own "
+                "dialogue. Do not copy the incoming category when the Speaker rejects or "
+                "changes direction."
+            )
+        if issue and ("copy" in issue or "previous reply" in issue):
+            prompt += (
+                "\nCorrection: Keep the facts and conversational continuity, but advance the "
+                "conversation with a new reaction, detail, question, or decision. Do not reuse "
+                "an earlier opening or sentence frame."
+            )
+        return prompt
+
     def dialogue(self, payload, context):
         configured_categories = payload.get("available_response_categories")
         categories = available_response_categories(configured_categories)
@@ -1552,54 +1851,17 @@ class CognitionRuntime:
         supported_facts = _supported_recall_facts(payload.get("message"), context)
         rejections = []
         for attempt in range(2):
-            try:
-                content = self._generate(
-                    [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    schema=dialogue_schema(categories),
-                    schema_name="sims_dialogue",
-                    task="large",
-                )
-            except (ProviderError, OSError):
-                if supported_facts:
-                    return self._reasoning_fallback(payload, context)
-                raise
-            try:
-                response = normalize_response(extract_json(content), categories)
-            except ValueError:
-                response = fallback_response(content, categories)
-            explicit_category = explicit_social_category(response["dialogue"])
-            if (
-                self._rejection_enabled()
-                and explicit_category in categories
-                and explicit_category != response["response_category"]
-            ):
-                response["response_category"] = explicit_category
-                response["relationship_outcome"] = validated_relationship_outcome(response)
-                response["suggested_action"] = response["animation"] = "none"
-            if payload.get("incoming_category") == "funny" and response["response_category"] in (
-                "friendly",
-                "funny",
-            ):
-                response["trust_delta"] = 0
-                response["relationship_outcome"] = "none"
-                response["suggested_action"] = response["animation"] = "none"
-            if supported_facts:
-                response["relationship_outcome"] = "none"
-                response["suggested_action"] = response["animation"] = "none"
+            content = self._generate_or_none(prompt, categories, supported_facts)
+            if content is None:
+                return self._reasoning_fallback(payload, context)
+            response = self._normalized_attempt_response(content, categories)
+            self._apply_response_overrides(payload, response, categories, supported_facts)
             recall_issue = _supported_recall_issue(payload, response, context)
             if not self._rejection_enabled() and not recall_issue:
                 return response
-            if self._rejection_enabled():
-                issue = self._grounding_issue(payload, response, context)
-                category_issue = response_category_issue(response)
-                role_confusion = self._role_confusion(response, context)
-            else:
-                issue = recall_issue
-                category_issue = ""
-                role_confusion = False
+            issue, category_issue, role_confusion = self._response_issues(
+                payload, response, context, recall_issue
+            )
             if not role_confusion and not issue and not category_issue:
                 return response
             reason = issue or category_issue or "speaker/listener confusion"
@@ -1609,31 +1871,9 @@ class CognitionRuntime:
                 attempt == 0,
             )
             rejections.append({"attempt": attempt + 1, "reason": reason})
-            if self._rejection_enabled():
-                prompt += (
-                    "\nCorrection: Dialogue must not contain the Speaker's name, '{}'. "
-                    "If using a name, use the Listener's name, '{}'."
-                ).format(context["speaker"]["name"], context["listener"]["name"])
-            if issue:
-                prompt += f"\nCorrection: {issue}."
-            if recall_issue:
-                prompt += (
-                    "\nCorrection: Answer the recall question using this "
-                    "attributed evidence: "
-                    + " | ".join(_attributed_fact_text(fact, context) for fact in supported_facts)
-                )
-            if category_issue:
-                prompt += (
-                    "\nCorrection: The response_category must describe the Speaker's own "
-                    "dialogue. Do not copy the incoming category when the Speaker rejects or "
-                    "changes direction."
-                )
-            if issue and ("copy" in issue or "previous reply" in issue):
-                prompt += (
-                    "\nCorrection: Keep the facts and conversational continuity, but advance the "
-                    "conversation with a new reaction, detail, question, or decision. Do not reuse "
-                    "an earlier opening or sentence frame."
-                )
+            prompt = self._augment_prompt_with_corrections(
+                prompt, context, issue, recall_issue, category_issue, supported_facts
+            )
         fallback = self._reasoning_fallback(payload, context)
         fallback["suggested_action"] = fallback["animation"] = "none"
         fallback["_response_rejections"] = rejections

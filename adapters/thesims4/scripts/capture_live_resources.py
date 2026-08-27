@@ -29,6 +29,35 @@ def percentile(values: list[float], quantile: float) -> float:
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
+def _check_presentmon_fieldnames(
+    fieldnames: list[str] | tuple[str, ...] | None,
+    *,
+    start_seconds: float | None,
+    end_seconds: float | None,
+) -> None:
+    fields = fieldnames or ()
+    if "msBetweenDisplayChange" not in fields:
+        raise ValueError("PresentMon output lacks msBetweenDisplayChange")
+    if (start_seconds is not None or end_seconds is not None) and "TimeInSeconds" not in fields:
+        raise ValueError("PresentMon output lacks TimeInSeconds")
+
+
+def _frame_time_in_window(
+    frame_time: float,
+    captured_at: float,
+    *,
+    start_seconds: float | None,
+    end_seconds: float | None,
+) -> bool:
+    if frame_time <= 0:
+        return False
+    if start_seconds is not None and captured_at < start_seconds:
+        return False
+    if end_seconds is not None and captured_at > end_seconds:
+        return False
+    return True
+
+
 def parse_presentmon(
     path: Path,
     *,
@@ -37,23 +66,20 @@ def parse_presentmon(
 ) -> list[float]:
     with path.open(newline="", encoding="utf-8-sig") as handle:
         rows = csv.DictReader(handle)
-        if "msBetweenDisplayChange" not in (rows.fieldnames or ()):
-            raise ValueError("PresentMon output lacks msBetweenDisplayChange")
-        if (start_seconds is not None or end_seconds is not None) and "TimeInSeconds" not in (
-            rows.fieldnames or ()
-        ):
-            raise ValueError("PresentMon output lacks TimeInSeconds")
+        _check_presentmon_fieldnames(
+            rows.fieldnames, start_seconds=start_seconds, end_seconds=end_seconds
+        )
         values = []
         for row in rows:
             frame_time = float(row["msBetweenDisplayChange"] or 0)
             captured_at = float(row.get("TimeInSeconds") or 0)
-            if frame_time <= 0:
-                continue
-            if start_seconds is not None and captured_at < start_seconds:
-                continue
-            if end_seconds is not None and captured_at > end_seconds:
-                continue
-            values.append(frame_time)
+            if _frame_time_in_window(
+                frame_time,
+                captured_at,
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+            ):
+                values.append(frame_time)
     if not values:
         raise ValueError("PresentMon produced no positive displayed-frame samples")
     return values
@@ -98,6 +124,33 @@ def summarize(samples: list[dict[str, Any]], frame_times: list[float]) -> dict[s
     }
 
 
+def _classify_process(
+    process: psutil.Process,
+    backend_pid: int | None,
+    candidates: dict[str, list[psutil.Process]],
+) -> None:
+    try:
+        name = process.name().casefold()
+        command = " ".join(process.cmdline()).casefold()
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        return
+    for role, expected in PROCESS_NAMES.items():
+        if name == expected:
+            candidates[role].append(process)
+    if name.startswith("python") and "ai_sims_server.py" in command and (
+        backend_pid is None or process.pid == backend_pid
+    ):
+        candidates["backend"].append(process)
+
+
+def _select_unique_process(role: str, matches: list[psutil.Process]) -> psutil.Process:
+    if not matches:
+        raise RuntimeError(f"{role} process is not running")
+    if len(matches) > 1:
+        raise RuntimeError(f"multiple {role} processes found")
+    return matches[0]
+
+
 def discover_processes(backend_pid: int | None = None) -> dict[str, psutil.Process]:
     candidates: dict[str, list[psutil.Process]] = {
         "sims": [],
@@ -105,27 +158,11 @@ def discover_processes(backend_pid: int | None = None) -> dict[str, psutil.Proce
         "provider": [],
     }
     for process in psutil.process_iter(["pid", "name", "cmdline"]):
-        try:
-            name = process.name().casefold()
-            command = " ".join(process.cmdline()).casefold()
-        except (psutil.AccessDenied, psutil.NoSuchProcess):
-            continue
-        for role, expected in PROCESS_NAMES.items():
-            if name == expected:
-                candidates[role].append(process)
-        if name.startswith("python") and "ai_sims_server.py" in command and (
-            backend_pid is None or process.pid == backend_pid
-        ):
-            candidates["backend"].append(process)
+        _classify_process(process, backend_pid, candidates)
 
-    result = {}
-    for role, matches in candidates.items():
-        if not matches:
-            raise RuntimeError(f"{role} process is not running")
-        if len(matches) > 1:
-            raise RuntimeError(f"multiple {role} processes found")
-        result[role] = matches[0]
-    return result
+    return {
+        role: _select_unique_process(role, matches) for role, matches in candidates.items()
+    }
 
 
 def gpu_sample() -> dict[str, float]:
@@ -254,15 +291,7 @@ def stop_presentmon(process: subprocess.Popen[str], session: str) -> None:
             process.wait(timeout=10)
 
 
-def capture(
-    base_url: str,
-    csv_path: Path,
-    *,
-    interval: float = 0.25,
-    timeout: float = 180,
-    backend_pid: int | None = None,
-) -> dict[str, object]:
-    base_url = base_url.rstrip("/")
+def _validate_initial_state(base_url: str) -> tuple[dict[str, Any], set[str], str]:
     health_url = base_url + "/health"
     queue_url = base_url + "/diagnostics/cognition-queue"
     initial_health = request_json("GET", health_url, timeout=10)
@@ -280,83 +309,105 @@ def capture(
         for item in initial_queue.get("recent") or []
         if item.get("request_id")
     }
+    return initial_health, baseline_ids, queue_url
 
-    processes = discover_processes(backend_pid)
-    psutil.cpu_percent()
-    for process in processes.values():
-        process.cpu_percent()
 
-    presentmon, session = start_presentmon(processes["sims"].pid, csv_path)
+def _check_single_new_request(recent: list[dict[str, Any]], baseline_ids: set[str]) -> None:
+    new_player_ids = {
+        str(item["request_id"])
+        for item in recent
+        if item.get("event_type") == "player_conversation"
+        and item.get("request_id")
+        and str(item["request_id"]) not in baseline_ids
+    }
+    if len(new_player_ids) > 1:
+        raise RuntimeError("multiple Empneon Social requests observed")
+
+
+def _find_started_request(
+    recent: list[dict[str, Any]], baseline_ids: set[str]
+) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in recent
+            if item.get("event_type") == "player_conversation"
+            and item.get("state") in {"submitted", "started"}
+            and str(item.get("request_id") or "") not in baseline_ids
+        ),
+        None,
+    )
+
+
+def _find_completed_request(
+    recent: list[dict[str, Any]], request_id: str
+) -> dict[str, Any] | None:
+    return next(
+        (
+            item
+            for item in recent
+            if request_id
+            and item.get("request_id") == request_id
+            and item.get("state") == "completed"
+        ),
+        None,
+    )
+
+
+def _await_social_completion(
+    presentmon: subprocess.Popen[str],
+    queue_url: str,
+    processes: dict[str, psutil.Process],
+    started: float,
+    deadline: float,
+    interval: float,
+    baseline_ids: set[str],
+) -> tuple[list[dict[str, object]], float, int, str, float]:
+    time.sleep(0.1)
+    if presentmon.poll() is not None:
+        raise RuntimeError(
+            "PresentMon exited during startup; run capture from an elevated terminal"
+        )
+    print("ARMED: trigger one Empneon Social and wait for its reply.", flush=True)
     samples: list[dict[str, object]] = []
-    started = time.monotonic()
-    deadline = started + timeout
     request_started: float | None = None
     request_sample_index: int | None = None
     request_id = ""
-    try:
-        time.sleep(0.1)
-        if presentmon.poll() is not None:
-            raise RuntimeError(
-                "PresentMon exited during startup; run capture from an elevated terminal"
-            )
-        print("ARMED: trigger one Empneon Social and wait for its reply.", flush=True)
-        while time.monotonic() < deadline:
-            queue = request_json("GET", queue_url, timeout=10)
-            recent = queue.get("recent") or []
-            new_player_ids = {
-                str(item["request_id"])
-                for item in recent
-                if item.get("event_type") == "player_conversation"
-                and item.get("request_id")
-                and str(item["request_id"]) not in baseline_ids
-            }
-            if len(new_player_ids) > 1:
-                raise RuntimeError("multiple Empneon Social requests observed")
-            sample = resource_sample(processes)
-            sample["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)
-            samples.append(sample)
-            if request_started is None:
-                entry = next(
-                    (
-                        item
-                        for item in recent
-                        if item.get("event_type") == "player_conversation"
-                        and item.get("state") in {"submitted", "started"}
-                        and str(item.get("request_id") or "") not in baseline_ids
-                    ),
-                    None,
-                )
-                if entry is not None:
-                    request_started = time.monotonic()
-                    request_sample_index = len(samples) - 1
-                    request_id = str(entry["request_id"])
-            completed_entry = next(
-                (
-                    item
-                    for item in recent
-                    if request_id
-                    and item.get("request_id") == request_id
-                    and item.get("state") == "completed"
-                ),
-                None,
-            )
-            if request_started is not None and completed_entry is not None:
-                completed = time.monotonic()
-                break
-            time.sleep(interval)
-        else:
-            if request_started is None:
-                raise TimeoutError("no Empneon Social began before timeout")
-            raise TimeoutError("Empneon Social did not complete before timeout")
-    finally:
-        stop_presentmon(presentmon, session)
+    while time.monotonic() < deadline:
+        queue = request_json("GET", queue_url, timeout=10)
+        recent = queue.get("recent") or []
+        _check_single_new_request(recent, baseline_ids)
+        sample = resource_sample(processes)
+        sample["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)
+        samples.append(sample)
+        if request_started is None:
+            entry = _find_started_request(recent, baseline_ids)
+            if entry is not None:
+                request_started = time.monotonic()
+                request_sample_index = len(samples) - 1
+                request_id = str(entry["request_id"])
+        completed_entry = _find_completed_request(recent, request_id)
+        if request_started is not None and completed_entry is not None:
+            return samples, request_started, request_sample_index, request_id, time.monotonic()
+        time.sleep(interval)
+    if request_started is None:
+        raise TimeoutError("no Empneon Social began before timeout")
+    raise TimeoutError("Empneon Social did not complete before timeout")
 
-    frame_times = parse_presentmon(
-        csv_path,
-        start_seconds=request_started - started,
-        end_seconds=completed - started,
-    )
-    request_samples = samples[request_sample_index:]
+
+def _build_capture_report(
+    base_url: str,
+    initial_health: dict[str, Any],
+    processes: dict[str, psutil.Process],
+    interval: float,
+    timeout: float,
+    request_id: str,
+    started: float,
+    request_started: float,
+    completed: float,
+    samples: list[dict[str, object]],
+    summary: dict[str, object],
+) -> dict[str, object]:
     return {
         "status": "passed",
         "captured_at": datetime.now(UTC).isoformat(),
@@ -365,7 +416,7 @@ def capture(
             for key in ("status", "provider", "model", "active_agent_limit")
         },
         "configuration": {
-            "base_url": base_url.rstrip("/"),
+            "base_url": base_url,
             "sample_interval_seconds": interval,
             "timeout_seconds": timeout,
             "provider": initial_health.get("provider"),
@@ -383,8 +434,58 @@ def capture(
             "duration_ms": round((completed - request_started) * 1000, 3),
         },
         "samples": samples,
-        "summary": summarize(request_samples, frame_times),
+        "summary": summary,
     }
+
+
+def capture(
+    base_url: str,
+    csv_path: Path,
+    *,
+    interval: float = 0.25,
+    timeout: float = 180,
+    backend_pid: int | None = None,
+) -> dict[str, object]:
+    base_url = base_url.rstrip("/")
+    initial_health, baseline_ids, queue_url = _validate_initial_state(base_url)
+
+    processes = discover_processes(backend_pid)
+    psutil.cpu_percent()
+    for process in processes.values():
+        process.cpu_percent()
+
+    presentmon, session = start_presentmon(processes["sims"].pid, csv_path)
+    started = time.monotonic()
+    deadline = started + timeout
+    try:
+        samples, request_started, request_sample_index, request_id, completed = (
+            _await_social_completion(
+                presentmon, queue_url, processes, started, deadline, interval, baseline_ids
+            )
+        )
+    finally:
+        stop_presentmon(presentmon, session)
+
+    frame_times = parse_presentmon(
+        csv_path,
+        start_seconds=request_started - started,
+        end_seconds=completed - started,
+    )
+    request_samples = samples[request_sample_index:]
+    summary = summarize(request_samples, frame_times)
+    return _build_capture_report(
+        base_url,
+        initial_health,
+        processes,
+        interval,
+        timeout,
+        request_id,
+        started,
+        request_started,
+        completed,
+        samples,
+        summary,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
