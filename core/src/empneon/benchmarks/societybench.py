@@ -279,7 +279,7 @@ async def measure_baselines(
     """Run one forced provider call per agent and the provider-free fixed CLOD 1 path."""
     # A generator here would be an async generator (breaks tuple()) since it awaits inside
     one_call = tuple(
-        [await resolver(replace(request, preferred_clod=3)) for request in scenario.requests]  # NOSONAR
+        [await resolver(replace(req, preferred_clod=3)) for req in scenario.requests]  # NOSONAR
     )
     fixed_clod = tuple(resolve_clod1(request) for request in scenario.requests)
     return (
