@@ -6,20 +6,26 @@ make documented breaking changes.
 
 ## Install and build
 
-Install a checkout for development:
+Install the released package from PyPI:
 
 ```console
-pip install -e ".[dev]"
+pip install empneon
 ```
 
-Build the wheel and source distribution:
+Install a checkout for development (Core lives in `core/`):
 
 ```console
+pip install -e "core[dev]"
+```
+
+Build the Core wheel and source distribution:
+
+```console
+cd core
 python -m build
 ```
 
-CI builds both artifacts on every pull request and push to `main`. Empneon is not yet
-published to a package registry.
+CI builds the Core and adapter artifacts on every pull request and push to `main`.
 
 ## Supported Python API
 
@@ -27,10 +33,10 @@ The names exported by `empneon.__all__` are the supported top-level API:
 
 | Area | Imports |
 |---|---|
-| Contracts | `WorldEvent`, `CognitiveRequest`, `Decision`, `StateDelta`, `ActionResult` |
+| Contracts | `WorldEvent`, `CognitiveRequest`, `Decision`, `StateDelta`, `ActionResult`, `AgentStateSnapshot` |
 | Runtime | `CognitiveRuntime`, `ActionRecordStore`, `GameAdapter` |
 | Resources | `ResourceBudget`, `ResourceEstimate`, `ResourceGovernor`, `UsageStore` |
-| Persistence and inspection | `open_db`, `db_session`, `agent_timeline`, `replay_action_record` |
+| Persistence and inspection | `open_db`, `db_session`, `load_agent_state`, `save_agent_state`, `agent_timeline`, `replay_action_record` |
 
 Provider integrations use the supported `empneon.providers.llm` namespace. Its
 `__all__` declares the provider protocol, request/result types, capabilities,

@@ -42,12 +42,17 @@ No exceptions. Performance budgets matter — target hardware is Ryzen 7 4800H +
 ## Before submitting a PR
 
 ```bash
-ruff check core/src core/tests adapters tests
+ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests \
+  adapters/godot/src adapters/godot/tests tests scripts/release.py scripts/test_release.py
 mypy core/src adapters/thesims4/src adapters/godot/src
-pytest core adapters tests
+(cd core && pytest)
+(cd adapters/thesims4 && pytest)
+(cd adapters/godot && pytest)
+pytest tests
+pytest scripts/test_release.py
 ```
 
-All three must pass. CI enforces this.
+All of these must pass. CI enforces this (see `.github/workflows/ci.yml`).
 
 ## PR scope
 
