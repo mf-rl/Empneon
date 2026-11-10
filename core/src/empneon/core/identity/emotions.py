@@ -57,12 +57,13 @@ class EmotionalStateStore:
         ).fetchall()
         return [_to_state(r) for r in rows]
 
-    def delete(self, agent_id: str, emotion: str) -> None:
+    def delete(self, agent_id: str, emotion: str, *, commit: bool = True) -> None:
         self._conn.execute(
             "DELETE FROM emotional_states WHERE agent_id=? AND emotion=?",
             (agent_id, emotion),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
 
 def _to_state(row: sqlite3.Row) -> EmotionalState:

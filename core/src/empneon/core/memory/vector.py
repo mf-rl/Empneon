@@ -3,6 +3,7 @@
 import re
 import sqlite3
 import struct
+from contextlib import AbstractContextManager, nullcontext
 
 import sqlite_vec  # type: ignore[import-untyped]
 
@@ -42,25 +43,24 @@ class VectorMemoryStore:
         self, event_id: str, embedding: list[float], *, commit: bool = True
     ) -> None:
         packed = self._pack(embedding)
-        row = self._conn.execute(
-            "SELECT rowid FROM vec_memory_index WHERE event_id=?", (event_id,)
-        ).fetchone()
-        if row is not None:
-            rowid = row[0]
-            self._conn.execute("DELETE FROM vec_memories WHERE rowid=?", (rowid,))
-            self._conn.execute(
-                "INSERT INTO vec_memories(rowid, embedding) VALUES (?,?)", (rowid, packed)
-            )
-        else:
-            cursor = self._conn.execute(
-                "INSERT INTO vec_memory_index(event_id) VALUES (?)", (event_id,)
-            )
-            self._conn.execute(
-                "INSERT INTO vec_memories(rowid, embedding) VALUES (?,?)",
-                (cursor.lastrowid, packed),
-            )
-        if commit:
-            self._conn.commit()
+        with self._unit(commit):
+            row = self._conn.execute(
+                "SELECT rowid FROM vec_memory_index WHERE event_id=?", (event_id,)
+            ).fetchone()
+            if row is not None:
+                rowid = row[0]
+                self._conn.execute("DELETE FROM vec_memories WHERE rowid=?", (rowid,))
+                self._conn.execute(
+                    "INSERT INTO vec_memories(rowid, embedding) VALUES (?,?)", (rowid, packed)
+                )
+            else:
+                cursor = self._conn.execute(
+                    "INSERT INTO vec_memory_index(event_id) VALUES (?)", (event_id,)
+                )
+                self._conn.execute(
+                    "INSERT INTO vec_memories(rowid, embedding) VALUES (?,?)",
+                    (cursor.lastrowid, packed),
+                )
 
     def search(self, query_embedding: list[float], limit: int = 10) -> list[tuple[str, float]]:
         """Return (event_id, distance) pairs ordered by distance ascending."""
@@ -81,14 +81,20 @@ class VectorMemoryStore:
         event_ids = {r[0]: r[1] for r in idx_rows}
         return [(event_ids[r[0]], r[1]) for r in rows]
 
-    def delete(self, event_id: str) -> None:
-        row = self._conn.execute(
-            "SELECT rowid FROM vec_memory_index WHERE event_id=?", (event_id,)
-        ).fetchone()
-        if row is not None:
-            self._conn.execute("DELETE FROM vec_memories WHERE rowid=?", (row[0],))
-            self._conn.execute("DELETE FROM vec_memory_index WHERE event_id=?", (event_id,))
-            self._conn.commit()
+    def delete(self, event_id: str, *, commit: bool = True) -> None:
+        with self._unit(commit):
+            row = self._conn.execute(
+                "SELECT rowid FROM vec_memory_index WHERE event_id=?", (event_id,)
+            ).fetchone()
+            if row is not None:
+                self._conn.execute("DELETE FROM vec_memories WHERE rowid=?", (row[0],))
+                self._conn.execute(
+                    "DELETE FROM vec_memory_index WHERE event_id=?", (event_id,)
+                )
+
+    def _unit(self, commit: bool) -> AbstractContextManager[object]:
+        """Commit or roll back on exit when this store owns the transaction."""
+        return self._conn if commit else nullcontext()
 
     def _pack(self, embedding: list[float]) -> bytes:
         if len(embedding) != self._dim:

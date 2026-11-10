@@ -50,12 +50,13 @@ class VoiceProfileStore:
         ).fetchone()
         return _to_profile(row) if row is not None else None
 
-    def delete(self, agent_id: str) -> None:
+    def delete(self, agent_id: str, *, commit: bool = True) -> None:
         self._conn.execute(
             "DELETE FROM voice_profiles WHERE agent_id=?",
             (agent_id,),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
 
 def _to_profile(row: sqlite3.Row) -> VoiceProfile:

@@ -54,9 +54,10 @@ class AgentStore:
             self._conn.commit()
         return agent
 
-    def delete(self, agent_id: str) -> None:
+    def delete(self, agent_id: str, *, commit: bool = True) -> None:
         self._conn.execute("DELETE FROM agents WHERE id=?", (agent_id,))
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def list_all(self) -> list[Agent]:
         rows = self._conn.execute("SELECT * FROM agents ORDER BY name").fetchall()
