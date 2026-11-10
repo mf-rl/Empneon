@@ -126,7 +126,7 @@ available model.
 
 `ResourceGovernor` admits declared RAM, VRAM, concurrency, token, and latency estimates.
 `select_cognition` chooses an affordable route and falls back to deterministic CLOD 1 when no route
-fits or provider execution fails. These declared estimates are admission controls, not live
+fits, provider execution fails, or model output is invalid. These declared estimates are admission controls, not live
 hardware monitoring.
 
 ## Memory and grounding
