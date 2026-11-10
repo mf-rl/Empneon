@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from empneon.providers.llm.base import (
     ModelCapabilities,
     ProviderError,
 )
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,12 +34,14 @@ class OpenAICompatibleProvider:
         try:
             return await asyncio.to_thread(self._generate, request)
         except (MemoryError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+            _log.warning("OpenAI-compatible generation failed: %s", type(exc).__name__)
             raise ProviderError("OpenAI-compatible generation failed") from exc
 
     async def health_check(self) -> bool:
         try:
             await asyncio.to_thread(self._request, "/models")
-        except (MemoryError, OSError, ValueError, KeyError):
+        except (MemoryError, OSError, ValueError, KeyError) as exc:
+            _log.debug("OpenAI-compatible health check failed: %s", type(exc).__name__)
             return False
         return True
 

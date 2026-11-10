@@ -1,5 +1,7 @@
 """Supported public API for the Empneon cognitive runtime."""
 
+import logging
+
 from empneon.core.contracts import (
     ActionResult,
     AgentStateSnapshot,
@@ -16,6 +18,8 @@ from empneon.core.scheduler.usage import UsageStore
 from empneon.core.state import load_agent_state, save_agent_state
 from empneon.core.timeline import agent_timeline
 from empneon.db.connection import db_session, open_db
+
+logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __version__ = "0.4.0"
 

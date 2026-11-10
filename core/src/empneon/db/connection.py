@@ -1,11 +1,14 @@
 """SQLite connection factory with schema initialization."""
 
+import logging
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 from empneon.db.schema import ALL_DDL, MIGRATIONS, SCHEMA_VERSION
+
+_log = logging.getLogger(__name__)
 
 
 def open_db(path: str | Path) -> sqlite3.Connection:
@@ -54,6 +57,7 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
                 f"database schema {current_version} is newer than runtime schema {SCHEMA_VERSION}"
             )
 
+        started_at = current_version
         while current_version < SCHEMA_VERSION:
             target_version = current_version + 1
             migration = MIGRATIONS.get(target_version)
@@ -65,6 +69,8 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
             current_version = target_version
 
         conn.commit()
+        if current_version > started_at:
+            _log.info("database schema migrated from %d to %d", started_at, current_version)
     except Exception:
         conn.rollback()
         raise

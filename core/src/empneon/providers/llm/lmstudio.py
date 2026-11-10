@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from empneon.providers.llm.base import (
 )
 
 API_V1_PREFIX = "/api/v1"
+_log = logging.getLogger(__name__)
 
 
 def _extract_message_text(output: list[object]) -> str | None:
@@ -39,12 +41,14 @@ class LMStudioProvider:
         try:
             return await asyncio.to_thread(self._generate, request)
         except (MemoryError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+            _log.warning("LM Studio generation failed: %s", type(exc).__name__)
             raise ProviderError("LM Studio generation failed") from exc
 
     async def health_check(self) -> bool:
         try:
             await asyncio.to_thread(self._request, "/models")
-        except (MemoryError, OSError, ValueError, KeyError):
+        except (MemoryError, OSError, ValueError, KeyError) as exc:
+            _log.debug("LM Studio health check failed: %s", type(exc).__name__)
             return False
         return True
 

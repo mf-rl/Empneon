@@ -53,6 +53,13 @@ empneon-regress path/to/fixture.json
 Other modules remain available for development, but paths not documented here or exported
 through these `__all__` lists are internal and may change without a compatibility shim.
 
+## Logging
+
+Core logs through the standard `logging` module under the `empneon` logger namespace and installs
+only a `NullHandler`, so applications choose handlers and levels. Records contain event metadata
+(degradation reasons, exception type names, schema migration versions) and never prompts, replies,
+API keys, or exception messages.
+
 ## Versioning
 
 Empneon follows Semantic Versioning. `empneon.__version__` is the single package-version
