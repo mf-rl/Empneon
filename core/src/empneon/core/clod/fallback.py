@@ -1,5 +1,6 @@
 """Deterministic degradation for unavailable expensive cognition."""
 
+import logging
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 
@@ -7,6 +8,8 @@ from empneon.core.clod.rules import resolve_clod1
 from empneon.core.contracts import CognitiveRequest, Decision
 from empneon.core.scheduler.resources import ResourceLimitExceeded
 from empneon.providers.llm import ProviderError
+
+_log = logging.getLogger(__name__)
 
 Resolver = Callable[[CognitiveRequest], Awaitable[Decision]]
 
@@ -48,6 +51,9 @@ async def resolve_with_fallback(
         reason = DegradationReason.BUDGET
     except ValueError:
         reason = DegradationReason.INVALID_OUTPUT
+    _log.warning(
+        "cognition degraded to CLOD 1: reason=%s preferred_clod=%d", reason, request.preferred_clod
+    )
     if on_degrade is not None:
         on_degrade(reason)
     return resolve_clod1(request)
