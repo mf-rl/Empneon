@@ -1,5 +1,6 @@
 """Vector similarity search for episodic memory — backed by sqlite-vec."""
 
+import re
 import sqlite3
 import struct
 
@@ -7,7 +8,11 @@ import sqlite_vec  # type: ignore[import-untyped]
 
 
 class VectorMemoryStore:
-    """Stores float embeddings keyed by event_id and supports cosine KNN search."""
+    """Stores float embeddings keyed by event_id and supports Euclidean (L2) KNN search.
+
+    Distances are sqlite-vec `vec0` defaults (L2). Normalize embeddings before storing if
+    cosine-equivalent ranking is required.
+    """
 
     def __init__(
         self, conn: sqlite3.Connection, dimensions: int = 384, *, commit: bool = True
@@ -17,6 +22,11 @@ class VectorMemoryStore:
         conn.enable_load_extension(True)
         sqlite_vec.load(conn)
         conn.enable_load_extension(False)
+        existing = _stored_dimensions(conn)
+        if existing is not None and existing != dimensions:
+            raise ValueError(
+                f"vec_memories has {existing} dimensions, requested {dimensions} dimensions"
+            )
         conn.execute(
             f"CREATE VIRTUAL TABLE IF NOT EXISTS vec_memories"
             f" USING vec0(embedding FLOAT[{dimensions}])"
@@ -68,7 +78,7 @@ class VectorMemoryStore:
             f"SELECT rowid, event_id FROM vec_memory_index WHERE rowid IN ({placeholders})",
             rowids,
         ).fetchall()
-        event_ids = {r["rowid"]: r["event_id"] for r in idx_rows}
+        event_ids = {r[0]: r[1] for r in idx_rows}
         return [(event_ids[r[0]], r[1]) for r in rows]
 
     def delete(self, event_id: str) -> None:
@@ -84,3 +94,11 @@ class VectorMemoryStore:
         if len(embedding) != self._dim:
             raise ValueError(f"expected {self._dim} dimensions, got {len(embedding)}")
         return struct.pack(f"{self._dim}f", *embedding)
+
+
+def _stored_dimensions(conn: sqlite3.Connection) -> int | None:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name='vec_memories'").fetchone()
+    if row is None:
+        return None
+    match = re.search(r"\[(\d+)\]", row[0])
+    return int(match.group(1)) if match else None
