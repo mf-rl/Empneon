@@ -66,6 +66,14 @@ integers remain accepted wherever a CLOD is expected. Store `get_for_agent(..., 
 must be positive: `0` and negative values raise `ValueError` (SQLite would otherwise treat a
 negative limit as unlimited).
 
+## Scheduling
+
+`empneon.core.scheduler.PriorityScheduler` is a bounded queue ordered by urgency, then deadline. A
+request past its deadline is never returned: `pop` raises `RequestDeadlineExceeded` (its `request`
+attribute is the expired request), `expire()` removes and returns all expired requests, and
+`submit` discards expired entries before reporting `SchedulerFull`, so stale work cannot block new
+requests.
+
 ## Logging
 
 Core logs through the standard `logging` module under the `empneon` logger namespace and installs
