@@ -41,7 +41,7 @@ The names exported by `empneon.__all__` are the supported top-level API:
 Provider integrations use the supported `empneon.providers.llm` namespace. Its
 `__all__` declares the provider protocol, request/result types, capabilities,
 native LM Studio and OpenAI-compatible implementations, configuration-driven router,
-and generation preparation helpers. Adapter-specific persistent extensions use
+and generation preparation helpers. `ProviderError.status` carries the HTTP status code when an endpoint returned one. Adapter-specific persistent extensions use
 `empneon.core.memory.documents.DocumentMemoryStore`; SQLite is the implemented backend.
 
 The supported command-line interface is:
