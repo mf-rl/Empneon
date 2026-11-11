@@ -28,6 +28,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+empneon = ["py.typed"]
+
 [tool.setuptools.dynamic]
 version = {attr = "empneon.__version__"}
 
