@@ -1,7 +1,9 @@
 """Minimal event-to-action cognitive runtime."""
 
+import asyncio
 import dataclasses
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass, replace
 from typing import cast
@@ -13,6 +15,8 @@ from empneon.core.ports import GameAdapter
 from empneon.core.scheduler.resources import ResourceEstimate, ResourceGovernor
 from empneon.core.scheduler.selection import CognitionRoute, select_cognition
 from empneon.db.query import validate_limit
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -150,9 +154,24 @@ class ActionRecordStore:
 
 
 class CognitiveRuntime:
-    def __init__(self, governor: ResourceGovernor, actions: ActionRecordStore) -> None:
+    """Runs the event -> decision -> action loop under resource admission.
+
+    With `enforce_deadlines=True`, a resolver that has not finished within the request's
+    `deadline_ms` is cancelled and cognition degrades to CLOD 1 (reason `timeout`). A provider
+    running in a worker thread keeps running until its own transport timeout; its result is
+    discarded. Enforcement is off by default so existing callers keep their behavior.
+    """
+
+    def __init__(
+        self,
+        governor: ResourceGovernor,
+        actions: ActionRecordStore,
+        *,
+        enforce_deadlines: bool = False,
+    ) -> None:
         self._governor = governor
         self._actions = actions
+        self._enforce_deadlines = enforce_deadlines
 
     async def process(
         self,
@@ -162,7 +181,13 @@ class CognitiveRuntime:
         estimate: ResourceEstimate = ResourceEstimate(),
     ) -> ActionRecord:
         decision = await self.decide(request, resolver, estimate)
-        result = adapter.execute(decision)
+        try:
+            result = adapter.execute(decision)
+        except Exception as exc:
+            _log.error("adapter execute failed: %s", type(exc).__name__)
+            result = ActionResult(
+                decision.id, "failed", reason=f"adapter raised {type(exc).__name__}"
+            )
         return self._actions.record(request.event.id, decision, result)
 
     async def decide(
@@ -173,7 +198,10 @@ class CognitiveRuntime:
     ) -> Decision:
         async def admitted(current: CognitiveRequest) -> Decision:
             with self._governor.reserve(estimate):
-                return await resolver(current)
+                if not self._enforce_deadlines:
+                    return await resolver(current)
+                async with asyncio.timeout(current.deadline_ms / 1000):
+                    return await resolver(current)
 
         return await resolve_with_fallback(request, admitted)
 

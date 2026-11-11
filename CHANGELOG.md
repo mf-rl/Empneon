@@ -15,12 +15,16 @@ API with migration notes.
 - Standard-library logging under the `empneon` logger namespace (`NullHandler` only; no prompts,
   replies, keys, or exception text are logged).
 - Keyword-only `commit` argument on every store mutator, so callers can own the transaction.
+- `CognitiveRuntime(enforce_deadlines=True)` enforces `deadline_ms` around the resolver and
+  degrades to CLOD 1 on timeout (default off).
 - `py.typed` marker so downstream type checkers use Core's inline types.
 - `CLAUDE.md` guide for AI coding agents and contributors.
 
 ### Changed
 - `resolve_with_fallback` degrades invalid model output (`ValueError`) to CLOD 1 instead of
   raising.
+- `CognitiveRuntime.process` records a `failed` result when `adapter.execute` raises, instead of
+  losing the decision.
 - `PriorityScheduler.submit` discards expired entries before reporting `SchedulerFull`.
 - LM Studio and OpenAI-compatible providers share one private HTTP transport.
 - `OpenAICompatibleProvider.api_key` is hidden from `repr()`.
