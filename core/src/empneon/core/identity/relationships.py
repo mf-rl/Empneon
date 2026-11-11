@@ -60,12 +60,13 @@ class RelationshipStore:
         ).fetchall()
         return [_to_rel(r) for r in rows]
 
-    def delete(self, agent_id: str, target_agent_id: str) -> None:
+    def delete(self, agent_id: str, target_agent_id: str, *, commit: bool = True) -> None:
         self._conn.execute(
             "DELETE FROM relationships WHERE agent_id=? AND target_agent_id=?",
             (agent_id, target_agent_id),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
 
 def _to_rel(row: sqlite3.Row) -> Relationship:

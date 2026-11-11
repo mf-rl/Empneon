@@ -53,6 +53,12 @@ empneon-regress path/to/fixture.json
 Other modules remain available for development, but paths not documented here or exported
 through these `__all__` lists are internal and may change without a compatibility shim.
 
+## Transactions
+
+Every Core store mutator accepts keyword-only `commit` (default `True`). With the default, the
+store commits (or rolls back on error) its own writes. Pass `commit=False` to join a transaction you
+own, then commit or roll back yourself. `import_agent` uses this to import atomically.
+
 ## Logging
 
 Core logs through the standard `logging` module under the `empneon` logger namespace and installs

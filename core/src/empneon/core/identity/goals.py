@@ -25,7 +25,7 @@ class GoalStore:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def create(self, goal: Goal) -> Goal:
+    def create(self, goal: Goal, *, commit: bool = True) -> Goal:
         now = int(time.time())
         goal.created_at = now
         goal.updated_at = now
@@ -43,7 +43,8 @@ class GoalStore:
                 goal.updated_at,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return goal
 
     def set(self, goal: Goal, *, commit: bool = True) -> Goal:
@@ -92,16 +93,18 @@ class GoalStore:
             ).fetchall()
         return [_to_goal(r) for r in rows]
 
-    def update_status(self, goal_id: str, status: str) -> None:
+    def update_status(self, goal_id: str, status: str, *, commit: bool = True) -> None:
         self._conn.execute(
             "UPDATE goals SET status=?, updated_at=? WHERE id=?",
             (status, int(time.time()), goal_id),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def delete(self, goal_id: str) -> None:
+    def delete(self, goal_id: str, *, commit: bool = True) -> None:
         self._conn.execute("DELETE FROM goals WHERE id=?", (goal_id,))
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
 
 def _to_goal(row: sqlite3.Row) -> Goal:

@@ -57,8 +57,9 @@ class DocumentMemoryStore:
             for row in self._conn.execute(query, args).fetchall()
         ]
 
-    def delete(self, namespace: str, key: str) -> None:
+    def delete(self, namespace: str, key: str, *, commit: bool = True) -> None:
         self._conn.execute(
             "DELETE FROM memory_documents WHERE namespace=? AND key=?", (namespace, key)
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()

@@ -5,6 +5,7 @@ import sqlite3
 import time
 import uuid
 from collections import deque
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
 from typing import Literal, cast
 
@@ -115,9 +116,10 @@ class EpisodicMemoryStore:
 
         return [_row_to_event(r, participants_by_event[r["id"]]) for r in rows]
 
-    def delete(self, event_id: str) -> None:
+    def delete(self, event_id: str, *, commit: bool = True) -> None:
         self._conn.execute("DELETE FROM events WHERE id=?", (event_id,))
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def _attach_participants(self, event: Event) -> Event:
         rows = self._conn.execute(
@@ -176,10 +178,12 @@ class BeliefStore:
         self._conn = conn
 
     def create(self, belief: Belief, *, commit: bool = True) -> Belief:
-        if commit:
-            with self._conn:
-                return self._insert(belief)
-        return self._insert(belief)
+        with self._unit(commit):
+            return self._insert(belief)
+
+    def _unit(self, commit: bool) -> AbstractContextManager[object]:
+        """Commit or roll back on exit when this store owns the transaction."""
+        return self._conn if commit else nullcontext()
 
     def _insert(self, belief: Belief) -> Belief:
         if belief.source_kind == "observation":
@@ -247,7 +251,9 @@ class BeliefStore:
         ).fetchall()
         return [_row_to_belief(row) for row in rows]
 
-    def record_contradiction(self, first_id: str, second_id: str, reason: str) -> None:
+    def record_contradiction(
+        self, first_id: str, second_id: str, reason: str, *, commit: bool = True
+    ) -> None:
         first = self.get(first_id)
         second = self.get(second_id)
         if first is None or second is None:
@@ -257,7 +263,7 @@ class BeliefStore:
         if not reason.strip():
             raise ValueError("contradiction reason must not be empty")
         belief_id, related_id = sorted((first_id, second_id))
-        with self._conn:
+        with self._unit(commit):
             self._conn.execute(
                 "INSERT OR IGNORE INTO belief_relations VALUES (?,?,?,?,?)",
                 (belief_id, related_id, "contradicts", reason, int(time.time())),
@@ -275,7 +281,9 @@ class BeliefStore:
         ).fetchall()
         return [_row_to_belief(row) for row in rows]
 
-    def revise(self, original_id: str, revision: Belief, reason: str) -> Belief:
+    def revise(
+        self, original_id: str, revision: Belief, reason: str, *, commit: bool = True
+    ) -> Belief:
         original = self.get(original_id)
         if original is None:
             raise ValueError("original belief does not exist")
@@ -285,7 +293,7 @@ class BeliefStore:
             raise ValueError("revision reason must not be empty")
         if self.get_revision(original_id) is not None:
             raise ValueError("belief has already been revised")
-        with self._conn:
+        with self._unit(commit):
             stored = self._insert(revision)
             self._conn.execute(
                 "INSERT INTO belief_relations VALUES (?,?,?,?,?)",
@@ -354,6 +362,7 @@ class BeliefStore:
         max_recipients: int = 20,
         min_confidence: float = 0.1,
         decay: float = 0.9,
+        commit: bool = True,
     ) -> list[Belief]:
         _validate_propagation_args(max_hops, max_recipients, min_confidence, decay)
         source = self.get(belief_id)
@@ -373,7 +382,7 @@ class BeliefStore:
         queue = deque([(source, 0)])
         propagated: list[Belief] = []
         # ponytail: first BFS path wins; rank competing paths if fidelity tests need it.
-        with self._conn:
+        with self._unit(commit):
             while queue and len(propagated) < max_recipients:
                 current, hops = queue.popleft()
                 if hops >= max_hops:

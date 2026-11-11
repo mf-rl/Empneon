@@ -42,6 +42,8 @@ class UsageStore:
         model: str,
         result: GenerationResult,
         clod: int,
+        *,
+        commit: bool = True,
     ) -> UsageRecord:
         record = UsageRecord(
             request.id,
@@ -81,7 +83,8 @@ class UsageStore:
                 record.clod,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return record
 
     def get_for_request(self, request_id: str) -> list[UsageRecord]:
