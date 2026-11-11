@@ -29,6 +29,7 @@ API with migration notes.
 - A malformed agent-state `schema_version` raises a clear `ValueError`.
 - `VectorMemoryStore` documents its Euclidean (L2) distance, rejects reopening a table with
   different dimensions, and no longer depends on `sqlite3.Row`.
+- CI runs on Python 3.11 and 3.12 and prints a Core coverage summary (not a gate).
 - `docs/api.md`, `CONTRIBUTING.md`, and `core/README.md` match the repository layout, PyPI
   distribution, and CI commands.
 
