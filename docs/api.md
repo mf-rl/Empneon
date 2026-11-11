@@ -74,6 +74,17 @@ attribute is the expired request), `expire()` removes and returns all expired re
 `submit` discards expired entries before reporting `SchedulerFull`, so stale work cannot block new
 requests.
 
+## Deadlines and failures
+
+`CognitiveRuntime(governor, actions, enforce_deadlines=True)` cancels a resolver that has not
+finished within the request's `deadline_ms` and degrades to CLOD 1 (degradation reason `timeout`).
+It is off by default. Cancellation always releases the governor reservation. A provider running in
+a worker thread continues until its own transport timeout and its result is discarded.
+
+If `adapter.execute` raises in `CognitiveRuntime.process`, Core records a `failed` result with the
+reason `adapter raised <ExceptionType>` and no applied changes, logs the exception type only, and
+returns that record. `asyncio.CancelledError` and other `BaseException`s still propagate.
+
 ## Logging
 
 Core logs through the standard `logging` module under the `empneon` logger namespace and installs
