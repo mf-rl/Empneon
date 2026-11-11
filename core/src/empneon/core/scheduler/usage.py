@@ -5,7 +5,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
-from empneon.core.contracts import CognitiveRequest
+from empneon.core.contracts import CognitiveRequest, validate_clod
 from empneon.core.scheduler.resources import ResourceEstimate
 from empneon.providers.llm import GenerationResult
 
@@ -26,8 +26,8 @@ class UsageRecord:
     recorded_at: int = field(default_factory=lambda: int(time.time()))
 
     def __post_init__(self) -> None:
-        if self.clod is not None and not 0 <= self.clod <= 4:
-            raise ValueError("selected CLOD must be between 0 and 4")
+        if self.clod is not None:
+            validate_clod(self.clod, "selected CLOD")
 
 
 class UsageStore:

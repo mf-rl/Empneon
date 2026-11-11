@@ -5,6 +5,7 @@ import logging
 from empneon.core.contracts import (
     ActionResult,
     AgentStateSnapshot,
+    Clod,
     CognitiveRequest,
     Decision,
     StateDelta,
@@ -27,6 +28,7 @@ __all__ = [
     "ActionRecordStore",
     "ActionResult",
     "AgentStateSnapshot",
+    "Clod",
     "CognitiveRequest",
     "CognitiveRuntime",
     "Decision",

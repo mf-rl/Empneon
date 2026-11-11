@@ -1,17 +1,16 @@
 """Deterministic degradation for unavailable expensive cognition."""
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from enum import StrEnum
 
 from empneon.core.clod.rules import resolve_clod1
 from empneon.core.contracts import CognitiveRequest, Decision
+from empneon.core.ports import Resolver
 from empneon.core.scheduler.resources import ResourceLimitExceeded
 from empneon.providers.llm import ProviderError
 
 _log = logging.getLogger(__name__)
-
-Resolver = Callable[[CognitiveRequest], Awaitable[Decision]]
 
 
 class DegradationReason(StrEnum):

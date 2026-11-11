@@ -33,7 +33,7 @@ The names exported by `empneon.__all__` are the supported top-level API:
 
 | Area | Imports |
 |---|---|
-| Contracts | `WorldEvent`, `CognitiveRequest`, `Decision`, `StateDelta`, `ActionResult`, `AgentStateSnapshot` |
+| Contracts | `WorldEvent`, `CognitiveRequest`, `Decision`, `StateDelta`, `ActionResult`, `AgentStateSnapshot`, `Clod` |
 | Runtime | `CognitiveRuntime`, `ActionRecordStore`, `GameAdapter` |
 | Resources | `ResourceBudget`, `ResourceEstimate`, `ResourceGovernor`, `UsageStore` |
 | Persistence and inspection | `open_db`, `db_session`, `load_agent_state`, `save_agent_state`, `agent_timeline`, `replay_action_record` |
@@ -58,6 +58,13 @@ through these `__all__` lists are internal and may change without a compatibilit
 Every Core store mutator accepts keyword-only `commit` (default `True`). With the default, the
 store commits (or rolls back on error) its own writes. Pass `commit=False` to join a transaction you
 own, then commit or roll back yourself. `import_agent` uses this to import atomically.
+
+## Levels and limits
+
+`Clod` is an `IntEnum` (`STATE`, `RULES`, `SMALL_MODEL`, `INTERACTIVE`, `CONSEQUENTIAL` = 0-4); plain
+integers remain accepted wherever a CLOD is expected. Store `get_for_agent(..., limit)` arguments
+must be positive: `0` and negative values raise `ValueError` (SQLite would otherwise treat a
+negative limit as unlimited).
 
 ## Logging
 
