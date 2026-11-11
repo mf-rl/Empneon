@@ -8,12 +8,17 @@ on:
 
 jobs:
   check:
+    name: check (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Install projects
         run: pip install -e "core[dev]" -e "adapters/thesims4[dev]" -e "adapters/godot[dev]"
       - name: Lint
@@ -21,7 +26,7 @@ jobs:
       - name: Type check
         run: mypy core/src adapters/thesims4/src adapters/godot/src
       - name: Test Core
-        run: pytest
+        run: pytest --cov=empneon --cov-config=../.coveragerc --cov-report=term-missing:skip-covered
         working-directory: core
       - name: Test The Sims 4 adapter
         run: pytest
