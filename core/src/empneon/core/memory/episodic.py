@@ -9,6 +9,8 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
 from typing import Literal, cast
 
+from empneon.db.query import validate_limit
+
 BeliefSourceKind = Literal["observation", "belief"]
 
 
@@ -89,6 +91,7 @@ class EpisodicMemoryStore:
         return self._attach_participants(_row_to_event(row, []))
 
     def get_for_agent(self, agent_id: str, limit: int | None = None) -> list[Event]:
+        validate_limit(limit)
         query = (
             "SELECT e.* FROM events e"
             " JOIN event_participants ep ON ep.event_id = e.id"
@@ -230,6 +233,7 @@ class BeliefStore:
         return None if row is None else _row_to_belief(row)
 
     def get_for_agent(self, agent_id: str, limit: int | None = None) -> list[Belief]:
+        validate_limit(limit)
         query = (
             "SELECT b.*, p.* FROM beliefs b JOIN belief_provenance p ON p.belief_id=b.id"
             " WHERE b.agent_id=? ORDER BY b.created_at DESC, b.id DESC"

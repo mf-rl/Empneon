@@ -12,6 +12,7 @@ from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, Sta
 from empneon.core.ports import GameAdapter
 from empneon.core.scheduler.resources import ResourceEstimate, ResourceGovernor
 from empneon.core.scheduler.selection import CognitionRoute, select_cognition
+from empneon.db.query import validate_limit
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,7 @@ class ActionRecordStore:
     def get_for_agent(
         self, agent_id: str, limit: int | None = None
     ) -> list[ActionRecord]:
+        validate_limit(limit)
         query = (
             "SELECT * FROM action_results WHERE actor_id=?"
             " ORDER BY completed_at DESC, decision_id DESC"

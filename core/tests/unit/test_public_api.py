@@ -9,6 +9,7 @@ def test_supported_api_and_version_source() -> None:
         "ActionRecordStore",
         "ActionResult",
         "AgentStateSnapshot",
+        "Clod",
         "CognitiveRequest",
         "CognitiveRuntime",
         "Decision",

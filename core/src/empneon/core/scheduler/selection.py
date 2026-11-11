@@ -1,13 +1,11 @@
 """Value- and budget-aware cognition route selection."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 
-from empneon.core.contracts import CognitiveRequest, Decision
+from empneon.core.contracts import CognitiveRequest
+from empneon.core.ports import Resolver
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
 from empneon.providers.llm import ModelCapabilities
-
-Resolver = Callable[[CognitiveRequest], Awaitable[Decision]]
 
 
 @dataclass(frozen=True)

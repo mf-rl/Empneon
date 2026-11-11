@@ -6,6 +6,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import Literal
 
 DeltaOperation = Literal["set", "increment", "append", "remove"]
@@ -20,12 +21,38 @@ SOCIAL_CATEGORIES: tuple[SocialCategory, ...] = (
 )
 
 
+class Clod(IntEnum):
+    """Cognitive Level of Detail. Plain ints are accepted wherever a level is expected."""
+
+    STATE = 0
+    RULES = 1
+    SMALL_MODEL = 2
+    INTERACTIVE = 3
+    CONSEQUENTIAL = 4
+
+
+def validate_clod(value: int, label: str = "CLOD") -> None:
+    """Raise ValueError unless `value` is a documented CLOD level (0 through 4)."""
+    if not Clod.STATE <= value <= Clod.CONSEQUENTIAL:
+        raise ValueError(f"{label} must be between {int(Clod.STATE)} and {int(Clod.CONSEQUENTIAL)}")
+
+
 def _mapping(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _integer(value: object) -> int:
-    return int(value) if isinstance(value, (str, bytes, int, float)) else 0
+def _schema_version(value: object) -> int:
+    """Return an integer schema version; a missing value is reported as 0 (unsupported)."""
+    if value is None:
+        return 0
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("agent state schema_version must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("agent state schema_version must be an integer")
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError("agent state schema_version must be an integer") from None
 
 
 def _items(value: object) -> list[object]:
@@ -114,7 +141,7 @@ class AgentStateSnapshot:
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "AgentStateSnapshot":
         return cls(
-            schema_version=_integer(value.get("schema_version")),
+            schema_version=_schema_version(value.get("schema_version")),
             adapter=str(value.get("adapter") or ""),
             agent_id=str(value.get("agent_id") or ""),
             affect=_mapping(value.get("affect")),
@@ -214,8 +241,7 @@ class CognitiveRequest:
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.agent_id.strip():
             raise ValueError("request id and agent_id must not be empty")
-        if not 0 <= self.preferred_clod <= 4:
-            raise ValueError("preferred_clod must be between 0 and 4")
+        validate_clod(self.preferred_clod, "preferred_clod")
         if not 0.0 <= self.urgency <= 1.0:
             raise ValueError("urgency must be between 0 and 1")
         if self.max_tokens <= 0 or self.max_context_tokens < 0 or self.deadline_ms <= 0:
