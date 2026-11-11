@@ -1,21 +1,17 @@
 """LM Studio native chat transport."""
 
-import asyncio
-import json
-import logging
 import time
-import urllib.request
 from dataclasses import dataclass
 
-from empneon.providers.llm.base import (
-    GenerationRequest,
-    GenerationResult,
-    ModelCapabilities,
-    ProviderError,
+from empneon.providers.llm._http import (
+    chat_completion_body,
+    guarded_generate,
+    guarded_health,
+    request_json,
 )
+from empneon.providers.llm.base import GenerationRequest, GenerationResult, ModelCapabilities
 
 API_V1_PREFIX = "/api/v1"
-_log = logging.getLogger(__name__)
 
 
 def _extract_message_text(output: list[object]) -> str | None:
@@ -38,19 +34,10 @@ class LMStudioProvider:
         return ModelCapabilities(structured_output=True, local=True)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        try:
-            return await asyncio.to_thread(self._generate, request)
-        except (MemoryError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
-            _log.warning("LM Studio generation failed: %s", type(exc).__name__)
-            raise ProviderError("LM Studio generation failed") from exc
+        return await guarded_generate("LM Studio", lambda: self._generate(request))
 
     async def health_check(self) -> bool:
-        try:
-            await asyncio.to_thread(self._request, "/models")
-        except (MemoryError, OSError, ValueError, KeyError) as exc:
-            _log.debug("LM Studio health check failed: %s", type(exc).__name__)
-            return False
-        return True
+        return await guarded_health("LM Studio", lambda: self._request("/models"))
 
     def _generate(self, request: GenerationRequest) -> GenerationResult:
         if request.schema is not None:
@@ -93,19 +80,7 @@ class LMStudioProvider:
         started = time.perf_counter()
         data = self._request(
             "/chat/completions",
-            {
-                "model": self._model_id(),
-                "messages": [
-                    {"role": message.role, "content": message.content}
-                    for message in request.messages
-                ],
-                "max_tokens": request.max_tokens,
-                "temperature": request.temperature,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": "response", "schema": request.schema},
-                },
-            },
+            chat_completion_body(self._model_id(), request),
             native=False,
         )
         choices = data.get("choices")
@@ -155,14 +130,9 @@ class LMStudioProvider:
         if root.endswith(API_V1_PREFIX):
             root = root[: -len(API_V1_PREFIX)]
         prefix = API_V1_PREFIX if native else "/v1"
-        request = urllib.request.Request(
-            f"{root}{prefix}{path}",
-            data=json.dumps(body).encode() if body is not None else None,
-            headers={"Content-Type": "application/json"},
-            method="POST" if body is not None else "GET",
+        value = request_json(
+            f"{root}{prefix}{path}", body=body, timeout=self.timeout_seconds
         )
-        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-            value = json.loads(response.read())
         if not isinstance(value, dict):
             raise ValueError("LM Studio returned a non-object response")
         return value

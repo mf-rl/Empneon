@@ -5,7 +5,11 @@ from typing import Protocol
 
 
 class ProviderError(RuntimeError):
-    pass
+    """Provider failure; `status` is the HTTP status code when the endpoint returned one."""
+
+    def __init__(self, message: str = "", *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass(frozen=True)

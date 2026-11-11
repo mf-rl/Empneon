@@ -1,28 +1,23 @@
 """OpenAI-compatible chat provider for local and hosted endpoints."""
 
-import asyncio
-import json
-import logging
 import time
-import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 
-from empneon.providers.llm.base import (
-    GenerationRequest,
-    GenerationResult,
-    ModelCapabilities,
-    ProviderError,
+from empneon.providers.llm._http import (
+    chat_completion_body,
+    guarded_generate,
+    guarded_health,
+    request_json,
 )
-
-_log = logging.getLogger(__name__)
+from empneon.providers.llm.base import GenerationRequest, GenerationResult, ModelCapabilities
 
 
 @dataclass(frozen=True)
 class OpenAICompatibleProvider:
     base_url: str
     model: str
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     timeout_seconds: float = 90
     local: bool = False
 
@@ -31,38 +26,14 @@ class OpenAICompatibleProvider:
         return ModelCapabilities(structured_output=True, local=self.local)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        try:
-            return await asyncio.to_thread(self._generate, request)
-        except (MemoryError, OSError, ValueError, KeyError, IndexError, TypeError) as exc:
-            _log.warning("OpenAI-compatible generation failed: %s", type(exc).__name__)
-            raise ProviderError("OpenAI-compatible generation failed") from exc
+        return await guarded_generate("OpenAI-compatible", lambda: self._generate(request))
 
     async def health_check(self) -> bool:
-        try:
-            await asyncio.to_thread(self._request, "/models")
-        except (MemoryError, OSError, ValueError, KeyError) as exc:
-            _log.debug("OpenAI-compatible health check failed: %s", type(exc).__name__)
-            return False
-        return True
+        return await guarded_health("OpenAI-compatible", lambda: self._request("/models"))
 
     def _generate(self, request: GenerationRequest) -> GenerationResult:
-        body: dict[str, object] = {
-            "model": self.model,
-            "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
-            ],
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-        }
-        if request.schema is not None:
-            body["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {"name": "response", "schema": request.schema},
-            }
-
         started = time.perf_counter()
-        data = self._request("/chat/completions", body)
+        data = self._request("/chat/completions", chat_completion_body(self.model, request))
         content = data["choices"][0]["message"]["content"]
         usage = data.get("usage", {})
         return GenerationResult(
@@ -73,14 +44,11 @@ class OpenAICompatibleProvider:
         )
 
     def _request(self, path: str, body: dict[str, object] | None = None) -> dict[str, Any]:
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        request = urllib.request.Request(
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else None
+        value = request_json(
             f"{self.base_url.rstrip('/')}{path}",
-            data=json.dumps(body).encode() if body is not None else None,
+            body=body,
             headers=headers,
-            method="POST" if body is not None else "GET",
+            timeout=self.timeout_seconds,
         )
-        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
-            return cast(dict[str, Any], json.loads(response.read()))
+        return cast(dict[str, Any], value)
