@@ -5,11 +5,25 @@ from typing import Protocol
 
 
 class ProviderError(RuntimeError):
-    """Provider failure; `status` is the HTTP status code when the endpoint returned one."""
+    """Provider failure.
 
-    def __init__(self, message: str = "", *, status: int | None = None) -> None:
+    `status` is the HTTP status code when the endpoint returned one. `retry_after` is the
+    server's `Retry-After` delay in seconds when it sent a usable one. `transport` is true for
+    connection-level failures (refused, reset, timed out) as opposed to HTTP or payload errors.
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        status: int | None = None,
+        retry_after: float | None = None,
+        transport: bool = False,
+    ) -> None:
         super().__init__(message)
         self.status = status
+        self.retry_after = retry_after
+        self.transport = transport
 
 
 @dataclass(frozen=True)

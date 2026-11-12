@@ -13,6 +13,7 @@ from empneon.providers.llm.base import (
 )
 from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
+from empneon.providers.llm.resilience import ResilientProvider, RetryPolicy
 
 
 class ConfiguredProviderRouter:
@@ -43,6 +44,12 @@ class ConfiguredProviderRouter:
 
     def provider_for(self, task: str) -> LLMProvider:
         config = self.config_for(task)
+        provider = self._build_provider(config)
+        if config.get("retry") is None:
+            return provider
+        return ResilientProvider(provider, RetryPolicy.from_mapping(config["retry"]))
+
+    def _build_provider(self, config: Mapping[str, object]) -> LLMProvider:
         provider_type = str(config["name"])
         args = (
             str(config["endpoint"]),

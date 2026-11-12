@@ -74,6 +74,23 @@ attribute is the expired request), `expire()` removes and returns all expired re
 `submit` discards expired entries before reporting `SchedulerFull`, so stale work cannot block new
 requests.
 
+## Provider resilience
+
+Retries are opt-in. Wrap any provider as `ResilientProvider(provider, RetryPolicy(...))`, or add a
+`retry` mapping to a provider or task entry in the `ConfiguredProviderRouter` configuration:
+
+```json
+{"retry": {"max_attempts": 3, "base_delay_s": 0.5, "max_delay_s": 8.0, "jitter": 0.2}}
+```
+
+`generate` is retried with exponential backoff and jitter on HTTP 408, 425, 429, 500, 502, 503,
+504 (override with `retry_statuses`) and on connection-level failures (`ProviderError.transport`).
+A server `Retry-After` in seconds is honored, capped at `max_delay_s` (`respect_retry_after`).
+Other HTTP statuses and malformed payloads are never retried, `health_check` is never retried,
+and cancellation stops retrying immediately. Unknown or mistyped `retry` keys raise `ValueError`.
+Without a `retry` block nothing changes. Total latency can reach `max_attempts` times the provider
+timeout plus the delays, so size `deadline_ms` accordingly.
+
 ## Deadlines and failures
 
 `CognitiveRuntime(governor, actions, enforce_deadlines=True)` cancels a resolver that has not

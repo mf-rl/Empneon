@@ -14,6 +14,7 @@ from empneon.providers.llm.preparation import (
     generate_requests,
     prepare_generation_requests,
 )
+from empneon.providers.llm.resilience import ResilientProvider, RetryPolicy
 
 __all__ = [
     "GenerationRequest",
@@ -26,6 +27,8 @@ __all__ = [
     "ModelCapabilities",
     "OpenAICompatibleProvider",
     "ProviderError",
+    "ResilientProvider",
+    "RetryPolicy",
     "generate_requests",
     "prepare_generation_requests",
 ]
