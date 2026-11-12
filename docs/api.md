@@ -108,6 +108,18 @@ accepts a `BreakerRegistry`; otherwise a lazily created process-wide registry is
 `BreakerRegistry.default().reset()` clears it (for tests or an operator reset). Compose directly
 with `ResilientProvider(provider, policy, breaker=CircuitBreaker(CircuitBreakerPolicy(...)))`.
 
+## Degradation telemetry
+
+`CognitiveRuntime(governor, actions, usage=UsageStore(conn))` persists every degradation to CLOD 1
+as a `core-rules` / `clod1` usage row with its `DegradationReason` (`provider_error`, `timeout`,
+`memory`, `budget`, `invalid_output`). `UsageStore.telemetry()` adds `by_degradation`, a count per
+reason (empty when there were none). Without `usage=` nothing is written. Recording failures are
+logged (exception type only) and never change the decision. A deliberate CLOD 1 choice, such as a
+request below the value threshold, is not a degradation and is not recorded. The Sims 4 adapter
+records its own usage rows and does not pass reasons yet. This needs database schema 13, which adds
+a nullable `cognition_usage.degradation_reason` column; migration is automatic and forward-only
+(see Database migrations).
+
 ## Deadlines and failures
 
 `CognitiveRuntime(governor, actions, enforce_deadlines=True)` cancels a resolver that has not

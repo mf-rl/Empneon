@@ -2,25 +2,14 @@
 
 import logging
 from collections.abc import Callable
-from enum import StrEnum
 
 from empneon.core.clod.rules import resolve_clod1
-from empneon.core.contracts import CognitiveRequest, Decision
+from empneon.core.contracts import CognitiveRequest, Decision, DegradationReason
 from empneon.core.ports import Resolver
 from empneon.core.scheduler.resources import ResourceLimitExceeded
 from empneon.providers.llm import ProviderError
 
 _log = logging.getLogger(__name__)
-
-
-class DegradationReason(StrEnum):
-    """Why expensive cognition degraded to the deterministic CLOD 1 rule."""
-
-    PROVIDER_ERROR = "provider_error"
-    TIMEOUT = "timeout"
-    MEMORY = "memory"
-    BUDGET = "budget"
-    INVALID_OUTPUT = "invalid_output"
 
 
 async def resolve_with_fallback(

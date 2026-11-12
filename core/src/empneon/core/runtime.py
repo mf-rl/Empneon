@@ -10,11 +10,19 @@ from typing import cast
 
 from empneon.core.clod.fallback import Resolver, resolve_with_fallback
 from empneon.core.clod.rules import resolve_clod1
-from empneon.core.contracts import ActionResult, CognitiveRequest, Decision, StateDelta
+from empneon.core.contracts import (
+    ActionResult,
+    CognitiveRequest,
+    Decision,
+    DegradationReason,
+    StateDelta,
+)
 from empneon.core.ports import GameAdapter
 from empneon.core.scheduler.resources import ResourceEstimate, ResourceGovernor
 from empneon.core.scheduler.selection import CognitionRoute, select_cognition
+from empneon.core.scheduler.usage import UsageStore
 from empneon.db.query import validate_limit
+from empneon.providers.llm import GenerationResult
 
 _log = logging.getLogger(__name__)
 
@@ -160,6 +168,9 @@ class CognitiveRuntime:
     `deadline_ms` is cancelled and cognition degrades to CLOD 1 (reason `timeout`). A provider
     running in a worker thread keeps running until its own transport timeout; its result is
     discarded. Enforcement is off by default so existing callers keep their behavior.
+
+    With a `usage` store, each degradation to CLOD 1 is persisted as a `core-rules` usage row
+    carrying its `DegradationReason`; recording failures are logged and never change the decision.
     """
 
     def __init__(
@@ -168,10 +179,12 @@ class CognitiveRuntime:
         actions: ActionRecordStore,
         *,
         enforce_deadlines: bool = False,
+        usage: UsageStore | None = None,
     ) -> None:
         self._governor = governor
         self._actions = actions
         self._enforce_deadlines = enforce_deadlines
+        self._usage = usage
 
     async def process(
         self,
@@ -203,7 +216,23 @@ class CognitiveRuntime:
                 async with asyncio.timeout(current.deadline_ms / 1000):
                     return await resolver(current)
 
-        return await resolve_with_fallback(request, admitted)
+        def record_degradation(reason: DegradationReason) -> None:
+            if self._usage is None:
+                return
+            try:
+                self._usage.record(
+                    request,
+                    estimate,
+                    "core-rules",
+                    "clod1",
+                    GenerationResult("", 0, 0, 0),
+                    1,
+                    degradation_reason=reason,
+                )
+            except Exception as exc:
+                _log.error("recording degradation failed: %s", type(exc).__name__)
+
+        return await resolve_with_fallback(request, admitted, on_degrade=record_degradation)
 
     async def decide_dynamic(
         self,

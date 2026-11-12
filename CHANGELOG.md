@@ -22,11 +22,17 @@ API with migration notes.
 - `CircuitBreaker`, `CircuitBreakerPolicy`, `BreakerRegistry`, and `CircuitOpenError`: opt-in
   circuit breaker for providers, enabled from a `circuit_breaker` config block and shared across
   per-call routers.
+- `CognitiveRuntime(usage=...)` persists degradations to CLOD 1 with their `DegradationReason`;
+  `UsageStore.record(degradation_reason=...)` and `UsageStore.telemetry()["by_degradation"]`.
+  `DegradationReason` now lives in `empneon.core.contracts` (still importable from
+  `empneon.core.clod`).
 - `ProviderError.retry_after` and `ProviderError.transport`.
 - `py.typed` marker so downstream type checkers use Core's inline types.
 - `CLAUDE.md` guide for AI coding agents and contributors.
 
 ### Changed
+- Database schema 13: nullable `cognition_usage.degradation_reason` column (automatic,
+  forward-only migration; back up the database and its `-wal`/`-shm` files first).
 - `resolve_with_fallback` degrades invalid model output (`ValueError`) to CLOD 1 instead of
   raising.
 - `CognitiveRuntime.process` records a `failed` result when `adapter.execute` raises, instead of
