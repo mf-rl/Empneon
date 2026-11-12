@@ -19,6 +19,9 @@ API with migration notes.
   degrades to CLOD 1 on timeout (default off).
 - `ResilientProvider` and `RetryPolicy` for opt-in retry with backoff, jitter, and `Retry-After`;
   `ConfiguredProviderRouter` enables it from a `retry` config block.
+- `CircuitBreaker`, `CircuitBreakerPolicy`, `BreakerRegistry`, and `CircuitOpenError`: opt-in
+  circuit breaker for providers, enabled from a `circuit_breaker` config block and shared across
+  per-call routers.
 - `ProviderError.retry_after` and `ProviderError.transport`.
 - `py.typed` marker so downstream type checkers use Core's inline types.
 - `CLAUDE.md` guide for AI coding agents and contributors.
