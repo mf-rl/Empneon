@@ -11,6 +11,7 @@ from empneon.providers.llm.base import (
     Message,
     ProviderError,
 )
+from empneon.providers.llm.breaker import BreakerRegistry, CircuitBreakerPolicy
 from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 from empneon.providers.llm.resilience import ResilientProvider, RetryPolicy
@@ -24,7 +25,9 @@ class ConfiguredProviderRouter:
         tasks: Mapping[str, Mapping[str, object]],
         *,
         api_key_env: str | None = None,
+        breakers: BreakerRegistry | None = None,
     ) -> None:
+        self._breakers = breakers
         self._default = default_provider
         self._providers = providers
         self._tasks = tasks
@@ -45,9 +48,18 @@ class ConfiguredProviderRouter:
     def provider_for(self, task: str) -> LLMProvider:
         config = self.config_for(task)
         provider = self._build_provider(config)
-        if config.get("retry") is None:
+        retry, breaker_config = config.get("retry"), config.get("circuit_breaker")
+        if retry is None and breaker_config is None:
             return provider
-        return ResilientProvider(provider, RetryPolicy.from_mapping(config["retry"]))
+        policy = (
+            RetryPolicy.from_mapping(retry) if retry is not None else RetryPolicy(max_attempts=1)
+        )
+        breaker = None
+        if breaker_config is not None:
+            registry = self._breakers or BreakerRegistry.default()
+            key = (config["name"], config["endpoint"], config["model"])
+            breaker = registry.get(key, CircuitBreakerPolicy.from_mapping(breaker_config))
+        return ResilientProvider(provider, policy, breaker=breaker)
 
     def _build_provider(self, config: Mapping[str, object]) -> LLMProvider:
         provider_type = str(config["name"])

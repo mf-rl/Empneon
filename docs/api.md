@@ -91,6 +91,23 @@ and cancellation stops retrying immediately. Unknown or mistyped `retry` keys ra
 Without a `retry` block nothing changes. Total latency can reach `max_attempts` times the provider
 timeout plus the delays, so size `deadline_ms` accordingly.
 
+### Circuit breaker
+
+Add a `circuit_breaker` mapping (alone or next to `retry`) to stop calling an endpoint that keeps
+failing: `{"circuit_breaker": {"failure_threshold": 5, "reset_timeout_s": 30.0}}` (those are the
+defaults for an empty block). After `failure_threshold` consecutive retry-exhausted transient
+failures the circuit opens and `generate` raises `CircuitOpenError` (a `ProviderError`) immediately,
+without calling the provider or sleeping, so the runtime degrades to CLOD 1 at once. After
+`reset_timeout_s` one probe call is allowed: success closes the circuit, failure reopens it for a
+full timeout. HTTP client errors and malformed payloads show the endpoint is responding and count as
+healthy. Without `retry`, a breaker-only config does not retry.
+
+Breaker state is shared per `(provider name, endpoint, model)` so it survives routers that are
+rebuilt for every call (as the Sims 4 adapter does). `ConfiguredProviderRouter(..., breakers=...)`
+accepts a `BreakerRegistry`; otherwise a lazily created process-wide registry is used and
+`BreakerRegistry.default().reset()` clears it (for tests or an operator reset). Compose directly
+with `ResilientProvider(provider, policy, breaker=CircuitBreaker(CircuitBreakerPolicy(...)))`.
+
 ## Deadlines and failures
 
 `CognitiveRuntime(governor, actions, enforce_deadlines=True)` cancels a resolver that has not

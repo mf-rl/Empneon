@@ -13,6 +13,7 @@ from empneon.providers.llm.base import (
     ModelCapabilities,
     ProviderError,
 )
+from empneon.providers.llm.breaker import CircuitBreaker
 
 _log = logging.getLogger(__name__)
 
@@ -104,6 +105,9 @@ def is_retryable(error: ProviderError, policy: RetryPolicy) -> bool:
 class ResilientProvider:
     """Wraps an `LLMProvider`, retrying transient `generate` failures per a `RetryPolicy`.
 
+    With a `breaker`, an open circuit raises `CircuitOpenError` without calling the provider or
+    retrying. One retry-exhausted transient failure counts once toward opening it; HTTP client
+    errors and malformed payloads show the endpoint is responding, so they count as healthy.
     `health_check` is a single probe and is never retried. `sleep` and `random` are injectable
     so tests need not wait.
     """
@@ -115,9 +119,11 @@ class ResilientProvider:
         *,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         random: Callable[[], float] = _random.random,
+        breaker: CircuitBreaker | None = None,
     ) -> None:
         self.inner = inner
         self.policy = policy
+        self.breaker = breaker
         self._sleep = sleep
         self._random = random
 
@@ -126,6 +132,24 @@ class ResilientProvider:
         return self.inner.capabilities
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
+        if self.breaker is None:
+            return await self._attempts(request)
+        self.breaker.acquire()
+        try:
+            result = await self._attempts(request)
+        except ProviderError as error:
+            if is_retryable(error, self.policy):
+                self.breaker.record_failure()
+            else:
+                self.breaker.record_success()
+            raise
+        except BaseException:
+            self.breaker.release()
+            raise
+        self.breaker.record_success()
+        return result
+
+    async def _attempts(self, request: GenerationRequest) -> GenerationResult:
         attempt = 1
         while True:
             try:
