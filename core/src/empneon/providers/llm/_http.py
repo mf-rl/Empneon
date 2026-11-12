@@ -55,6 +55,19 @@ def _status(exc: BaseException) -> int | None:
     return exc.code if isinstance(exc, urllib.error.HTTPError) else None
 
 
+def _retry_after(exc: BaseException) -> float | None:
+    """Return a non-negative `Retry-After` in seconds; HTTP-date values are ignored."""
+    if not isinstance(exc, urllib.error.HTTPError):
+        return None
+    value = str(exc.headers.get("Retry-After", "") if exc.headers else "").strip()
+    return float(value) if value.isdecimal() else None
+
+
+def _is_transport(exc: BaseException) -> bool:
+    """Connection-level failure: an OS error that is not an HTTP response."""
+    return isinstance(exc, OSError) and not isinstance(exc, urllib.error.HTTPError)
+
+
 async def guarded_generate(label: str, call: Callable[[], _T]) -> _T:
     """Run a blocking provider call in a thread and map transport failures to ProviderError.
 
@@ -65,7 +78,12 @@ async def guarded_generate(label: str, call: Callable[[], _T]) -> _T:
     except _TRANSPORT_ERRORS as exc:
         status = _status(exc)
         _log.warning("%s generation failed: %s status=%s", label, type(exc).__name__, status)
-        raise ProviderError(f"{label} generation failed", status=status) from exc
+        raise ProviderError(
+            f"{label} generation failed",
+            status=status,
+            retry_after=_retry_after(exc),
+            transport=_is_transport(exc),
+        ) from exc
 
 
 async def guarded_health(label: str, call: Callable[[], object]) -> bool:

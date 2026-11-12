@@ -17,6 +17,9 @@ API with migration notes.
 - Keyword-only `commit` argument on every store mutator, so callers can own the transaction.
 - `CognitiveRuntime(enforce_deadlines=True)` enforces `deadline_ms` around the resolver and
   degrades to CLOD 1 on timeout (default off).
+- `ResilientProvider` and `RetryPolicy` for opt-in retry with backoff, jitter, and `Retry-After`;
+  `ConfiguredProviderRouter` enables it from a `retry` config block.
+- `ProviderError.retry_after` and `ProviderError.transport`.
 - `py.typed` marker so downstream type checkers use Core's inline types.
 - `CLAUDE.md` guide for AI coding agents and contributors.
 
