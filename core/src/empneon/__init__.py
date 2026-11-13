@@ -2,6 +2,7 @@
 
 import logging
 
+from empneon.core.capabilities import validate_decision
 from empneon.core.contracts import (
     ActionResult,
     AgentStateSnapshot,
@@ -45,4 +46,5 @@ __all__ = [
     "open_db",
     "replay_action_record",
     "save_agent_state",
+    "validate_decision",
 ]

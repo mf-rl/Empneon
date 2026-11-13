@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass, replace
 from typing import cast
 
+from empneon.core.capabilities import validate_decision
 from empneon.core.clod.fallback import Resolver, resolve_with_fallback
 from empneon.core.clod.rules import resolve_clod1
 from empneon.core.contracts import (
@@ -194,6 +195,12 @@ class CognitiveRuntime:
         estimate: ResourceEstimate = ResourceEstimate(),
     ) -> ActionRecord:
         decision = await self.decide(request, resolver, estimate)
+        state = request.event.agent_state
+        rejection = validate_decision(decision, state.capabilities if state else None)
+        if rejection is not None:
+            _log.warning("decision rejected by capability check")
+            result = ActionResult(decision.id, "rejected", reason=rejection)
+            return self._actions.record(request.event.id, decision, result)
         try:
             result = adapter.execute(decision)
         except Exception as exc:

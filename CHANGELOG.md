@@ -22,6 +22,9 @@ API with migration notes.
 - `CircuitBreaker`, `CircuitBreakerPolicy`, `BreakerRegistry`, and `CircuitOpenError`: opt-in
   circuit breaker for providers, enabled from a `circuit_breaker` config block and shared across
   per-call routers.
+- `validate_decision` and optional `intents` / `state_paths` adapter capabilities:
+  `CognitiveRuntime.process` rejects decisions an adapter said it cannot execute, without calling
+  `execute`. Nothing changes for adapters that do not publish the keys.
 - `CognitiveRuntime(usage=...)` persists degradations to CLOD 1 with their `DegradationReason`;
   `UsageStore.record(degradation_reason=...)` and `UsageStore.telemetry()["by_degradation"]`.
   `DegradationReason` now lives in `empneon.core.contracts` (still importable from

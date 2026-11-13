@@ -34,7 +34,7 @@ The names exported by `empneon.__all__` are the supported top-level API:
 | Area | Imports |
 |---|---|
 | Contracts | `WorldEvent`, `CognitiveRequest`, `Decision`, `StateDelta`, `ActionResult`, `AgentStateSnapshot`, `Clod` |
-| Runtime | `CognitiveRuntime`, `ActionRecordStore`, `GameAdapter` |
+| Runtime | `CognitiveRuntime`, `ActionRecordStore`, `GameAdapter`, `validate_decision` |
 | Resources | `ResourceBudget`, `ResourceEstimate`, `ResourceGovernor`, `UsageStore` |
 | Persistence and inspection | `open_db`, `db_session`, `load_agent_state`, `save_agent_state`, `agent_timeline`, `replay_action_record` |
 
@@ -107,6 +107,19 @@ rebuilt for every call (as the Sims 4 adapter does). `ConfiguredProviderRouter(.
 accepts a `BreakerRegistry`; otherwise a lazily created process-wide registry is used and
 `BreakerRegistry.default().reset()` clears it (for tests or an operator reset). Compose directly
 with `ResilientProvider(provider, policy, breaker=CircuitBreaker(CircuitBreakerPolicy(...)))`.
+
+## Capability validation
+
+An adapter may publish two optional lists in `AgentStateSnapshot.capabilities`: `intents` (decision
+intents it can execute) and `state_paths` (allowed `StateDelta.path` roots, the text before the first
+`.`; `relationship` allows `relationship.strength`). A published key restricts, an empty list allows
+nothing, and an absent key allows everything. `CognitiveRuntime.process` checks each decision with
+`validate_decision(decision, capabilities)` before calling `adapter.execute`: a violation is
+recorded as a `rejected` result with the reason and `execute` is never called. Adapters that call
+`decide` themselves can use `validate_decision` directly. Malformed lists raise `ValueError` when the
+snapshot is built. The CLOD 1 fallback intent `acknowledge` is checked like any other, so include it
+in `intents` if fallbacks should execute. The `actions` capability (native action names) is not
+checked by Core.
 
 ## Degradation telemetry
 
