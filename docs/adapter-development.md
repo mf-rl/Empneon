@@ -43,6 +43,11 @@ from a game-specific number.
 | `StateDelta` | Map supported generic paths and reject unsupported paths safely |
 | `ActionResult` | Preserve the decision ID and report the confirmed status and changes |
 
+Optionally publish `capabilities["intents"]` (decision intents you can execute) and
+`capabilities["state_paths"]` (allowed state-path roots) in the snapshot so Core rejects unsupported
+decisions before `execute` (see `docs/api.md`, Capability validation). Keep your own checks in
+`execute`: Core's validation is a safety net, not a replacement.
+
 Rejected or failed actions require a reason. Rejected actions cannot claim applied changes.
 Never report success before the engine confirms the action.
 

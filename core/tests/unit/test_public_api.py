@@ -27,6 +27,7 @@ def test_supported_api_and_version_source() -> None:
         "open_db",
         "replay_action_record",
         "save_agent_state",
+        "validate_decision",
     }
     assert re.fullmatch(r"\d+\.\d+\.\d+(?:[.-]?(?:a|b|rc|dev)\d*)?", empneon.__version__)
     assert set(empneon.__all__) == expected

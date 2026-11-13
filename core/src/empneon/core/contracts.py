@@ -94,6 +94,18 @@ def _validate_social_context(facts: Mapping[str, object]) -> None:
         raise ValueError("event available social category is invalid")
 
 
+def validate_capability_lists(capabilities: Mapping[str, object]) -> None:
+    """Require published `intents` and `state_paths` to be lists of non-empty strings."""
+    for key in ("intents", "state_paths"):
+        value = capabilities.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, (list, tuple)) or any(
+            not isinstance(item, str) or not item.strip() for item in value
+        ):
+            raise ValueError(f"agent state capabilities.{key} must be a list of non-empty strings")
+
+
 def _validate_needs(needs: Mapping[str, object]) -> None:
     for need in needs.values():
         if not isinstance(need, Mapping):
@@ -143,6 +155,7 @@ class AgentStateSnapshot:
             if isinstance(effect, Mapping):
                 _bounded(effect, "intensity", 0.0, 1.0)
         _validate_relationships(self.relationships)
+        validate_capability_lists(self.capabilities)
         try:
             json.dumps(dataclasses.asdict(self), allow_nan=False)
         except (TypeError, ValueError) as exc:
