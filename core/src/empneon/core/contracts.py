@@ -6,7 +6,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Literal
 
 DeltaOperation = Literal["set", "increment", "append", "remove"]
@@ -29,6 +29,16 @@ class Clod(IntEnum):
     SMALL_MODEL = 2
     INTERACTIVE = 3
     CONSEQUENTIAL = 4
+
+
+class DegradationReason(StrEnum):
+    """Why expensive cognition degraded to the deterministic CLOD 1 rule."""
+
+    PROVIDER_ERROR = "provider_error"
+    TIMEOUT = "timeout"
+    MEMORY = "memory"
+    BUDGET = "budget"
+    INVALID_OUTPUT = "invalid_output"
 
 
 def validate_clod(value: int, label: str = "CLOD") -> None:

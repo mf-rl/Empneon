@@ -1,6 +1,6 @@
 import pytest
 
-from empneon.core.contracts import CognitiveRequest, WorldEvent
+from empneon.core.contracts import CognitiveRequest, DegradationReason, WorldEvent
 from empneon.core.scheduler.resources import ResourceEstimate
 from empneon.core.scheduler.usage import UsageStore
 from empneon.db.connection import open_db
@@ -79,3 +79,52 @@ def test_summarizes_resource_and_clod_telemetry() -> None:
             result,
             5,
         )
+
+
+def _record(store: UsageStore, agent: str, reason: DegradationReason | None) -> None:
+    request = CognitiveRequest(agent, 1, WorldEvent("event", id=f"event-{agent}-{reason}"))
+    store.record(
+        request,
+        ResourceEstimate(),
+        "core-rules",
+        "clod1",
+        GenerationResult("", 0, 0, 0),
+        1,
+        degradation_reason=reason,
+    )
+
+
+def test_degradation_reason_round_trips_and_defaults_to_none() -> None:
+    store = UsageStore(open_db(":memory:"))
+    request = CognitiveRequest("alice", 3, WorldEvent("event", id="event-1"))
+    plain = store.record(
+        request, ResourceEstimate(), "p", "m", GenerationResult("x", 1, 1, 1), 3
+    )
+    assert plain.degradation_reason is None
+
+    fallback = CognitiveRequest("alice", 3, WorldEvent("event", id="event-2"))
+    store.record(
+        fallback,
+        ResourceEstimate(),
+        "core-rules",
+        "clod1",
+        GenerationResult("", 0, 0, 0),
+        1,
+        degradation_reason=DegradationReason.TIMEOUT,
+    )
+    stored = store.get_for_request(fallback.id)[0]
+    assert stored.degradation_reason is DegradationReason.TIMEOUT
+
+
+def test_telemetry_counts_degradations_by_reason() -> None:
+    store = UsageStore(open_db(":memory:"))
+    assert store.telemetry()["by_degradation"] == {}
+
+    _record(store, "alice", DegradationReason.TIMEOUT)
+    _record(store, "alice", DegradationReason.PROVIDER_ERROR)
+    _record(store, "bob", DegradationReason.TIMEOUT)
+    _record(store, "bob", None)
+
+    assert store.telemetry()["by_degradation"] == {"timeout": 2, "provider_error": 1}
+    assert store.telemetry("alice")["by_degradation"] == {"timeout": 1, "provider_error": 1}
+    assert store.telemetry("bob")["by_degradation"] == {"timeout": 1}

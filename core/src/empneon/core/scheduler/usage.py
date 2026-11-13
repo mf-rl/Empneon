@@ -5,7 +5,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 
-from empneon.core.contracts import CognitiveRequest, validate_clod
+from empneon.core.contracts import CognitiveRequest, DegradationReason, validate_clod
 from empneon.core.scheduler.resources import ResourceEstimate
 from empneon.providers.llm import GenerationResult
 
@@ -24,6 +24,7 @@ class UsageRecord:
     latency_ms: int | None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     recorded_at: int = field(default_factory=lambda: int(time.time()))
+    degradation_reason: DegradationReason | None = None
 
     def __post_init__(self) -> None:
         if self.clod is not None:
@@ -44,6 +45,7 @@ class UsageStore:
         clod: int,
         *,
         commit: bool = True,
+        degradation_reason: DegradationReason | None = None,
     ) -> UsageRecord:
         record = UsageRecord(
             request.id,
@@ -56,14 +58,16 @@ class UsageStore:
             result.prompt_tokens,
             result.completion_tokens,
             result.latency_ms,
+            degradation_reason=degradation_reason,
         )
         self._conn.execute(
             "INSERT INTO cognition_usage ("
             "id, request_id, agent_id, event_id, provider, model,"
             "estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
             "estimated_completion_tokens, estimated_latency_ms, actual_prompt_tokens,"
-            "actual_completion_tokens, actual_latency_ms, recorded_at, selected_clod"
-            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "actual_completion_tokens, actual_latency_ms, recorded_at, selected_clod,"
+            "degradation_reason"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 record.id,
                 record.request_id,
@@ -81,6 +85,7 @@ class UsageStore:
                 record.latency_ms,
                 record.recorded_at,
                 record.clod,
+                record.degradation_reason,
             ),
         )
         if commit:
@@ -104,15 +109,20 @@ class UsageStore:
         records = [_to_record(row) for row in rows]
         clods: dict[str, int] = {}
         providers: dict[str, int] = {}
+        degradations: dict[str, int] = {}
         for record in records:
             clod = "unknown" if record.clod is None else str(record.clod)
             clods[clod] = clods.get(clod, 0) + 1
             providers[record.provider] = providers.get(record.provider, 0) + 1
+            if record.degradation_reason is not None:
+                reason = str(record.degradation_reason)
+                degradations[reason] = degradations.get(reason, 0) + 1
         return {
             "attempts": len(records),
             "requests": len({record.request_id for record in records}),
             "by_clod": clods,
             "by_provider": providers,
+            "by_degradation": degradations,
             "estimated": {
                 "peak_ram_mb": max((record.estimate.ram_mb for record in records), default=0),
                 "peak_vram_mb": max((record.estimate.vram_mb for record in records), default=0),
@@ -150,4 +160,9 @@ def _to_record(row: sqlite3.Row) -> UsageRecord:
         completion_tokens=row["actual_completion_tokens"],
         latency_ms=row["actual_latency_ms"],
         recorded_at=row["recorded_at"],
+        degradation_reason=(
+            DegradationReason(row["degradation_reason"])
+            if row["degradation_reason"] is not None
+            else None
+        ),
     )

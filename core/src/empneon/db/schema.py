@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -186,6 +186,13 @@ CREATE TABLE IF NOT EXISTS cognition_usage (
 _ADD_COGNITION_USAGE_SELECTED_CLOD = """
 ALTER TABLE cognition_usage
 ADD COLUMN selected_clod INTEGER CHECK(selected_clod BETWEEN 0 AND 4)
+"""
+
+_ADD_COGNITION_USAGE_DEGRADATION_REASON = """
+ALTER TABLE cognition_usage
+ADD COLUMN degradation_reason TEXT CHECK(
+    degradation_reason IN ('provider_error', 'timeout', 'memory', 'budget', 'invalid_output')
+)
 """
 
 _CREATE_ACTION_RESULTS = """
@@ -426,4 +433,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         " SET updated_at = CAST(updated_at / 1000000000 AS INTEGER)"
         " WHERE updated_at > 9999999999",
     ),
+    13: (_ADD_COGNITION_USAGE_DEGRADATION_REASON,),
 }

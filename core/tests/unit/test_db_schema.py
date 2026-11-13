@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from empneon.db.connection import _apply_schema, db_session, open_db
-from empneon.db.schema import ALL_DDL, SCHEMA_VERSION
+from empneon.db.schema import ALL_DDL, MIGRATIONS, SCHEMA_VERSION
 
 EXPECTED_TABLES = frozenset(
     {
@@ -355,3 +355,62 @@ def test_update_range_constraints(db: sqlite3.Connection) -> None:
     assert db.execute("SELECT neuroticism FROM personality WHERE agent_id=?", ("a1",)).fetchone()[
         0
     ] == pytest.approx(0.5)
+
+
+def _database_at_v12() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    for ddl in ALL_DDL:
+        conn.execute(ddl)
+    for version in range(2, 13):
+        for statement in MIGRATIONS[version]:
+            conn.execute(statement)
+    conn.execute("INSERT INTO schema_version VALUES (12)")
+    conn.execute(
+        "INSERT INTO cognition_usage (id, request_id, agent_id, event_id, provider, model,"
+        " estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
+        " estimated_completion_tokens, estimated_latency_ms, recorded_at, selected_clod)"
+        " VALUES ('usage-1','r','a','e','local','small',0,0,0,0,0,1,2)"
+    )
+    conn.commit()
+    return conn
+
+
+def test_migrates_v12_schema_with_degradation_reason() -> None:
+    conn = _database_at_v12()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(cognition_usage)")}
+    assert "degradation_reason" in columns
+    row = conn.execute("SELECT * FROM cognition_usage WHERE id='usage-1'").fetchone()
+    assert row["degradation_reason"] is None and row["selected_clod"] == 2
+
+
+def test_fresh_database_has_degradation_reason_column(db: sqlite3.Connection) -> None:
+    columns = {row[1] for row in db.execute("PRAGMA table_info(cognition_usage)")}
+    assert "degradation_reason" in columns
+
+
+@pytest.mark.parametrize(
+    "reason", ["provider_error", "timeout", "memory", "budget", "invalid_output"]
+)
+def test_degradation_reason_accepts_known_values(db: sqlite3.Connection, reason: str) -> None:
+    db.execute(
+        "INSERT INTO cognition_usage (id, request_id, agent_id, event_id, provider, model,"
+        " estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
+        " estimated_completion_tokens, estimated_latency_ms, recorded_at, degradation_reason)"
+        " VALUES (?,?,?,?,?,?,0,0,0,0,0,1,?)",
+        (f"u-{reason}", "r", "a", "e", "p", "m", reason),
+    )
+
+
+def test_degradation_reason_rejects_unknown_values(db: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO cognition_usage (id, request_id, agent_id, event_id, provider, model,"
+            " estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
+            " estimated_completion_tokens, estimated_latency_ms, recorded_at, degradation_reason)"
+            " VALUES ('u','r','a','e','p','m',0,0,0,0,0,1,'because')"
+        )
