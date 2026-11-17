@@ -3,8 +3,9 @@
 import asyncio
 import logging
 import random as _random
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from empneon.providers.llm.base import (
     GenerationRequest,
@@ -14,8 +15,10 @@ from empneon.providers.llm.base import (
     ProviderError,
 )
 from empneon.providers.llm.breaker import CircuitBreaker
+from empneon.providers.llm.embeddings import EmbeddingProvider, EmbeddingResult
 
 _log = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 DEFAULT_RETRY_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 _POLICY_KEYS = frozenset(
@@ -102,6 +105,67 @@ def is_retryable(error: ProviderError, policy: RetryPolicy) -> bool:
     return error.transport
 
 
+class _RetryingCaller:
+    """Runs one async call under a retry policy and an optional circuit breaker."""
+
+    def __init__(
+        self,
+        policy: RetryPolicy,
+        breaker: CircuitBreaker | None,
+        sleep: Callable[[float], Awaitable[None]],
+        random: Callable[[], float],
+    ) -> None:
+        self.policy = policy
+        self.breaker = breaker
+        self._sleep = sleep
+        self._random = random
+
+    async def run(self, call: Callable[[], Awaitable[_T]]) -> _T:
+        if self.breaker is None:
+            return await self._attempts(call)
+        self.breaker.acquire()
+        try:
+            result = await self._attempts(call)
+        except ProviderError as error:
+            if is_retryable(error, self.policy):
+                self.breaker.record_failure()
+            else:
+                self.breaker.record_success()
+            raise
+        except BaseException:
+            self.breaker.release()
+            raise
+        self.breaker.record_success()
+        return result
+
+    async def _attempts(self, call: Callable[[], Awaitable[_T]]) -> _T:
+        attempt = 1
+        while True:
+            try:
+                return await call()
+            except ProviderError as error:
+                if attempt >= self.policy.max_attempts or not is_retryable(error, self.policy):
+                    raise
+                delay = self._delay(attempt, error)
+                _log.warning(
+                    "provider call failed (status=%s); retrying in %.2fs (attempt %d/%d)",
+                    error.status,
+                    delay,
+                    attempt,
+                    self.policy.max_attempts,
+                )
+                await self._sleep(delay)
+                attempt += 1
+
+    def _delay(self, attempt: int, error: ProviderError) -> float:
+        policy = self.policy
+        if policy.respect_retry_after and error.retry_after is not None:
+            return min(error.retry_after, policy.max_delay_s)
+        delay = policy.base_delay_s * 2 ** (attempt - 1)
+        delay *= 1 + policy.jitter * (2 * self._random() - 1)
+        return min(delay, policy.max_delay_s)
+
+
 class ResilientProvider:
     """Wraps an `LLMProvider`, retrying transient `generate` failures per a `RetryPolicy`.
 
@@ -124,57 +188,38 @@ class ResilientProvider:
         self.inner = inner
         self.policy = policy
         self.breaker = breaker
-        self._sleep = sleep
-        self._random = random
+        self._caller = _RetryingCaller(policy, breaker, sleep, random)
 
     @property
     def capabilities(self) -> ModelCapabilities:
         return self.inner.capabilities
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
-        if self.breaker is None:
-            return await self._attempts(request)
-        self.breaker.acquire()
-        try:
-            result = await self._attempts(request)
-        except ProviderError as error:
-            if is_retryable(error, self.policy):
-                self.breaker.record_failure()
-            else:
-                self.breaker.record_success()
-            raise
-        except BaseException:
-            self.breaker.release()
-            raise
-        self.breaker.record_success()
-        return result
-
-    async def _attempts(self, request: GenerationRequest) -> GenerationResult:
-        attempt = 1
-        while True:
-            try:
-                return await self.inner.generate(request)
-            except ProviderError as error:
-                if attempt >= self.policy.max_attempts or not is_retryable(error, self.policy):
-                    raise
-                delay = self._delay(attempt, error)
-                _log.warning(
-                    "provider call failed (status=%s); retrying in %.2fs (attempt %d/%d)",
-                    error.status,
-                    delay,
-                    attempt,
-                    self.policy.max_attempts,
-                )
-                await self._sleep(delay)
-                attempt += 1
+        return await self._caller.run(lambda: self.inner.generate(request))
 
     async def health_check(self) -> bool:
         return await self.inner.health_check()
 
-    def _delay(self, attempt: int, error: ProviderError) -> float:
-        policy = self.policy
-        if policy.respect_retry_after and error.retry_after is not None:
-            return min(error.retry_after, policy.max_delay_s)
-        delay = policy.base_delay_s * 2 ** (attempt - 1)
-        delay *= 1 + policy.jitter * (2 * self._random() - 1)
-        return min(delay, policy.max_delay_s)
+
+class ResilientEmbeddingProvider:
+    """Wraps an `EmbeddingProvider` with the same retry and circuit-breaker rules."""
+
+    def __init__(
+        self,
+        inner: EmbeddingProvider,
+        policy: RetryPolicy,
+        *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        random: Callable[[], float] = _random.random,
+        breaker: CircuitBreaker | None = None,
+    ) -> None:
+        self.inner = inner
+        self.policy = policy
+        self.breaker = breaker
+        self._caller = _RetryingCaller(policy, breaker, sleep, random)
+
+    async def embed(self, texts: Sequence[str]) -> EmbeddingResult:
+        return await self._caller.run(lambda: self.inner.embed(texts))
+
+    async def health_check(self) -> bool:
+        return await self.inner.health_check()

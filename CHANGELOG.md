@@ -8,6 +8,10 @@ API with migration notes.
 ## [Unreleased]
 
 ### Added
+- `EmbeddingProvider`, `EmbeddingResult`, `OpenAICompatibleEmbeddingProvider`, and
+  `ResilientEmbeddingProvider`: opt-in embeddings (batching, L2 normalization, validated responses)
+  built with `ConfiguredProviderRouter.embedding_provider_for()` from an explicit `embedding` task,
+  with the same `retry` and `circuit_breaker` blocks as chat providers.
 - `Clod` `IntEnum` for the five cognitive levels; plain integers are still accepted.
 - `DegradationReason` and an optional `on_degrade` callback on `resolve_with_fallback`.
 - `ProviderError.status` (HTTP status code when an endpoint returned one).

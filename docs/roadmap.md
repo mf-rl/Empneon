@@ -70,7 +70,7 @@ feature promise.
   worker event loops, schema 12 timestamp normalization, caller-object-safe memory persistence,
   SQL-bounded timeline and recall result windows, and adversarial regressions for large recall
   queries without changing existing local defaults
-- Core robustness and developer experience (PRs #9-#23), all additive and default-off where they
+- Core robustness and developer experience (since 0.4.0), all additive and default-off where they
   change behavior: invalid model output and provider failures degrade to CLOD 1 with a typed
   `DegradationReason`, persisted in usage telemetry (schema 13) when a `UsageStore` is supplied;
   standard-library logging that never records content; caller-owned transactions through a
@@ -78,7 +78,8 @@ feature promise.
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
   block new requests; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
   breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter
-  failures; opt-in adapter capability validation (`intents`, `state_paths`); `py.typed`,
+  failures; an opt-in embeddings provider with retry and circuit breaker; opt-in adapter capability
+  validation (`intents`, `state_paths`); `py.typed`,
   `CHANGELOG.md`, `CLAUDE.md`, and a Python 3.11/3.12 CI matrix
 
 ## Next gates
@@ -100,7 +101,6 @@ feature promise.
 
 Each needs its own design and evidence before implementation:
 
-- an embeddings provider using the existing `ModelCapabilities.embeddings` flag;
 - streaming generation;
 - hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration;
 - memory consolidation and decay;
