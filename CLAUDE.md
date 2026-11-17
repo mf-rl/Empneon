@@ -29,7 +29,7 @@ pip install -e "core[dev]" -e "adapters/thesims4[dev]" -e "adapters/godot[dev]"
 ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests \
   adapters/godot/src adapters/godot/tests tests scripts/release.py scripts/test_release.py
 mypy core/src adapters/thesims4/src adapters/godot/src
-(cd core && pytest)
+(cd core && pytest --cov=empneon --cov-config=../.coveragerc --cov-fail-under=90)
 (cd adapters/thesims4 && pytest)
 (cd adapters/godot && pytest)
 pytest tests
@@ -37,7 +37,9 @@ pytest scripts/test_release.py
 empneon-regress core/scenarios/clod1-regressions.json
 ```
 
-These mirror `.github/workflows/ci.yml`; all must pass before a PR.
+These mirror `.github/workflows/ci.yml`; all must pass before a PR. Ruff enforces `E, F, I, UP, B,
+SIM, S` (see each `pyproject.toml` and the root `ruff.toml`); a `# noqa` needs an inline reason
+(`# noqa: S608 - only "?" placeholders are interpolated`). Core coverage must stay at or above 90%.
 
 ## Rules that are easy to get wrong
 

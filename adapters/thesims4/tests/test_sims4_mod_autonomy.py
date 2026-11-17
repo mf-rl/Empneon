@@ -1,3 +1,4 @@
+import contextlib
 import importlib.util
 import io
 import struct
@@ -834,23 +835,21 @@ def test_conversation_session_and_alarm_submit_without_overlap(monkeypatch) -> N
     for slot_id, result in ((0, 0), (2, 2)):
         save = persistence.save_game_gen(None, SimpleNamespace(slot_id=slot_id), result)
         next(save)
-        try:
+        with contextlib.suppress(StopIteration):
             next(save)
-        except StopIteration:
-            pass
     assert save_reports == [("/game-session/save", {}, 10)]
 
     session_id = agent._GAME_SESSION_ID
     game_services.service_manager.allow_shutdown = False
     game_services.stop_services()
     agent.prepare_game_session()
-    assert agent._GAME_SESSION_ID == session_id
+    assert session_id == agent._GAME_SESSION_ID
 
     game_services.service_manager.allow_shutdown = True
     game_services.stop_services()
-    assert agent._GAME_SESSION_ID == session_id
+    assert session_id == agent._GAME_SESSION_ID
     agent.prepare_game_session()
-    assert agent._GAME_SESSION_ID != session_id
+    assert session_id != agent._GAME_SESSION_ID
 
     pie_affordance = agent.EmpneonSocialInteraction
     waiting_affordance = agent.EmpneonWaitingInteraction

@@ -375,7 +375,7 @@ def build_blinded_believability_evaluation(
     seed: int = 0,
 ) -> tuple[tuple[BelievabilitySample, ...], tuple[BelievabilityKey, ...]]:
     """Randomize baseline labels while retaining a separate answer key."""
-    random = Random(seed)
+    random = Random(seed)  # noqa: S311 - seeded for reproducible blinding, not security
     samples = []
     keys = []
     for comparison in collect_cognition_comparisons(scenario, results):

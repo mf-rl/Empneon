@@ -42,7 +42,14 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+
+[tool.ruff.lint.flake8-bugbear]
+# ResourceEstimate is a frozen dataclass, so using it as an argument default is safe.
+extend-immutable-calls = ["empneon.core.scheduler.resources.ResourceEstimate"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S603", "S608"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -36,6 +36,10 @@ API with migration notes.
 - `CLAUDE.md` guide for AI coding agents and contributors.
 
 ### Changed
+- Provider requests accept only `http` and `https` URLs; any other scheme (for example `file:`) is
+  rejected before any network call and reported as a non-retryable `ProviderError`.
+- CI enforces the ruff rule sets `B`, `SIM`, and `S` in addition to `E, F, I, UP`, and fails when
+  Core test coverage drops below 90%.
 - Database schema 13: nullable `cognition_usage.degradation_reason` column (automatic,
   forward-only migration; back up the database and its `-wal`/`-shm` files first).
 - `resolve_with_fallback` degrades invalid model output (`ValueError`) to CLOD 1 instead of

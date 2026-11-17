@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
 from typing import TypeVar
+from urllib.parse import urlsplit
 
 from empneon.providers.llm.base import GenerationRequest, ProviderError
 
@@ -40,14 +41,20 @@ def request_json(
     headers: Mapping[str, str] | None = None,
     timeout: float,
 ) -> object:
-    """POST `body` (or GET when None) and return the decoded JSON response."""
-    request = urllib.request.Request(
+    """POST `body` (or GET when None) and return the decoded JSON response.
+
+    Only `http` and `https` URLs are accepted, so a misconfigured endpoint cannot make
+    `urlopen` read a `file:` path or speak another scheme.
+    """
+    if urlsplit(url).scheme.lower() not in {"http", "https"}:
+        raise ValueError("provider URL must use http or https")
+    request = urllib.request.Request(  # noqa: S310 - scheme restricted to http(s) above
         url,
         data=json.dumps(body).encode() if body is not None else None,
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST" if body is not None else "GET",
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - http(s) only
         return json.loads(response.read())
 
 

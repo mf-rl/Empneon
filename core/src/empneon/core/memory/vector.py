@@ -75,7 +75,7 @@ class VectorMemoryStore:
         rowids = [r[0] for r in rows]
         placeholders = ",".join("?" * len(rowids))
         idx_rows = self._conn.execute(
-            f"SELECT rowid, event_id FROM vec_memory_index WHERE rowid IN ({placeholders})",
+            f"SELECT rowid, event_id FROM vec_memory_index WHERE rowid IN ({placeholders})",  # noqa: S608 - "?" only
             rowids,
         ).fetchall()
         event_ids = {r[0]: r[1] for r in idx_rows}
