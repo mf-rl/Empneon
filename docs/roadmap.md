@@ -70,6 +70,16 @@ feature promise.
   worker event loops, schema 12 timestamp normalization, caller-object-safe memory persistence,
   SQL-bounded timeline and recall result windows, and adversarial regressions for large recall
   queries without changing existing local defaults
+- Core robustness and developer experience (PRs #9-#23), all additive and default-off where they
+  change behavior: invalid model output and provider failures degrade to CLOD 1 with a typed
+  `DegradationReason`, persisted in usage telemetry (schema 13) when a `UsageStore` is supplied;
+  standard-library logging that never records content; caller-owned transactions through a
+  keyword-only `commit` argument; a shared provider HTTP transport that exposes
+  `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
+  block new requests; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit breaker shared across
+  per-call routers; opt-in deadline enforcement with recorded adapter failures; opt-in adapter
+  capability validation (`intents`, `state_paths`); `py.typed`, `CHANGELOG.md`, `CLAUDE.md`, and a
+  Python 3.11/3.12 CI matrix
 
 ## Next gates
 
@@ -81,6 +91,20 @@ feature promise.
   resource and quality evidence.
 - Replace remaining adapter metadata documents with typed Core concepts only when a second game
   demonstrates a shared concept.
+- Let the Sims 4 adapter pass degradation reasons into its usage rows, publish `intents` and
+  `state_paths`, and call `validate_decision`.
+- Record a deliberate CLOD 1 selection separately from a failed degradation.
+- Add scheduler aging so a stream of urgent requests cannot starve low-urgency ones.
+
+### Core features under consideration
+
+Each needs its own design and evidence before implementation:
+
+- an embeddings provider using the existing `ModelCapabilities.embeddings` flag;
+- streaming generation;
+- hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration;
+- memory consolidation and decay;
+- a directors protocol, only once a validated use case exists.
 
 ### Resource evidence
 
@@ -100,7 +124,9 @@ feature promise.
 
 ### Developer experience
 
-- Publish tagged monorepo releases with built Core and adapter artifacts.
+- Publish tagged monorepo releases with built Core and adapter artifacts, and cut the next
+  release from the Unreleased section of `CHANGELOG.md`.
+- Consider a coverage gate (for example `--cov-fail-under=90`) and stricter ruff rules.
 - Add concise migration notes whenever a supported API or database schema changes.
 
 ## Project boundary
