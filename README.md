@@ -59,8 +59,9 @@ This reduces a common failure mode in AI characters: invented dialogue becoming 
 | Grounded actions | Models propose actions; adapters confirm what actually happened |
 | Cognitive levels | Deterministic behavior through bounded interactive reasoning |
 | Provider independence | LM Studio, OpenAI-compatible endpoints, and custom providers |
+| Provider resilience | Opt-in retry with backoff and `Retry-After`, plus a circuit breaker |
 | Resource controls | Declared RAM, VRAM, concurrency, token, and latency admission |
-| Replay and diagnostics | Timeline, telemetry, regression scenarios, and deterministic replay |
+| Replay and diagnostics | Timeline, degradation telemetry, regression scenarios, and deterministic replay |
 
 ## Architecture
 
@@ -126,8 +127,10 @@ available model.
 
 `ResourceGovernor` admits declared RAM, VRAM, concurrency, token, and latency estimates.
 `select_cognition` chooses an affordable route and falls back to deterministic CLOD 1 when no route
-fits, provider execution fails, or model output is invalid. These declared estimates are admission controls, not live
-hardware monitoring.
+fits, provider execution fails, or model output is invalid. With `usage=` set, `CognitiveRuntime`
+records each degradation and its reason, and `enforce_deadlines=True` also degrades a resolver that
+exceeds the request deadline. These declared estimates are admission controls, not live hardware
+monitoring.
 
 ## Memory and grounding
 
@@ -138,7 +141,7 @@ The versioned SQLite schema stores:
 - Canonical events and observations
 - Beliefs with provenance and revision history
 - Episodic memories and adapter-owned documents
-- Provider usage and latency
+- Provider usage, latency, and degradation reasons
 - Action proposals, confirmed results, and ordered consequences
 
 Recall is bounded:
@@ -160,8 +163,8 @@ Selected evidence enters generation
 ```
 
 Model output never mutates the database or game directly. Core parses provider output into typed
-decisions and state deltas, validates them against adapter capabilities, and persists only
-confirmed results.
+decisions and state deltas, validates them against the capabilities an adapter publishes
+(`intents`, `state_paths`), and persists only confirmed results.
 
 ## Providers
 
@@ -172,6 +175,9 @@ Core includes:
 - **`OpenAICompatibleProvider`** — supports compatible services such as OpenRouter, Ollama,
   llama.cpp servers, and other endpoints implementing the expected API shape.
 - **Custom providers** — implement the `LLMProvider` protocol.
+
+Retries and a circuit breaker are opt-in: wrap a provider in `ResilientProvider`, or add `retry` and
+`circuit_breaker` blocks to the provider configuration (see [API and compatibility](docs/api.md)).
 
 > [!CAUTION]
 > Never commit API keys, `.env` files, private conversation databases, save data, or diagnostic
@@ -199,7 +205,9 @@ Core's automated suites cover:
 - canonical events, observations, beliefs, contradiction, revision, and trust-decayed propagation;
 - grounded action proposals, confirmation, failure, and ordered consequences;
 - deterministic and provider-backed cognitive selection with resource admission;
-- provider usage, latency, and selected-CLOD telemetry;
+- provider usage, latency, selected-CLOD, and degradation telemetry;
+- provider retry, backoff, and circuit-breaker behavior with injected clocks;
+- opt-in deadline enforcement and adapter capability validation;
 - bounded recall, timeline queries, recorded replay, and regression scenarios;
 - structural adapter contracts and provider-independent typed output.
 
