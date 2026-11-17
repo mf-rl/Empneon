@@ -39,6 +39,14 @@ class VectorMemoryStore:
         if commit:
             conn.commit()
 
+    @classmethod
+    def existing(
+        cls, conn: sqlite3.Connection, *, commit: bool = True
+    ) -> "VectorMemoryStore | None":
+        """Open the vector table that already exists on `conn`, or None when there is none."""
+        dimensions = _stored_dimensions(conn)
+        return None if dimensions is None else cls(conn, dimensions, commit=commit)
+
     def upsert(
         self, event_id: str, embedding: list[float], *, commit: bool = True
     ) -> None:

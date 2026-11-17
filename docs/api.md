@@ -134,8 +134,32 @@ kept separate from the chat model's.
 
 `VectorMemoryStore` tables are created with fixed dimensions (384 by default) and reject reopening
 with different dimensions, so use a new database or table when switching to a model with another
-size. The Sims 4 adapter still uses its hashed 384-dimension vectors; embeddings usage telemetry and
-a semantic-search helper are not provided yet.
+size. The Sims 4 adapter still uses its hashed 384-dimension vectors; embeddings usage telemetry is
+not provided yet.
+
+### Semantic memory index
+
+`empneon.core.memory.semantic.SemanticMemoryIndex(conn, embedder, ownership="participants")` turns
+an `EmbeddingProvider` into agent-scoped recall by meaning:
+
+```python
+index = SemanticMemoryIndex(conn, router.embedding_provider_for())
+await index.index_events(events)                 # one embed call; re-indexing replaces vectors
+await index.index_unindexed(limit=256)           # backfill events that have no vector yet
+matches = await index.search("bella", "that dinner we planned", limit=5)  # [SemanticMatch]
+index.remove(event_id)                           # events do not cascade to vectors
+```
+
+`search` returns at most `limit` `SemanticMatch(event, distance)` pairs, closest first (0 is
+identical; ties by event id), and only events the agent owns: `ownership="participants"` uses
+`event_participants`, `"observations"` uses `event_observations`. The vector store is a global
+nearest-neighbour search, so the index over-fetches (4x the limit, doubling up to the corpus size)
+until enough owned events are found. Vector dimensions come from the embedder's first result and a
+table with other dimensions raises `ValueError`. Embedding happens before any write; with
+`commit=False` the caller owns the transaction, otherwise a failure rolls back the whole batch.
+`ProviderError` (including `CircuitOpenError`) propagates untouched so the caller chooses a
+fallback, and no text, query, or vector is logged. Deleting an event leaves its vector behind;
+search skips such orphans and `remove` clears them.
 
 ## Capability validation
 

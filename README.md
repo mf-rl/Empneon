@@ -144,6 +144,9 @@ The versioned SQLite schema stores:
 - Provider usage, latency, and degradation reasons
 - Action proposals, confirmed results, and ordered consequences
 
+Optional semantic recall indexes event descriptions with an embedding provider and searches them
+by meaning, scoped to the events an agent owns (`SemanticMemoryIndex`).
+
 Recall is bounded:
 
 ```text
