@@ -77,9 +77,9 @@ feature promise.
   keyword-only `commit` argument; a shared provider HTTP transport that exposes
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
   block new requests; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
-  breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter failures; opt-in adapter
-  capability validation (`intents`, `state_paths`); `py.typed`, `CHANGELOG.md`, `CLAUDE.md`, and a
-  Python 3.11/3.12 CI matrix
+  breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter
+  failures; opt-in adapter capability validation (`intents`, `state_paths`); `py.typed`,
+  `CHANGELOG.md`, `CLAUDE.md`, and a Python 3.11/3.12 CI matrix
 
 ## Next gates
 
