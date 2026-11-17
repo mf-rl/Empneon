@@ -174,7 +174,9 @@ Core includes:
   OpenAI-compatible APIs.
 - **`OpenAICompatibleProvider`** — supports compatible services such as OpenRouter, Ollama,
   llama.cpp servers, and other endpoints implementing the expected API shape.
-- **Custom providers** — implement the `LLMProvider` protocol.
+- **`OpenAICompatibleEmbeddingProvider`** — opt-in embeddings through an `embedding` task
+  (`EmbeddingProvider` protocol), usable with LM Studio, OpenRouter, Ollama, and similar endpoints.
+- **Custom providers** — implement the `LLMProvider` or `EmbeddingProvider` protocol.
 
 Retries and a circuit breaker are opt-in: wrap a provider in `ResilientProvider`, or add `retry` and
 `circuit_breaker` blocks to the provider configuration (see [API and compatibility](docs/api.md)).

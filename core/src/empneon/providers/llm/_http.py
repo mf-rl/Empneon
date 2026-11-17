@@ -75,7 +75,9 @@ def _is_transport(exc: BaseException) -> bool:
     return isinstance(exc, OSError) and not isinstance(exc, urllib.error.HTTPError)
 
 
-async def guarded_generate(label: str, call: Callable[[], _T]) -> _T:
+async def guarded_generate(
+    label: str, call: Callable[[], _T], *, operation: str = "generation"
+) -> _T:
     """Run a blocking provider call in a thread and map transport failures to ProviderError.
 
     Only the exception type and HTTP status are logged or exposed, never message text.
@@ -84,9 +86,9 @@ async def guarded_generate(label: str, call: Callable[[], _T]) -> _T:
         return await asyncio.to_thread(call)
     except _TRANSPORT_ERRORS as exc:
         status = _status(exc)
-        _log.warning("%s generation failed: %s status=%s", label, type(exc).__name__, status)
+        _log.warning("%s %s failed: %s status=%s", label, operation, type(exc).__name__, status)
         raise ProviderError(
-            f"{label} generation failed",
+            f"{label} {operation} failed",
             status=status,
             retry_after=_retry_after(exc),
             transport=_is_transport(exc),

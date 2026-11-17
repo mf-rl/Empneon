@@ -13,6 +13,11 @@ from empneon.providers.llm.breaker import (
     CircuitOpenError,
 )
 from empneon.providers.llm.configured import ConfiguredProviderRouter
+from empneon.providers.llm.embeddings import (
+    EmbeddingProvider,
+    EmbeddingResult,
+    OpenAICompatibleEmbeddingProvider,
+)
 from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 from empneon.providers.llm.preparation import (
@@ -20,13 +25,21 @@ from empneon.providers.llm.preparation import (
     generate_requests,
     prepare_generation_requests,
 )
-from empneon.providers.llm.resilience import ResilientProvider, RetryPolicy
+from empneon.providers.llm.resilience import (
+    ResilientEmbeddingProvider,
+    ResilientProvider,
+    RetryPolicy,
+)
 
 __all__ = [
     "BreakerRegistry",
     "CircuitBreaker",
     "CircuitBreakerPolicy",
     "CircuitOpenError",
+    "EmbeddingProvider",
+    "EmbeddingResult",
+    "OpenAICompatibleEmbeddingProvider",
+    "ResilientEmbeddingProvider",
     "GenerationRequest",
     "GenerationPreparation",
     "GenerationResult",

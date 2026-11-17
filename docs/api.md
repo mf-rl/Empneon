@@ -108,6 +108,35 @@ accepts a `BreakerRegistry`; otherwise a lazily created process-wide registry is
 `BreakerRegistry.default().reset()` clears it (for tests or an operator reset). Compose directly
 with `ResilientProvider(provider, policy, breaker=CircuitBreaker(CircuitBreakerPolicy(...)))`.
 
+## Embeddings
+
+`EmbeddingProvider` (`embed(texts) -> EmbeddingResult`, `health_check()`) is a separate protocol from
+`LLMProvider`, so custom chat providers are unaffected and the embedding model and endpoint can
+differ. `OpenAICompatibleEmbeddingProvider` calls an OpenAI-style `/embeddings` endpoint (OpenRouter,
+Ollama, llama.cpp, and LM Studio's OpenAI-compatible `/v1` API). Configure it as an explicit
+`embedding` task and build it with `ConfiguredProviderRouter.embedding_provider_for()`:
+
+```json
+{"embedding": {"provider": "lmstudio", "model": "nomic-embed-text", "dimensions": 768,
+               "batch_size": 64, "normalize": true,
+               "retry": {}, "circuit_breaker": {}}}
+```
+
+The task must name its own `model`; a missing entry raises `ValueError` instead of reusing the chat
+model. For `lmstudio` the native `/api/v1` endpoint is rewritten to `/v1`. Inputs are split into
+`batch_size` requests and returned in input order. Vectors are L2-normalized by default so
+`VectorMemoryStore`'s Euclidean distance orders like cosine similarity (`normalize: false` returns
+raw values). A malformed response (wrong count or index, empty, non-finite or ragged vectors, or a
+mismatch with the configured `dimensions`) raises a non-transport `ProviderError`, which retry and
+the circuit breaker never retry or count. `retry`, `circuit_breaker`, `Retry-After`, and
+cancellation behave exactly as for chat providers (`ResilientEmbeddingProvider`), with breaker state
+kept separate from the chat model's.
+
+`VectorMemoryStore` tables are created with fixed dimensions (384 by default) and reject reopening
+with different dimensions, so use a new database or table when switching to a model with another
+size. The Sims 4 adapter still uses its hashed 384-dimension vectors; embeddings usage telemetry and
+a semantic-search helper are not provided yet.
+
 ## Capability validation
 
 An adapter may publish two optional lists in `AgentStateSnapshot.capabilities`: `intents` (decision
