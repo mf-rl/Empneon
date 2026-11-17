@@ -389,9 +389,11 @@ def test_lmstudio_generate_wraps_transport_errors_as_provider_error() -> None:
     provider = LMStudioProvider("http://localhost:1234/api/v1", "karmine")
     coro = provider.generate(GenerationRequest((Message("user", "Hi"),), 120))
 
-    with patch("urllib.request.urlopen", side_effect=OSError):
-        with pytest.raises(ProviderError, match="LM Studio generation failed"):
-            asyncio.run(coro)
+    with (
+        patch("urllib.request.urlopen", side_effect=OSError),
+        pytest.raises(ProviderError, match="LM Studio generation failed"),
+    ):
+        asyncio.run(coro)
 
 
 def test_lmstudio_generate_raises_when_response_has_no_message_content() -> None:
@@ -399,6 +401,8 @@ def test_lmstudio_generate_raises_when_response_has_no_message_content() -> None
     provider = LMStudioProvider("http://localhost:1234/api/v1", "karmine")
     coro = provider.generate(GenerationRequest((Message("user", "Hi"),), 120))
 
-    with patch("urllib.request.urlopen", return_value=Response(chat)):
-        with pytest.raises(ProviderError, match="LM Studio generation failed"):
-            asyncio.run(coro)
+    with (
+        patch("urllib.request.urlopen", return_value=Response(chat)),
+        pytest.raises(ProviderError, match="LM Studio generation failed"),
+    ):
+        asyncio.run(coro)

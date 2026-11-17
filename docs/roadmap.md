@@ -126,7 +126,6 @@ Each needs its own design and evidence before implementation:
 
 - Publish tagged monorepo releases with built Core and adapter artifacts, and cut the next
   release from the Unreleased section of `CHANGELOG.md`.
-- Consider a coverage gate (for example `--cov-fail-under=90`) and stricter ruff rules.
 - Add concise migration notes whenever a supported API or database schema changes.
 
 ## Project boundary

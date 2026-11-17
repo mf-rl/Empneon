@@ -45,7 +45,7 @@ No exceptions. Performance budgets matter — target hardware is Ryzen 7 4800H +
 ruff check core/src core/tests adapters/thesims4/src adapters/thesims4/tests \
   adapters/godot/src adapters/godot/tests tests scripts/release.py scripts/test_release.py
 mypy core/src adapters/thesims4/src adapters/godot/src
-(cd core && pytest)
+(cd core && pytest --cov=empneon --cov-config=../.coveragerc --cov-fail-under=90)
 (cd adapters/thesims4 && pytest)
 (cd adapters/godot && pytest)
 pytest tests

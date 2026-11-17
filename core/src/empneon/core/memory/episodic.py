@@ -109,7 +109,7 @@ class EpisodicMemoryStore:
         event_ids = [r["id"] for r in rows]
         placeholders = ",".join("?" * len(event_ids))
         participant_rows = self._conn.execute(
-            f"SELECT event_id, agent_id FROM event_participants WHERE event_id IN ({placeholders})",
+            f"SELECT event_id, agent_id FROM event_participants WHERE event_id IN ({placeholders})",  # noqa: S608 - only "?" placeholders are interpolated
             event_ids,
         ).fetchall()
 
@@ -379,7 +379,8 @@ class BeliefStore:
         if source.lineage:
             placeholders = ",".join("?" * len(source.lineage))
             rows = self._conn.execute(
-                f"SELECT agent_id FROM beliefs WHERE id IN ({placeholders})", source.lineage
+                f"SELECT agent_id FROM beliefs WHERE id IN ({placeholders})",  # noqa: S608 - "?" only
+                source.lineage,
             ).fetchall()
             visited.update(row["agent_id"] for row in rows)
 
@@ -423,7 +424,7 @@ class BeliefStore:
         chain_ids = tuple(item.id for item in beliefs)
         placeholders = ",".join("?" * len(chain_ids))
         relations = self._conn.execute(
-            f"SELECT * FROM belief_relations WHERE belief_id IN ({placeholders})"
+            f"SELECT * FROM belief_relations WHERE belief_id IN ({placeholders})"  # noqa: S608 - "?" only
             f" OR related_belief_id IN ({placeholders})"
             " ORDER BY created_at, relation, belief_id, related_belief_id",
             (*chain_ids, *chain_ids),

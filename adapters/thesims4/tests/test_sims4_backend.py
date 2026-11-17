@@ -7164,7 +7164,9 @@ def test_diagnostics_require_identifiers_and_report_missing_records(
         handler.path = path
         responses = []
         monkeypatch.setattr(
-            handler, "send_json", lambda status, body: responses.append((status, body))
+            handler,
+            "send_json",
+            lambda status, body, sink=responses: sink.append((status, body)),
         )
         handler.do_GET()
         assert responses[0][0] == expected

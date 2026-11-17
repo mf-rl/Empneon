@@ -106,7 +106,7 @@ def test_all_indexes_exist(db: sqlite3.Connection) -> None:
 
 def test_all_validation_triggers_exist(db: sqlite3.Connection) -> None:
     triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
-    assert EXPECTED_TRIGGERS == triggers
+    assert triggers == EXPECTED_TRIGGERS
 
 
 def test_schema_version_set(db: sqlite3.Connection) -> None:

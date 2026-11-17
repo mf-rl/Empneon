@@ -226,7 +226,8 @@ def release_notes(component: str, version: str) -> str:
         )
     else:
         raise ValueError(f"unsupported component: {component}")
-    return f"# Empneon {component} {version}\n\n{instructions}\n\nVerify assets with `SHA256SUMS.txt`.\n"
+    verify = "Verify assets with `SHA256SUMS.txt`."
+    return f"# Empneon {component} {version}\n\n{instructions}\n\n{verify}\n"
 
 
 def main() -> None:

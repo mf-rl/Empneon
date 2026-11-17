@@ -15,7 +15,7 @@ from empneon.providers.llm import GenerationRequest, Message, OpenAICompatiblePr
 
 def _vram_mb() -> float:
     output = subprocess.check_output(
-        [
+        [  # noqa: S607 - fixed literal tool name, resolved via PATH
             "nvidia-smi",
             "--query-gpu=memory.used",
             "--format=csv,noheader,nounits",
