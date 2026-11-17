@@ -28,7 +28,9 @@ API with migration notes.
 - `CognitiveRuntime(usage=...)` persists degradations to CLOD 1 with their `DegradationReason`;
   `UsageStore.record(degradation_reason=...)` and `UsageStore.telemetry()["by_degradation"]`.
   `DegradationReason` now lives in `empneon.core.contracts` (still importable from
-  `empneon.core.clod`).
+  `empneon.core.clod`). `CognitiveRuntime(on_degrade=...)` reports the reason without writing, for
+  adapters that keep their own usage rows; the Sims 4 adapter records reasons for player-dialogue
+  fallbacks this way.
 - `ProviderError.retry_after` and `ProviderError.transport`.
 - `py.typed` marker so downstream type checkers use Core's inline types.
 - `CLAUDE.md` guide for AI coding agents and contributors.

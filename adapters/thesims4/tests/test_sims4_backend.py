@@ -5784,6 +5784,116 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
     assert telemetry["by_provider"] == {"core-rules": 1}
 
 
+def _degraded_chat(tmp_path, monkeypatch, dialogue):
+    """Run one player chat whose provider dialogue is replaced by `dialogue`."""
+
+    class Provider:
+        capabilities = ModelCapabilities(structured_output=True, local=True)
+
+    class Router:
+        def config_for(self, _task):
+            return {
+                "name": "unavailable",
+                "model": "offline",
+                "max_tokens": 300,
+                "context_tokens": 4096,
+                "latency_ms": 1000,
+                "ram_mb": 64,
+                "vram_mb": 0,
+            }
+
+        def provider_for(self, _task):
+            return Provider()
+
+    core_db = str(tmp_path / "empneon_core_memory.sqlite3")
+    monkeypatch.setattr(ai_sims_server, "provider_router", lambda: Router())
+    monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server, "DB_PATH", core_db)
+    monkeypatch.setattr(ai_sims_server.COGNITION_RUNTIME, "dialogue", dialogue)
+    result = ai_sims_server.chat(
+        {
+            "speaker": {"id": "karmine", "name": "Karmine"},
+            "listener": {"id": "bernard", "name": "Bernard"},
+            "conversation_id": "degradation-reason",
+            "message": "I'm very attracted to you. You are really hot.",
+            "event": {"type": "player_conversation", "source": "test"},
+            "available_response_categories": ["friendly", "romance"],
+        }
+    )
+    with open_db(core_db) as conn:
+        usage = UsageStore(conn)
+        telemetry = usage.telemetry("karmine")
+        rows = conn.execute(
+            "SELECT provider, selected_clod, degradation_reason FROM cognition_usage"
+            " ORDER BY rowid"
+        ).fetchall()
+    return result, telemetry, [tuple(row) for row in rows]
+
+
+def test_provider_failure_records_its_degradation_reason(tmp_path, monkeypatch) -> None:
+    def fail_dialogue(_payload, _context):
+        raise RuntimeError("provider unavailable")
+
+    result, telemetry, rows = _degraded_chat(tmp_path, monkeypatch, fail_dialogue)
+
+    assert result["selected_clod"] == 1
+    assert telemetry["by_provider"] == {"core-rules": 1}
+    assert telemetry["by_degradation"] == {"provider_error": 1}
+    assert rows == [("core-rules", 1, "provider_error")]
+
+
+def test_invalid_model_output_records_its_degradation_reason(tmp_path, monkeypatch) -> None:
+    def invalid_dialogue(_payload, _context):
+        raise ValueError("unusable model output")
+
+    result, telemetry, rows = _degraded_chat(tmp_path, monkeypatch, invalid_dialogue)
+
+    assert result["selected_clod"] == 1
+    assert telemetry["by_degradation"] == {"invalid_output": 1}
+    assert rows == [("core-rules", 1, "invalid_output")]
+
+
+def test_degradation_after_recorded_attempts_adds_one_reasoned_clod1_row(
+    tmp_path, monkeypatch
+) -> None:
+    def failing_after_attempt(_payload, _context):
+        ai_sims_server.GENERATION_CONTEXT.attempts.append(
+            (
+                "large",
+                {"name": "unavailable", "model": "offline"},
+                GenerationResult("partial", 12, 3, 40),
+            )
+        )
+        raise RuntimeError("provider unavailable")
+
+    _, telemetry, rows = _degraded_chat(tmp_path, monkeypatch, failing_after_attempt)
+
+    assert rows == [("unavailable", 3, None), ("core-rules", 1, "provider_error")]
+    assert telemetry["by_degradation"] == {"provider_error": 1}
+
+
+def test_successful_provider_dialogue_records_no_degradation(tmp_path, monkeypatch) -> None:
+    def fine_dialogue(_payload, _context):
+        ai_sims_server.GENERATION_CONTEXT.attempts.append(
+            (
+                "large",
+                {"name": "unavailable", "model": "offline"},
+                GenerationResult("ok", 12, 3, 40),
+            )
+        )
+        return {
+            "dialogue": "Hello there.",
+            "emotion": "happy",
+            "intent": "greet",
+            "response_category": "friendly",
+        }
+
+    _, telemetry, rows = _degraded_chat(tmp_path, monkeypatch, fine_dialogue)
+
+    assert telemetry["by_degradation"] == {}
+    assert all(row[2] is None for row in rows)
+
+
 def test_autonomous_action_accepts_sim_only_payload(tmp_path, monkeypatch) -> None:
     core_db = str(tmp_path / "core.sqlite3")
     monkeypatch.setattr(ai_sims_server, "CORE_DB_PATH", core_db)
