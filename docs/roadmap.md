@@ -78,9 +78,9 @@ feature promise.
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
   block new requests; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
   breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter
-  failures; an opt-in embeddings provider with retry and circuit breaker; opt-in adapter capability
-  validation (`intents`, `state_paths`); `py.typed`,
-  `CHANGELOG.md`, `CLAUDE.md`, and a Python 3.11/3.12 CI matrix
+  failures; an opt-in embeddings provider with retry and circuit breaker and an agent-scoped
+  `SemanticMemoryIndex`; opt-in adapter capability validation (`intents`, `state_paths`);
+  `py.typed`, `CHANGELOG.md`, `CLAUDE.md`, and a Python 3.11/3.12 CI matrix
 
 ## Next gates
 
@@ -95,6 +95,8 @@ feature promise.
 - Publish `intents` and `state_paths` from the Sims 4 adapter and call `validate_decision` only
   once its intents become an enumerated set; today any unknown intent maps to a default action.
 - Record a deliberate CLOD 1 selection separately from a failed degradation.
+- Let the Sims 4 adapter use `SemanticMemoryIndex` with a real embedding model instead of hashed
+  vectors; this needs a vector-table dimension migration and live LM Studio validation.
 - Add scheduler aging so a stream of urgent requests cannot starve low-urgency ones.
 
 ### Core features under consideration

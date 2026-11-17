@@ -8,6 +8,10 @@ API with migration notes.
 ## [Unreleased]
 
 ### Added
+- `SemanticMemoryIndex` and `SemanticMatch` (`empneon.core.memory.semantic`): index event
+  descriptions with an `EmbeddingProvider` and search them by meaning, scoped to the events an agent
+  participated in or observed, with backfill and removal. `VectorMemoryStore.existing()` opens a
+  vector table without knowing its dimensions.
 - `EmbeddingProvider`, `EmbeddingResult`, `OpenAICompatibleEmbeddingProvider`, and
   `ResilientEmbeddingProvider`: opt-in embeddings (batching, L2 normalization, validated responses)
   built with `ConfiguredProviderRouter.embedding_provider_for()` from an explicit `embedding` task,
