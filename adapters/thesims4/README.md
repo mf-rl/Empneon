@@ -124,7 +124,8 @@ previous one is still running. Autonomous proposals are restricted to mapped bas
 **Ask About Day**, **Apologize**, and **Compliment Appearance** socials; queuing the selected
 mapping is reported back to Core only after the native interaction completes. Live validation
 confirmed scheduled provider-free CLOD 1 with zero tokens and persistent usage telemetry.
-Provider-backed player dialogue likewise records dynamic CLOD, tokens, and latency persistently.
+Provider-backed player dialogue likewise records dynamic CLOD, tokens, and latency persistently,
+and a dialogue that falls back to CLOD 1 records why (`by_degradation` in usage diagnostics).
 If the configured provider is unavailable, player dialogue returns a conservative local CLOD 1
 response without relationship consequences. The `aiautonomous` diagnostic accepts both legacy
 sim-only and scheduled speaker/listener payloads.

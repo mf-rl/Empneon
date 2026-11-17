@@ -807,7 +807,7 @@ def _chat_dialogue_resolver(task, payload, context, adapter, event, selected, re
     return resolve_dialogue
 
 
-def _chat_record_usage(conn, request, selected, generations):
+def _chat_record_usage(conn, request, selected, generations, degradation_reason=None):
     usage = UsageStore(conn)
     if generations:
         for task, config, generation in generations:
@@ -829,6 +829,18 @@ def _chat_record_usage(conn, request, selected, generations):
                     "deep": 4,
                 }.get(task, int(selected["clod"])),
             )
+        if degradation_reason is not None:
+            # The failed attempts above are recorded as provider rows; this row represents the
+            # CLOD 1 decision Core fell back to and carries why.
+            usage.record(
+                request,
+                ResourceEstimate(),
+                "core-rules",
+                "clod1",
+                GenerationResult("", 0, 0, 0),
+                1,
+                degradation_reason=degradation_reason,
+            )
     else:
         usage.record(
             request,
@@ -837,6 +849,7 @@ def _chat_record_usage(conn, request, selected, generations):
             "clod1" if selected["clod"] == 1 else str(selected["task"]),
             GenerationResult("", 0, 0, 0),
             int(selected["clod"]),
+            degradation_reason=degradation_reason,
         )
 
 
@@ -854,9 +867,10 @@ def _chat_persist_decision(
     response_rejections,
     generations,
 ):
+    degradations = []
     with db_session(CORE_DB_PATH) as conn:
         actions = ActionRecordStore(conn)
-        runtime = CognitiveRuntime(CORE_GOVERNOR, actions)
+        runtime = CognitiveRuntime(CORE_GOVERNOR, actions, on_degrade=degradations.append)
         decision = COGNITION_QUEUE.run(
             request,
             lambda: run_async(
@@ -887,7 +901,9 @@ def _chat_persist_decision(
                 decision.id,
                 {"response_rejections": response_rejections},
             )
-        _chat_record_usage(conn, request, selected, generations)
+        _chat_record_usage(
+            conn, request, selected, generations, degradations[0] if degradations else None
+        )
     return decision, action
 
 

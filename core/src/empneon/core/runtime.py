@@ -5,6 +5,7 @@ import dataclasses
 import json
 import logging
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -171,7 +172,9 @@ class CognitiveRuntime:
     discarded. Enforcement is off by default so existing callers keep their behavior.
 
     With a `usage` store, each degradation to CLOD 1 is persisted as a `core-rules` usage row
-    carrying its `DegradationReason`; recording failures are logged and never change the decision.
+    carrying its `DegradationReason`. `on_degrade` receives the same reason without writing
+    anything, for adapters that keep their own usage rows. Failures of either are logged by type
+    and never change the decision or each other.
     """
 
     def __init__(
@@ -181,11 +184,13 @@ class CognitiveRuntime:
         *,
         enforce_deadlines: bool = False,
         usage: UsageStore | None = None,
+        on_degrade: Callable[[DegradationReason], None] | None = None,
     ) -> None:
         self._governor = governor
         self._actions = actions
         self._enforce_deadlines = enforce_deadlines
         self._usage = usage
+        self._on_degrade = on_degrade
 
     async def process(
         self,
@@ -224,20 +229,24 @@ class CognitiveRuntime:
                     return await resolver(current)
 
         def record_degradation(reason: DegradationReason) -> None:
-            if self._usage is None:
-                return
-            try:
-                self._usage.record(
-                    request,
-                    estimate,
-                    "core-rules",
-                    "clod1",
-                    GenerationResult("", 0, 0, 0),
-                    1,
-                    degradation_reason=reason,
-                )
-            except Exception as exc:
-                _log.error("recording degradation failed: %s", type(exc).__name__)
+            if self._usage is not None:
+                try:
+                    self._usage.record(
+                        request,
+                        estimate,
+                        "core-rules",
+                        "clod1",
+                        GenerationResult("", 0, 0, 0),
+                        1,
+                        degradation_reason=reason,
+                    )
+                except Exception as exc:
+                    _log.error("recording degradation failed: %s", type(exc).__name__)
+            if self._on_degrade is not None:
+                try:
+                    self._on_degrade(reason)
+                except Exception as exc:
+                    _log.error("degradation hook failed: %s", type(exc).__name__)
 
         return await resolve_with_fallback(request, admitted, on_degrade=record_degradation)
 

@@ -91,8 +91,8 @@ feature promise.
   resource and quality evidence.
 - Replace remaining adapter metadata documents with typed Core concepts only when a second game
   demonstrates a shared concept.
-- Let the Sims 4 adapter pass degradation reasons into its usage rows, publish `intents` and
-  `state_paths`, and call `validate_decision`.
+- Publish `intents` and `state_paths` from the Sims 4 adapter and call `validate_decision` only
+  once its intents become an enumerated set; today any unknown intent maps to a default action.
 - Record a deliberate CLOD 1 selection separately from a failed degradation.
 - Add scheduler aging so a stream of urgent requests cannot starve low-urgency ones.
 
