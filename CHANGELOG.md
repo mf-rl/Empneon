@@ -7,6 +7,24 @@ API with migration notes.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-17
+
+### Migration notes
+- **Database schema 13** adds a nullable `cognition_usage.degradation_reason` column. The migration
+  is automatic and forward-only on first open, and an older runtime then refuses the file. Stop every
+  Empneon process and back up the database plus its `-wal` and `-shm` files before upgrading.
+- `get_for_agent(limit=...)` on the event, belief, and action-record stores now raises `ValueError`
+  for `0` or a negative limit (a negative limit used to mean unlimited).
+- `CognitiveRuntime.process` records a `failed` result when `adapter.execute` raises instead of
+  propagating the exception, and `resolve_with_fallback` degrades a `ValueError` (invalid model
+  output) to CLOD 1 instead of raising.
+- Provider URLs must use `http` or `https`; any other scheme is rejected before a network call.
+- `AgentStateSnapshot` raises a clear `ValueError` for malformed `intents`, `state_paths`, or
+  `schema_version`; `VectorMemoryStore` rejects reopening a table with different dimensions; and
+  `PriorityScheduler.submit` discards expired entries before raising `SchedulerFull`.
+- Import paths are unchanged. `DegradationReason` moved to `empneon.core.contracts` and is still
+  importable from `empneon.core.clod`, and `UsageStore.telemetry()` gains a `by_degradation` key.
+
 ### Added
 - `SemanticMemoryIndex` and `SemanticMatch` (`empneon.core.memory.semantic`): index event
   descriptions with an `EmbeddingProvider` and search them by meaning, scoped to the events an agent

@@ -103,7 +103,7 @@ def test_validate_versions_rejects_mismatch(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("component", ["core", "thesims4", "godot"])
 def test_repository_versions_are_synchronized(component: str) -> None:
-    release.validate_versions(ROOT, component, "0.4.0")
+    release.validate_versions(ROOT, component, "0.5.0")
 
 
 def test_package_sims_contains_only_runtime_files(tmp_path: Path) -> None:

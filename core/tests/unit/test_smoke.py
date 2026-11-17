@@ -1,5 +1,7 @@
+import re
+
 import empneon
 
 
-def test_package_importable():
-    assert empneon.__version__ == "0.4.0"
+def test_package_importable() -> None:
+    assert re.fullmatch(r"\d+\.\d+\.\d+", empneon.__version__)
