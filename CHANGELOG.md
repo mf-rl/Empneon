@@ -13,6 +13,10 @@ API with migration notes.
   Back up the database plus its `-wal` and `-shm` files before upgrading.
 
 ### Added
+- Directors, first slice (`empneon.core.directors`): `Director`, `DirectorView`, `Opportunity`,
+  `to_request`, `run_directors`, and a throwaway `IdleCheckInDirector`. Directors only propose
+  requests for cognition; Core bounds, clamps, and converts them deterministically and the host
+  submits them. Opt-in, in memory, and no schema or existing-contract change.
 - Opt-in streaming generation: `StreamingLLMProvider` (`stream(request)` yields text deltas),
   implemented by `OpenAICompatibleProvider` and `LMStudioProvider` (through its OpenAI-compatible
   endpoint, without the native `reasoning: off` option) and wrapped by `ResilientProvider.stream`,

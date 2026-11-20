@@ -1,7 +1,8 @@
 # Directors protocol: design decision
 
-Status: proposed, awaiting maintainer review (issue #36). Implementation is issue #42. This is a design
-note, not shipped behavior. Nothing here is implemented, and no numbers below were measured.
+Status: slice 1 implemented (issue #42); slice 2 (persistence, replay attribution) is not. The design
+below was reviewed on #36. Sections that describe proposals were written before the code existed; the
+"As implemented" section at the end lists where the code differs and records the maintainer's answers.
 
 ## Problem
 
@@ -165,7 +166,38 @@ capability key. Tests including a cross-adapter contract test, plus `docs/api.md
 Slice 2 (only if wanted): persistence and replay attribution. Adapter-side directors and wiring into
 the Sims 4 and Godot adapters are separate adapter tickets.
 
-## Questions for the maintainer
+## As implemented (slice 1)
+
+Public import path: `empneon.core.directors` (`Director`, `DirectorView`, `Opportunity`, `run_directors`,
+`to_request`, `IdleCheckInDirector`). It is deliberately not in the pinned top-level `empneon.__all__`.
+
+Differences from the proposal above, found by reading the code:
+
+- `CognitiveRequest` has no `facts` or agent-state field. Both live on the request's event, so
+  conversion builds a synthetic `WorldEvent` whose `facts` carry `director_id` and whose `agent_state`
+  is the agent's snapshot from the view. `runtime.process` reads `request.event.agent_state`.
+- No `opportunities` capability key and no change to `validate_capability_lists` (maintainer decision).
+  Adapter capabilities still apply through the existing `intents` and `state_paths` checks.
+- Core clamps each director's urgency to its declared `max_urgency` and truncates to
+  `max_opportunities`. Opportunities attributed to another director, or to an agent outside the view,
+  are dropped, and duplicates collapse. This answers the starvation risk above.
+- `Opportunity.facts` is checked for JSON compatibility (`WorldEvent.facts` is not).
+- Request and event ids are deterministic (`uuid5`), so a fixed view gives identical requests.
+- Default `preferred_clod` is 1 (`Clod.RULES`, no model call); the host raises it.
+- Replay and timeline audit: nothing joins action records to `events`. `replay_action_record` already
+  returns `event: None` for an unstored event and `agent_timeline` lists the decision with its
+  `event_id`. Tests now pin both behaviors.
+- The idle reference director skips agents with no event in the view (no evidence of idleness).
+
+Maintainer answers to the four questions below: the idle-agent check-in is an acceptable throwaway
+reference; directors influence only urgency and deadline; no `opportunities` key; in-memory only.
+
+Budget, measured with a one-off script (Python 3.11, WSL2, one run of 30, every agent firing): about
+2.6 ms p50 for 100 agents (about 26 microseconds per converted request) and about 29 ms for 1,000. That
+misses the sub-millisecond target in the worst case where every agent proposes; conversion cost is
+dominated by building the two dataclasses, JSON validation and `uuid5`. It is not optimized further.
+
+## Questions for the maintainer (answered above)
 
 1. Is there a validated use case to anchor slice 1, or is the idle-agent check-in acceptable as a
    throwaway reference director?
