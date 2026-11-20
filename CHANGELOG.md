@@ -7,6 +7,18 @@ API with migration notes.
 
 ## [Unreleased]
 
+### Migration notes
+- **Database schema 14** adds a `cognition_usage.deliberate_clod1` flag (`NOT NULL DEFAULT 0`). The
+  migration is automatic and forward-only on first open, and an older runtime then refuses the file.
+  Back up the database plus its `-wal` and `-shm` files before upgrading.
+
+### Added
+- `CognitiveRuntime.decide_dynamic` records a deliberate policy choice of CLOD 1 as a usage row
+  flagged `deliberate_clod1`, and `UsageStore.telemetry()` gains a `deliberate_clod1` count, kept
+  separate from `by_degradation`. `UsageStore.record(deliberate_clod1=...)` and
+  `UsageRecord.deliberate_clod1` expose it, `CognitiveRuntime(on_deliberate=...)` reports it without
+  writing, and the Sims 4 backend flags its own CLOD 1 rows through that hook.
+
 ## [0.5.0] - 2026-11-17
 
 ### Migration notes

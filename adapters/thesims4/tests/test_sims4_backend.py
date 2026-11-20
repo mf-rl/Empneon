@@ -5782,9 +5782,11 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
     assert result["suggested_action"] == "none"
     assert "relationship" not in result
     assert telemetry["by_provider"] == {"core-rules": 1}
+    assert telemetry["deliberate_clod1"] == 0
+    assert telemetry["by_degradation"] == {"provider_error": 1}
 
 
-def _degraded_chat(tmp_path, monkeypatch, dialogue):
+def _degraded_chat(tmp_path, monkeypatch, dialogue, event_type="player_conversation"):
     """Run one player chat whose provider dialogue is replaced by `dialogue`."""
 
     class Provider:
@@ -5816,7 +5818,7 @@ def _degraded_chat(tmp_path, monkeypatch, dialogue):
             "listener": {"id": "bernard", "name": "Bernard"},
             "conversation_id": "degradation-reason",
             "message": "I'm very attracted to you. You are really hot.",
-            "event": {"type": "player_conversation", "source": "test"},
+            "event": {"type": event_type, "source": "test"},
             "available_response_categories": ["friendly", "romance"],
         }
     )
@@ -5840,6 +5842,7 @@ def test_provider_failure_records_its_degradation_reason(tmp_path, monkeypatch) 
     assert telemetry["by_provider"] == {"core-rules": 1}
     assert telemetry["by_degradation"] == {"provider_error": 1}
     assert rows == [("core-rules", 1, "provider_error")]
+    assert telemetry["deliberate_clod1"] == 0
 
 
 def test_invalid_model_output_records_its_degradation_reason(tmp_path, monkeypatch) -> None:
@@ -7184,3 +7187,35 @@ def test_identity_import_route_rejects_non_object(monkeypatch) -> None:
     handler.do_POST()
 
     assert responses[0][0] == 400
+
+
+def test_chat_usage_flags_a_deliberate_clod1_selection_but_not_a_degradation(tmp_path) -> None:
+    request = CognitiveRequest("karmine", 1, WorldEvent("player_conversation", ("karmine",)))
+    with open_db(str(tmp_path / "usage.sqlite3")) as conn:
+        ai_sims_server._chat_record_usage(
+            conn, request, {"clod": 1, "task": "core-rules"}, [], None, True
+        )
+        degraded = CognitiveRequest("karmine", 3, WorldEvent("player_conversation", ("karmine",)))
+        ai_sims_server._chat_record_usage(
+            conn, degraded, {"clod": 1, "task": "core-rules"}, [], "provider_error"
+        )
+        telemetry = UsageStore(conn).telemetry()
+
+    assert telemetry["deliberate_clod1"] == 1
+    assert telemetry["by_degradation"] == {"provider_error": 1}
+
+
+def test_low_priority_chat_records_a_deliberate_clod1_not_a_degradation(
+    tmp_path, monkeypatch
+) -> None:
+    def unused_dialogue(_payload, _context):
+        raise AssertionError("a policy-chosen CLOD 1 must not call a provider")
+
+    result, telemetry, rows = _degraded_chat(
+        tmp_path, monkeypatch, unused_dialogue, event_type="idle_chatter"
+    )
+
+    assert result["selected_clod"] == 1
+    assert telemetry["deliberate_clod1"] == 1
+    assert telemetry["by_degradation"] == {}
+    assert rows == [("core-rules", 1, None)]

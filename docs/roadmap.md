@@ -72,7 +72,7 @@ feature promise.
   queries without changing existing local defaults
 - Core robustness and developer experience (since 0.4.0), all additive and default-off where they
   change behavior: invalid model output and provider failures degrade to CLOD 1 with a typed
-  `DegradationReason`, persisted in usage telemetry (schema 13) when a `UsageStore` is supplied;
+  `DegradationReason`, persisted in usage telemetry (schema 13; schema 14 adds `deliberate_clod1`) when a `UsageStore` is supplied;
   standard-library logging that never records content; caller-owned transactions through a
   keyword-only `commit` argument; a shared provider HTTP transport that exposes
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
@@ -94,7 +94,6 @@ feature promise.
   demonstrates a shared concept.
 - Publish `intents` and `state_paths` from the Sims 4 adapter and call `validate_decision` only
   once its intents become an enumerated set; today any unknown intent maps to a default action.
-- Record a deliberate CLOD 1 selection separately from a failed degradation.
 - Let the Sims 4 adapter use `SemanticMemoryIndex` with a real embedding model instead of hashed
   vectors; this needs a vector-table dimension migration and live LM Studio validation.
 - Add scheduler aging so a stream of urgent requests cannot starve low-urgency ones.

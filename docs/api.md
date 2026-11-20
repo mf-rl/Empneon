@@ -181,12 +181,18 @@ as a `core-rules` / `clod1` usage row with its `DegradationReason` (`provider_er
 `memory`, `budget`, `invalid_output`). `UsageStore.telemetry()` adds `by_degradation`, a count per
 reason (empty when there were none). Without `usage=` nothing is written. Recording failures are
 logged (exception type only) and never change the decision. A deliberate CLOD 1 choice, such as a
-request below the value threshold, is not a degradation and is not recorded. Adapters that keep
+request below the value threshold, is not a degradation: `CognitiveRuntime.decide_dynamic` records
+it (with `usage=`) as a `core-rules` / `clod1` row with `deliberate_clod1` set and no degradation
+reason, and `UsageStore.telemetry()` counts those rows under `deliberate_clod1`, never under
+`by_degradation`. A request where no route was affordable is neither and is not recorded.
+`UsageStore.record(deliberate_clod1=True)` and `UsageRecord.deliberate_clod1` expose the flag; a
+record cannot be both deliberate and degraded. Adapters that keep
 their own usage rows pass `CognitiveRuntime(on_degrade=callback)` instead: the callback receives the
 reason without anything being written (if both `usage=` and `on_degrade` are set, each runs and a
-failure in one never affects the other or the decision). The Sims 4 adapter uses the callback to
-attach the reason to the CLOD 1 row it records for player dialogue. This needs database schema 13,
-which adds a nullable `cognition_usage.degradation_reason` column; migration is automatic and
+failure in one never affects the other or the decision). `CognitiveRuntime(on_deliberate=callback)` is the writeless counterpart for a deliberate CLOD 1 choice made in `decide_dynamic`. The Sims 4 adapter uses the callback to
+attach the reason to the CLOD 1 row it records for player dialogue, and `on_deliberate` to flag deliberate ones. This needs database schema 14,
+which adds a nullable `cognition_usage.degradation_reason` column and a
+`deliberate_clod1` flag (`NOT NULL DEFAULT 0`, existing rows read as not deliberate); migration is automatic and
 forward-only (see Database migrations).
 
 ## Deadlines and failures

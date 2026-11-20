@@ -173,7 +173,10 @@ class CognitiveRuntime:
 
     With a `usage` store, each degradation to CLOD 1 is persisted as a `core-rules` usage row
     carrying its `DegradationReason`. `on_degrade` receives the same reason without writing
-    anything, for adapters that keep their own usage rows. Failures of either are logged by type
+    anything, for adapters that keep their own usage rows. `decide_dynamic` also persists a
+    deliberate policy choice of CLOD 1 (preferred CLOD 1 or low expected value) as a row flagged
+    `deliberate_clod1`, never as a degradation; `on_deliberate` is the writeless counterpart of
+    `on_degrade` for that case. Failures of either are logged by type
     and never change the decision or each other.
     """
 
@@ -185,12 +188,14 @@ class CognitiveRuntime:
         enforce_deadlines: bool = False,
         usage: UsageStore | None = None,
         on_degrade: Callable[[DegradationReason], None] | None = None,
+        on_deliberate: Callable[[], None] | None = None,
     ) -> None:
         self._governor = governor
         self._actions = actions
         self._enforce_deadlines = enforce_deadlines
         self._usage = usage
         self._on_degrade = on_degrade
+        self._on_deliberate = on_deliberate
 
     async def process(
         self,
@@ -250,6 +255,27 @@ class CognitiveRuntime:
 
         return await resolve_with_fallback(request, admitted, on_degrade=record_degradation)
 
+    def _record_deliberate_clod1(self, request: CognitiveRequest) -> None:
+        if self._on_deliberate is not None:
+            try:
+                self._on_deliberate()
+            except Exception as exc:
+                _log.error("deliberate hook failed: %s", type(exc).__name__)
+        if self._usage is None:
+            return
+        try:
+            self._usage.record(
+                request,
+                ResourceEstimate(),
+                "core-rules",
+                "clod1",
+                GenerationResult("", 0, 0, 0),
+                1,
+                deliberate_clod1=True,
+            )
+        except Exception as exc:
+            _log.error("recording deliberate CLOD 1 failed: %s", type(exc).__name__)
+
     async def decide_dynamic(
         self,
         request: CognitiveRequest,
@@ -261,6 +287,8 @@ class CognitiveRuntime:
             request, routes, self._governor, deeper_reasoning_value, minimum_value
         )
         if plan.resolver is None:
+            if plan.deliberate:
+                self._record_deliberate_clod1(request)
             return resolve_clod1(request)
         selected = cast(
             CognitiveRequest,

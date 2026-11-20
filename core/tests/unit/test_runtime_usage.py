@@ -9,16 +9,17 @@ from empneon.core.clod.fallback import DegradationReason as FallbackReason
 from empneon.core.contracts import CognitiveRequest, Decision, DegradationReason, WorldEvent
 from empneon.core.runtime import ActionRecordStore, CognitiveRuntime
 from empneon.core.scheduler.resources import ResourceBudget, ResourceEstimate, ResourceGovernor
-from empneon.core.scheduler.usage import UsageStore
+from empneon.core.scheduler.selection import CognitionRoute
+from empneon.core.scheduler.usage import UsageRecord, UsageStore
 from empneon.db.connection import open_db
-from empneon.providers.llm import ProviderError
+from empneon.providers.llm import ModelCapabilities, ProviderError
 
 SECRET = "super-secret-provider-detail"
 
 
-def request(clod: int = 3, deadline_ms: int = 20) -> CognitiveRequest:
+def request(clod: int = 3, deadline_ms: int = 20, urgency: float = 0.5) -> CognitiveRequest:
     event = WorldEvent("encounter", ("agent-a",))
-    return CognitiveRequest("agent-a", clod, event, deadline_ms=deadline_ms)
+    return CognitiveRequest("agent-a", clod, event, deadline_ms=deadline_ms, urgency=urgency)
 
 
 def build(
@@ -107,3 +108,110 @@ def test_recording_failure_never_masks_the_decision(caplog: pytest.LogCaptureFix
 
 def test_degradation_reason_has_one_identity_across_import_paths() -> None:
     assert ClodReason is FallbackReason is DegradationReason
+
+
+def _route(resolver: object) -> CognitionRoute:
+    return CognitionRoute(
+        "provider",
+        3,
+        ModelCapabilities(context_window=4_096),
+        ResourceEstimate(64, 16, 1_000, 200, 500),
+        resolver,  # type: ignore[arg-type]
+    )
+
+
+def test_policy_choice_of_clod1_is_recorded_as_deliberate_not_degraded() -> None:
+    runtime, conn = build()
+    low_value = CognitiveRequest(
+        "agent-a", 3, WorldEvent("encounter", ("agent-a",)), urgency=0.4
+    )
+
+    decision = asyncio.run(runtime.decide_dynamic(low_value, (_route(fast),), 0.9))
+
+    assert decision.intent == "acknowledge"
+    (row,) = rows(conn)
+    assert (row["provider"], row["model"], row["selected_clod"]) == ("core-rules", "clod1", 1)
+    assert row["deliberate_clod1"] == 1 and row["degradation_reason"] is None
+    telemetry = UsageStore(conn).telemetry()
+    assert telemetry["by_degradation"] == {}
+    assert telemetry["deliberate_clod1"] == 1
+
+
+def test_preferred_clod1_is_recorded_as_deliberate() -> None:
+    runtime, conn = build()
+    asyncio.run(runtime.decide_dynamic(request(clod=1, deadline_ms=1_000), (_route(fast),), 0.9))
+    (row,) = rows(conn)
+    assert row["deliberate_clod1"] == 1
+
+
+def test_degradation_is_never_counted_as_deliberate() -> None:
+    runtime, conn = build()
+    urgent = request(deadline_ms=1_000, urgency=1.0)
+    asyncio.run(runtime.decide_dynamic(urgent, (_route(provider_down),), 0.9))
+    (row,) = rows(conn)
+    assert row["degradation_reason"] == "provider_error" and row["deliberate_clod1"] == 0
+    telemetry = UsageStore(conn).telemetry()
+    assert telemetry["by_degradation"] == {"provider_error": 1}
+    assert telemetry["deliberate_clod1"] == 0
+
+
+def test_successful_dynamic_cognition_records_nothing() -> None:
+    runtime, conn = build()
+    urgent = request(deadline_ms=1_000, urgency=1.0)
+    assert asyncio.run(runtime.decide_dynamic(urgent, (_route(fast),), 0.9)).intent == "fast-answer"
+    assert rows(conn) == []
+
+
+def test_unaffordable_routes_are_not_recorded_as_deliberate() -> None:
+    runtime, conn = build()
+    huge = CognitionRoute(
+        "provider",
+        3,
+        ModelCapabilities(context_window=4_096),
+        ResourceEstimate(9_999, 0, 1_000, 200, 500),
+        fast,
+    )
+    urgent = request(deadline_ms=1_000, urgency=1.0)
+    assert asyncio.run(runtime.decide_dynamic(urgent, (huge,), 0.9)).intent == "acknowledge"
+    assert rows(conn) == []
+
+
+def test_usage_record_rejects_deliberate_degradation() -> None:
+    with pytest.raises(ValueError, match="deliberate"):
+        UsageRecord(
+            "r", "a", "e", "core-rules", "clod1", 1, ResourceEstimate(), 0, 0, 0,
+            degradation_reason=DegradationReason.BUDGET, deliberate_clod1=True,
+        )  # fmt: skip
+
+
+def test_deliberate_recording_failure_never_masks_the_decision(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    runtime, conn = build()
+    conn.execute("DROP TABLE cognition_usage")
+    with caplog.at_level(logging.ERROR, logger="empneon"):
+        decision = asyncio.run(
+            runtime.decide_dynamic(request(clod=1, deadline_ms=1_000), (_route(fast),), 0.9)
+        )
+    assert decision.intent == "acknowledge" and "OperationalError" in caplog.text
+
+
+def test_on_deliberate_hook_fires_only_for_a_policy_choice() -> None:
+    calls: list[str] = []
+    conn = open_db(":memory:")
+    runtime = CognitiveRuntime(
+        ResourceGovernor(ResourceBudget(256, 64)),
+        ActionRecordStore(conn),
+        on_deliberate=lambda: calls.append("deliberate"),
+    )
+    asyncio.run(runtime.decide_dynamic(request(clod=1), (_route(fast),), 0.9))
+    huge = CognitionRoute(
+        "provider",
+        3,
+        ModelCapabilities(context_window=4_096),
+        ResourceEstimate(9_999, 0, 1_000, 200, 500),
+        fast,
+    )
+    urgent = request(deadline_ms=1_000, urgency=1.0)
+    asyncio.run(runtime.decide_dynamic(urgent, (huge,), 0.9))
+    assert calls == ["deliberate"]

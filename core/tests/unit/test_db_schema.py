@@ -414,3 +414,43 @@ def test_degradation_reason_rejects_unknown_values(db: sqlite3.Connection) -> No
             " estimated_completion_tokens, estimated_latency_ms, recorded_at, degradation_reason)"
             " VALUES ('u','r','a','e','p','m',0,0,0,0,0,1,'because')"
         )
+
+
+def test_migrates_v13_schema_with_deliberate_clod1_column() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    for ddl in ALL_DDL:
+        conn.execute(ddl)
+    for version in range(2, 14):
+        for statement in MIGRATIONS[version]:
+            conn.execute(statement)
+    conn.execute("INSERT INTO schema_version VALUES (13)")
+    conn.execute(
+        "INSERT INTO cognition_usage (id, request_id, agent_id, event_id, provider, model,"
+        " estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
+        " estimated_completion_tokens, estimated_latency_ms, recorded_at, selected_clod,"
+        " degradation_reason)"
+        " VALUES ('usage-1','r','a','e','core-rules','clod1',0,0,0,0,0,1,1,'budget')"
+    )
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    row = conn.execute("SELECT * FROM cognition_usage WHERE id='usage-1'").fetchone()
+    assert row["deliberate_clod1"] == 0 and row["degradation_reason"] == "budget"
+
+
+def test_fresh_database_has_deliberate_clod1_column(db: sqlite3.Connection) -> None:
+    columns = {row[1] for row in db.execute("PRAGMA table_info(cognition_usage)")}
+    assert "deliberate_clod1" in columns
+
+
+def test_deliberate_clod1_rejects_non_boolean_values(db: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO cognition_usage (id, request_id, agent_id, event_id, provider, model,"
+            " estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
+            " estimated_completion_tokens, estimated_latency_ms, recorded_at, deliberate_clod1)"
+            " VALUES ('u','r','a','e','p','m',0,0,0,0,0,1,2)"
+        )
