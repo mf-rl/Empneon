@@ -107,7 +107,7 @@ BRIDGE = GodotBridge()
 
 
 class _Handler(BaseHTTPRequestHandler):
-    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+    def do_POST(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= MAX_BODY_BYTES:
