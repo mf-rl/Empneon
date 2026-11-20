@@ -129,7 +129,7 @@ backend filtering is an adapter ticket.
 Public import path: `empneon.core.memory.state` (`MemoryState`, `MemoryStateStore`, `salience`), not in the
 pinned top-level `empneon.__all__`. Differences from the proposal above:
 
-- The migration is schema 16 (schema 15 became `embedding_usage`), and #39 would now be 17.
+- The migration is schema 16 (schema 15 became `embedding_usage`), and #39 (vectors follow event deletion) was delivered without a schema change.
 - `memory_digests` and `memory_state.digest_id` are deferred to slice 2, so no foreign key points at a
   missing table; slice 2 adds the column by migration.
 - Protection covers belief provenance (`belief_provenance.source_observation_id` to the event, which

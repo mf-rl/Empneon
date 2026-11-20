@@ -166,12 +166,25 @@ def test_ties_are_ordered_by_event_id() -> None:
     assert [m.event.id for m in run(world.index.search("a", "dinner"))] == [first.id, second.id]
 
 
-def test_orphaned_vectors_are_skipped_and_remove_deletes_them() -> None:
+def test_deleting_an_event_through_the_store_removes_its_vector() -> None:
     world = World()
     gone = world.event("dinner", "a")
     kept = world.event("supper", "a")
     run(world.index.index_events([gone, kept]))
+
     world.events.delete(gone.id)
+
+    assert gone.id not in indexed(world.conn)
+    assert [m.event.id for m in run(world.index.search("a", "dinner"))] == [kept.id]
+
+
+def test_orphans_from_raw_deletes_are_skipped_and_remove_deletes_them() -> None:
+    world = World()
+    gone = world.event("dinner", "a")
+    kept = world.event("supper", "a")
+    run(world.index.index_events([gone, kept]))
+    world.conn.execute("DELETE FROM events WHERE id=?", (gone.id,))  # bypasses the store
+    world.conn.commit()
 
     assert [m.event.id for m in run(world.index.search("a", "dinner"))] == [kept.id]
     assert gone.id in indexed(world.conn)

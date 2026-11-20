@@ -1,11 +1,14 @@
 """Vector similarity search for episodic memory — backed by sqlite-vec."""
 
+import logging
 import re
 import sqlite3
 import struct
 from contextlib import AbstractContextManager, nullcontext
 
 import sqlite_vec  # type: ignore[import-untyped]
+
+_log = logging.getLogger(__name__)
 
 
 class VectorMemoryStore:
@@ -99,6 +102,24 @@ class VectorMemoryStore:
                 self._conn.execute(
                     "DELETE FROM vec_memory_index WHERE event_id=?", (event_id,)
                 )
+
+    def prune_orphans(self, *, commit: bool = True) -> int:
+        """Delete vectors whose event no longer exists; returns how many. Idempotent.
+
+        `EpisodicMemoryStore.delete` already removes an event's vector, so this only cleans up
+        vectors orphaned before that or by raw SQL deletes. Needs the Core schema (`events`).
+        """
+        with self._unit(commit):
+            rows = self._conn.execute(
+                "SELECT rowid FROM vec_memory_index"
+                " WHERE event_id NOT IN (SELECT id FROM events)"
+            ).fetchall()
+            for (rowid,) in rows:
+                self._conn.execute("DELETE FROM vec_memories WHERE rowid=?", (rowid,))
+                self._conn.execute("DELETE FROM vec_memory_index WHERE rowid=?", (rowid,))
+        if rows:
+            _log.debug("pruned %d orphaned vectors", len(rows))
+        return len(rows)
 
     def _unit(self, commit: bool) -> AbstractContextManager[object]:
         """Commit or roll back on exit when this store owns the transaction."""

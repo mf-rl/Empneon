@@ -13,7 +13,16 @@ API with migration notes.
   migrations are automatic and forward-only on first open, and an older runtime then refuses the
   file. Back up the database plus its `-wal` and `-shm` files before upgrading.
 
+### Changed
+- `EpisodicMemoryStore.delete` now also deletes the event's vector in the same transaction when the
+  vector tables exist, so deleting an event no longer leaves an orphaned vector. It creates no table,
+  honors `commit=False`, and a belief-backed event still raises before anything is removed. No
+  schema change or migration.
+
 ### Added
+- `VectorMemoryStore.prune_orphans()` and `SemanticMemoryIndex.prune_orphans()` delete vectors whose
+  event no longer exists (older orphans or raw SQL deletes); idempotent, returns the count, and
+  honors `commit=False`.
 - Reversible memory decay, first slice (`empneon.core.memory.state`): `MemoryStateStore` with
   `archive`, `restore`, `record_recall`, computed `salience_for`, and a bounded `sweep` with a
   caller-supplied policy, plus the pure `salience` function. Opt-in `include_archived=False` on
