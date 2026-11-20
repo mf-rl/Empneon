@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import http.client
 import json
 import logging
 import urllib.error
@@ -94,14 +95,16 @@ def _is_transport(exc: BaseException) -> bool:
     return isinstance(exc, OSError) and not isinstance(exc, urllib.error.HTTPError)
 
 
-def _provider_error(label: str, operation: str, exc: BaseException) -> ProviderError:
+def _provider_error(
+    label: str, operation: str, exc: BaseException, *, transport: bool | None = None
+) -> ProviderError:
     status = _status(exc)
     _log.warning("%s %s failed: %s status=%s", label, operation, type(exc).__name__, status)
     return ProviderError(
         f"{label} {operation} failed",
         status=status,
         retry_after=_retry_after(exc),
-        transport=_is_transport(exc),
+        transport=_is_transport(exc) if transport is None else transport,
     )
 
 
@@ -169,6 +172,9 @@ async def guarded_stream(
                 text = extract(json.loads(data))
             except _TRANSPORT_ERRORS as exc:
                 raise _provider_error(label, "stream", exc) from exc
+            except http.client.HTTPException as exc:
+                # A truncated chunked body: the connection broke mid-stream, so it is transient.
+                raise _provider_error(label, "stream", exc, transport=True) from exc
             if text:
                 yield text
     finally:

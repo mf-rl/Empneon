@@ -1,4 +1,5 @@
 import asyncio
+import http.client
 import json
 import logging
 import urllib.error
@@ -141,3 +142,28 @@ def test_abandoned_stream_closes_the_response() -> None:
     with patch("urllib.request.urlopen", return_value=response):
         asyncio.run(run())
     assert response.closed
+
+
+@pytest.mark.parametrize(
+    "event",
+    [{"choices": [{"delta": "text"}]}, {"choices": ["x"]}, {"choices": 5}, [1], {}],
+)
+def test_unexpected_event_shapes_raise_provider_error(event: object) -> None:
+    response = StreamResponse([b"data: " + json.dumps(event).encode() + b"\n"])
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(ProviderError) as info,
+    ):
+        collect(provider())
+    assert info.value.status is None
+    assert info.value.transport is False
+
+
+def test_truncated_chunked_body_is_a_transient_provider_error() -> None:
+    response = StreamResponse([sse({"content": "a"})], then=http.client.IncompleteRead(b"x"))
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(ProviderError) as info,
+    ):
+        collect(provider())
+    assert info.value.transport is True

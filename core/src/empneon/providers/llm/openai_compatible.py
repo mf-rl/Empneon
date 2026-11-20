@@ -21,7 +21,10 @@ def _delta_text(event: object) -> str:
     choices = cast(dict[str, Any], event)["choices"]
     if not choices:
         return ""
-    content = choices[0]["delta"].get("content")
+    delta = choices[0]["delta"]
+    if not isinstance(delta, dict):
+        raise ValueError("streamed delta must be an object")
+    content = delta.get("content")
     return content if isinstance(content, str) else ""
 
 
