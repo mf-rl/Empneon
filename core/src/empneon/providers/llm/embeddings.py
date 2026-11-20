@@ -1,12 +1,16 @@
 """Embedding providers: turn text into vectors for semantic memory search."""
 
+import logging
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Literal, Protocol
 
 from empneon.providers.llm._http import guarded_generate, guarded_health, request_json
+from empneon.providers.llm.base import ProviderError
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,101 @@ class EmbeddingProvider(Protocol):
     async def embed(self, texts: Sequence[str]) -> EmbeddingResult: ...
 
     async def health_check(self) -> bool: ...
+
+
+@dataclass(frozen=True)
+class EmbeddingOutcome:
+    """What one `embed` call cost and how it ended; never carries texts or vectors.
+
+    `failure` uses the `DegradationReason` values (`provider_error`, `timeout`, `memory`,
+    `invalid_output`), mirroring how failed generation degrades.
+    """
+
+    provider: str
+    model: str
+    input_count: int
+    prompt_tokens: int | None
+    latency_ms: int
+    status: Literal["succeeded", "failed"]
+    http_status: int | None
+    failure: str | None
+
+
+class EmbeddingUsageSink(Protocol):
+    """Receives one outcome per metered `embed` call (for example `UsageStore.embedding_sink()`)."""
+
+    def __call__(self, outcome: EmbeddingOutcome, /) -> None: ...
+
+
+_FAILURE_REASONS: dict[type[BaseException], str] = {
+    ProviderError: "provider_error",
+    TimeoutError: "timeout",
+    MemoryError: "memory",
+    ValueError: "invalid_output",
+}
+
+
+def _failure_reason(error: BaseException) -> str | None:
+    for kind, reason in _FAILURE_REASONS.items():
+        if isinstance(error, kind):
+            return reason
+    return None
+
+
+@dataclass(frozen=True)
+class UsageMeteredEmbeddingProvider:
+    """Reports one `EmbeddingOutcome` per `embed` call to a sink, outermost around any retries.
+
+    Latency is wall-clock for the whole call, including retries and backoff. Results and errors
+    pass through unchanged. Unmapped exceptions and cancellation report nothing. A sink that raises
+    is ignored (only its exception type is logged), so metering can never fail an embedding.
+    """
+
+    inner: EmbeddingProvider
+    provider: str
+    model: str
+    sink: EmbeddingUsageSink
+    clock: Callable[[], float] = time.perf_counter
+
+    async def embed(self, texts: Sequence[str]) -> EmbeddingResult:
+        started = self.clock()
+        try:
+            result = await self.inner.embed(texts)
+        except Exception as error:
+            reason = _failure_reason(error)
+            if reason is not None:
+                self._report(texts, started, "failed", None, getattr(error, "status", None), reason)
+            raise
+        self._report(texts, started, "succeeded", result.prompt_tokens, None, None)
+        return result
+
+    async def health_check(self) -> bool:
+        return await self.inner.health_check()
+
+    def _report(
+        self,
+        texts: Sequence[str],
+        started: float,
+        status: Literal["succeeded", "failed"],
+        prompt_tokens: int | None,
+        http_status: int | None,
+        failure: str | None,
+    ) -> None:
+        latency_ms = max(0, round((self.clock() - started) * 1000))
+        outcome = EmbeddingOutcome(
+            self.provider,
+            self.model,
+            max(1, len(texts)),
+            prompt_tokens,
+            latency_ms,
+            status,
+            http_status,
+            failure,
+        )
+        try:
+            self.sink(outcome)
+        except Exception as exc:
+            _log.warning("embedding usage sink failed: %s", type(exc).__name__)
 
 
 @dataclass(frozen=True)

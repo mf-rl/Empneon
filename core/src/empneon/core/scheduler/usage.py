@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from empneon.core.contracts import CognitiveRequest, DegradationReason, validate_clod
 from empneon.core.scheduler.resources import ResourceEstimate
-from empneon.providers.llm import GenerationResult
+from empneon.providers.llm import EmbeddingOutcome, EmbeddingUsageSink, GenerationResult
 
 
 @dataclass(frozen=True)
@@ -98,6 +98,62 @@ class UsageStore:
             self._conn.commit()
         return record
 
+    def record_embedding(self, outcome: EmbeddingOutcome, *, commit: bool = True) -> None:
+        """Persist one embedding call. Rows live apart from `cognition_usage` generation rows."""
+        if (outcome.status == "failed") != (outcome.failure is not None):
+            raise ValueError("a failed embedding needs a failure reason and a success has none")
+        if outcome.failure is not None:
+            DegradationReason(outcome.failure)
+        self._conn.execute(
+            "INSERT INTO embedding_usage (id, provider, model, input_count, prompt_tokens,"
+            " latency_ms, status, http_status, degradation_reason, recorded_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4()),
+                outcome.provider,
+                outcome.model,
+                outcome.input_count,
+                outcome.prompt_tokens,
+                outcome.latency_ms,
+                outcome.status,
+                outcome.http_status,
+                outcome.failure,
+                int(time.time()),
+            ),
+        )
+        if commit:
+            self._conn.commit()
+
+    def embedding_sink(self) -> EmbeddingUsageSink:
+        """A sink for `UsageMeteredEmbeddingProvider`.
+
+        Commits only when no transaction is open, so an embed call made inside a caller-owned
+        transaction (`commit=False`) never commits it; the row then follows that transaction.
+        """
+
+        def sink(outcome: EmbeddingOutcome) -> None:
+            self.record_embedding(outcome, commit=not self._conn.in_transaction)
+
+        return sink
+
+    def _embedding_telemetry(self) -> dict[str, object]:
+        statuses: dict[str, int] = {}
+        reasons: dict[str, int] = {}
+        rows = self._conn.execute(
+            "SELECT status, degradation_reason, prompt_tokens, latency_ms FROM embedding_usage"
+        ).fetchall()
+        for status, reason, _, _ in rows:
+            statuses[status] = statuses.get(status, 0) + 1
+            if reason is not None:
+                reasons[reason] = reasons.get(reason, 0) + 1
+        return {
+            "calls": len(rows),
+            "by_status": statuses,
+            "by_degradation": reasons,
+            "prompt_tokens": sum(row[2] or 0 for row in rows),
+            "latency_ms": sum(row[3] for row in rows),
+        }
+
     def get_for_request(self, request_id: str) -> list[UsageRecord]:
         rows = self._conn.execute(
             "SELECT * FROM cognition_usage WHERE request_id=? ORDER BY recorded_at, rowid",
@@ -126,7 +182,7 @@ class UsageStore:
                 degradations[reason] = degradations.get(reason, 0) + 1
             if record.deliberate_clod1:
                 deliberate += 1
-        return {
+        telemetry: dict[str, object] = {
             "attempts": len(records),
             "requests": len({record.request_id for record in records}),
             "by_clod": clods,
@@ -148,6 +204,9 @@ class UsageStore:
                 "latency_ms": sum(record.latency_ms or 0 for record in records),
             },
         }
+        if agent_id is None:
+            telemetry["embeddings"] = self._embedding_telemetry()
+        return telemetry
 
 
 def _to_record(row: sqlite3.Row) -> UsageRecord:

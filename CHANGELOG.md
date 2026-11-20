@@ -8,11 +8,18 @@ API with migration notes.
 ## [Unreleased]
 
 ### Migration notes
-- **Database schema 14** adds a `cognition_usage.deliberate_clod1` flag (`NOT NULL DEFAULT 0`). The
-  migration is automatic and forward-only on first open, and an older runtime then refuses the file.
-  Back up the database plus its `-wal` and `-shm` files before upgrading.
+- **Database schema 14** adds a `cognition_usage.deliberate_clod1` flag (`NOT NULL DEFAULT 0`), and
+  **schema 15** adds an `embedding_usage` table. Both migrations are automatic and forward-only on
+  first open, and an older runtime then refuses the file. Back up the database plus its `-wal` and
+  `-shm` files before upgrading.
 
 ### Added
+- Embedding usage telemetry: `UsageMeteredEmbeddingProvider`, `EmbeddingOutcome`, and
+  `EmbeddingUsageSink` record one row per `embed` call (latency including retries, status, HTTP
+  status, prompt tokens, and a `DegradationReason` for failures) in the new `embedding_usage` table
+  when `ConfiguredProviderRouter.embedding_provider_for(..., usage=UsageStore(conn).embedding_sink())`
+  is used. `UsageStore.telemetry()` gains an `embeddings` key (omitted for per-agent calls), and
+  generation aggregates are unchanged. Opt-in; no texts, queries, or vectors are stored or logged.
 - Directors, first slice (`empneon.core.directors`): `Director`, `DirectorView`, `Opportunity`,
   `to_request`, `run_directors`, and a throwaway `IdleCheckInDirector`. Directors only propose
   requests for cognition; Core bounds, clamps, and converts them deterministically and the host

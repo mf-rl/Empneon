@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -163,6 +163,23 @@ CREATE TABLE IF NOT EXISTS memory_documents (
 )
 """
 
+_CREATE_EMBEDDING_USAGE = """
+CREATE TABLE IF NOT EXISTS embedding_usage (
+    id                 TEXT    PRIMARY KEY,
+    provider           TEXT    NOT NULL,
+    model              TEXT    NOT NULL,
+    input_count        INTEGER NOT NULL CHECK(input_count >= 1),
+    prompt_tokens      INTEGER,
+    latency_ms         INTEGER NOT NULL CHECK(latency_ms >= 0),
+    status             TEXT    NOT NULL CHECK(status IN ('succeeded', 'failed')),
+    http_status        INTEGER,
+    degradation_reason TEXT    CHECK(degradation_reason IN
+        ('provider_error', 'timeout', 'memory', 'budget', 'invalid_output')),
+    recorded_at        INTEGER NOT NULL,
+    CHECK((status = 'failed') = (degradation_reason IS NOT NULL))
+)
+"""
+
 _CREATE_COGNITION_USAGE = """
 CREATE TABLE IF NOT EXISTS cognition_usage (
     id                          TEXT    PRIMARY KEY,
@@ -297,6 +314,7 @@ ALL_DDL: list[str] = [
     _CREATE_VOICE_PROFILES,
     _CREATE_AGENT_METADATA,
     _CREATE_MEMORY_DOCUMENTS,
+    _CREATE_EMBEDDING_USAGE,
     _CREATE_COGNITION_USAGE,
     _CREATE_ACTION_RESULTS,
     _CREATE_ACTION_CONSEQUENCES,
@@ -440,4 +458,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     ),
     13: (_ADD_COGNITION_USAGE_DEGRADATION_REASON,),
     14: (_ADD_COGNITION_USAGE_DELIBERATE_CLOD1,),
+    15: (_CREATE_EMBEDDING_USAGE,),
 }

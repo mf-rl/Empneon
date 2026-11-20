@@ -14,7 +14,12 @@ from empneon.providers.llm.base import (
     StreamingLLMProvider,
 )
 from empneon.providers.llm.breaker import BreakerRegistry, CircuitBreaker, CircuitBreakerPolicy
-from empneon.providers.llm.embeddings import EmbeddingProvider, OpenAICompatibleEmbeddingProvider
+from empneon.providers.llm.embeddings import (
+    EmbeddingProvider,
+    EmbeddingUsageSink,
+    OpenAICompatibleEmbeddingProvider,
+    UsageMeteredEmbeddingProvider,
+)
 from empneon.providers.llm.lmstudio import API_V1_PREFIX, LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
 from empneon.providers.llm.resilience import (
@@ -80,11 +85,15 @@ class ConfiguredProviderRouter:
         policy, breaker = resilience
         return ResilientProvider(provider, policy, breaker=breaker)
 
-    def embedding_provider_for(self, task: str = "embedding") -> EmbeddingProvider:
+    def embedding_provider_for(
+        self, task: str = "embedding", *, usage: EmbeddingUsageSink | None = None
+    ) -> EmbeddingProvider:
         """Build the embedding provider configured under the explicit `task` entry.
 
         The task must name its own `model`, so a missing entry can never reuse the chat model.
         Optional keys: `dimensions`, `batch_size`, `normalize`, `retry`, `circuit_breaker`.
+        When `usage` is given (for example `UsageStore.embedding_sink()`), the provider is wrapped
+        outermost in `UsageMeteredEmbeddingProvider`, with or without retry or a breaker.
         """
         if not str((self._tasks.get(task) or {}).get("model") or "").strip():
             raise ValueError(f"embedding task {task!r} requires its own model")
@@ -100,10 +109,15 @@ class ConfiguredProviderRouter:
             **_embedding_options(config),
         )
         resilience = self._resilience(config)
-        if resilience is None:
-            return provider
-        policy, breaker = resilience
-        return ResilientEmbeddingProvider(provider, policy, breaker=breaker)
+        resolved: EmbeddingProvider = provider
+        if resilience is not None:
+            policy, breaker = resilience
+            resolved = ResilientEmbeddingProvider(provider, policy, breaker=breaker)
+        if usage is None:
+            return resolved
+        return UsageMeteredEmbeddingProvider(
+            resolved, str(config["name"]), str(config["model"]), usage
+        )
 
     def _resilience(
         self, config: Mapping[str, object]

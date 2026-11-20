@@ -171,8 +171,8 @@ kept separate from the chat model's.
 
 `VectorMemoryStore` tables are created with fixed dimensions (384 by default) and reject reopening
 with different dimensions, so use a new database or table when switching to a model with another
-size. The Sims 4 adapter still uses its hashed 384-dimension vectors; embeddings usage telemetry is
-not provided yet.
+size. The Sims 4 adapter still uses its hashed 384-dimension vectors and does not meter embeddings.
+For usage telemetry see Embedding usage telemetry below.
 
 ### Semantic memory index
 
@@ -241,10 +241,28 @@ record cannot be both deliberate and degraded. Adapters that keep
 their own usage rows pass `CognitiveRuntime(on_degrade=callback)` instead: the callback receives the
 reason without anything being written (if both `usage=` and `on_degrade` are set, each runs and a
 failure in one never affects the other or the decision). `CognitiveRuntime(on_deliberate=callback)` is the writeless counterpart for a deliberate CLOD 1 choice made in `decide_dynamic`. The Sims 4 adapter uses the callback to
-attach the reason to the CLOD 1 row it records for player dialogue, and `on_deliberate` to flag deliberate ones. This needs database schema 14,
-which adds a nullable `cognition_usage.degradation_reason` column and a
-`deliberate_clod1` flag (`NOT NULL DEFAULT 0`, existing rows read as not deliberate); migration is automatic and
-forward-only (see Database migrations).
+attach the reason to the CLOD 1 row it records for player dialogue, and `on_deliberate` to flag deliberate ones. This needs database schema 14
+(schema 13 added the nullable `cognition_usage.degradation_reason` column and schema 14 the
+`deliberate_clod1` flag, `NOT NULL DEFAULT 0`, so existing rows read as not deliberate); migration
+is automatic and forward-only (see Database migrations).
+
+### Embedding usage telemetry
+
+Embedding calls are metered separately from generation, in the `embedding_usage` table (database
+schema 15), so the generation aggregates above never mix with them.
+`ConfiguredProviderRouter.embedding_provider_for(task, usage=UsageStore(conn).embedding_sink())`
+wraps the provider (outermost, with or without `retry` or `circuit_breaker`) in
+`UsageMeteredEmbeddingProvider`, which reports one `EmbeddingOutcome` per `embed` call: provider,
+model, input count, prompt tokens when the endpoint reports them, wall-clock latency including any
+retries, `status` (`succeeded` or `failed`), the HTTP status when there was one, and for failures a
+`DegradationReason` value (`ProviderError` and `CircuitOpenError` give `provider_error`,
+`TimeoutError` gives `timeout`, `MemoryError` gives `memory`, `ValueError` gives `invalid_output`).
+Other exceptions and cancellation record nothing. Without `usage` nothing is written. `UsageStore.telemetry()`
+gains an `embeddings` key (`calls`, `by_status`, `by_degradation`, `prompt_tokens`, `latency_ms`);
+it is omitted when `telemetry(agent_id)` filters by agent, because embedding calls carry no agent.
+Texts, queries, and vectors are never stored or logged, and a sink failure is logged by exception
+type only and never fails the embedding. The sink commits only when the connection has no open
+transaction, so an embed call inside a caller-owned transaction (`commit=False`) does not commit it.
 
 ## Deadlines and failures
 
