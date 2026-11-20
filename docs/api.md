@@ -74,6 +74,13 @@ attribute is the expired request), `expire()` removes and returns all expired re
 `submit` discards expired entries before reporting `SchedulerFull`, so stale work cannot block new
 requests.
 
+Aging is opt-in: `PriorityScheduler(n, aging_per_second=0.1)` adds that much to a queued request's
+effective urgency for every second it waits, so a request with urgency `u` outranks a steady stream
+of urgency-`1.0` arrivals after at most `(1 - u) / aging_per_second` seconds (plus requests already
+ahead of it). Without it (the default `0.0`), a steady stream of urgent requests can starve
+low-urgency ones indefinitely. Aging changes ordering only; deadlines are never extended. The rate
+must be finite and non-negative.
+
 ## Provider resilience
 
 Retries are opt-in. Wrap any provider as `ResilientProvider(provider, RetryPolicy(...))`, or add a

@@ -13,6 +13,9 @@ API with migration notes.
   Back up the database plus its `-wal` and `-shm` files before upgrading.
 
 ### Added
+- `PriorityScheduler(aging_per_second=...)` opts in to aging so long-waiting low-urgency requests are
+  eventually served instead of starved. The default `0.0` keeps strict urgency ordering, and
+  deadline expiry is unchanged.
 - `CognitiveRuntime.decide_dynamic` records a deliberate policy choice of CLOD 1 as a usage row
   flagged `deliberate_clod1`, and `UsageStore.telemetry()` gains a `deliberate_clod1` count, kept
   separate from `by_degradation`. `UsageStore.record(deliberate_clod1=...)` and
