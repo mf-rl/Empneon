@@ -184,7 +184,8 @@ index = SemanticMemoryIndex(conn, router.embedding_provider_for())
 await index.index_events(events)                 # one embed call; re-indexing replaces vectors
 await index.index_unindexed(limit=256)           # backfill events that have no vector yet
 matches = await index.search("bella", "that dinner we planned", limit=5)  # [SemanticMatch]
-index.remove(event_id)                           # events do not cascade to vectors
+index.remove(event_id)                           # only for events deleted outside the store
+index.prune_orphans()                            # one-shot cleanup of older orphans
 ```
 
 `search` returns at most `limit` `SemanticMatch(event, distance)` pairs, closest first (0 is
@@ -195,8 +196,12 @@ until enough owned events are found. Vector dimensions come from the embedder's 
 table with other dimensions raises `ValueError`. Embedding happens before any write; with
 `commit=False` the caller owns the transaction, otherwise a failure rolls back the whole batch.
 `ProviderError` (including `CircuitOpenError`) propagates untouched so the caller chooses a
-fallback, and no text, query, or vector is logged. Deleting an event leaves its vector behind;
-search skips such orphans and `remove` clears them.
+fallback, and no text, query, or vector is logged. `EpisodicMemoryStore.delete` removes the event's
+vector in the same transaction when the vector tables exist (no table is created, and
+`commit=False` leaves the transaction to the caller). Vectors orphaned before that, or by raw SQL
+deletes, are skipped by `search` and cleared by `remove` or, in bulk, by
+`SemanticMemoryIndex.prune_orphans()` (also `VectorMemoryStore.prune_orphans()`), which is
+idempotent and returns the count. There is no schema change or migration for this.
 
 ## Memory state: archive, recall bookkeeping, salience
 

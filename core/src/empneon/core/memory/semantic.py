@@ -129,10 +129,19 @@ class SemanticMemoryIndex:
         return []
 
     def remove(self, event_id: str, *, commit: bool = True) -> None:
-        """Delete an event's vector (events do not cascade to the vector tables)."""
+        """Delete an event's vector.
+
+        `EpisodicMemoryStore.delete` already does this; use `remove` for events deleted by other
+        means.
+        """
         store = VectorMemoryStore.existing(self._conn, commit=False)
         if store is not None:
             store.delete(event_id, commit=commit)
+
+    def prune_orphans(self, *, commit: bool = True) -> int:
+        """Delete vectors whose event no longer exists; returns the count (0 without tables)."""
+        store = VectorMemoryStore.existing(self._conn, commit=False)
+        return 0 if store is None else store.prune_orphans(commit=commit)
 
     def _owned(self, agent_id: str, event_ids: Sequence[str]) -> set[str]:
         owned: set[str] = set()

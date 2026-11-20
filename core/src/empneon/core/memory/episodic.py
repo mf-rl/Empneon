@@ -9,6 +9,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import asdict, dataclass, field, replace
 from typing import Literal, cast
 
+from empneon.core.memory.vector import VectorMemoryStore
 from empneon.db.query import validate_limit
 
 BeliefSourceKind = Literal["observation", "belief"]
@@ -132,9 +133,16 @@ class EpisodicMemoryStore:
         return [_row_to_event(r, participants_by_event[r["id"]]) for r in rows]
 
     def delete(self, event_id: str, *, commit: bool = True) -> None:
-        self._conn.execute("DELETE FROM events WHERE id=?", (event_id,))
-        if commit:
-            self._conn.commit()
+        """Delete an event and, when vector tables exist, its vector in the same transaction.
+
+        With `commit=False` the caller owns the transaction. A belief-backed event still raises
+        `sqlite3.IntegrityError` before any vector is touched, and no vector table is created.
+        """
+        with self._conn if commit else nullcontext():
+            self._conn.execute("DELETE FROM events WHERE id=?", (event_id,))
+            vectors = VectorMemoryStore.existing(self._conn, commit=False)
+            if vectors is not None:
+                vectors.delete(event_id, commit=False)
 
     def _attach_participants(self, event: Event) -> Event:
         rows = self._conn.execute(
