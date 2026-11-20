@@ -198,6 +198,35 @@ table with other dimensions raises `ValueError`. Embedding happens before any wr
 fallback, and no text, query, or vector is logged. Deleting an event leaves its vector behind;
 search skips such orphans and `remove` clears them.
 
+## Memory state: archive, recall bookkeeping, salience
+
+`empneon.core.memory.state` is an optional, supported import path (not part of `empneon.__all__`)
+that adds reversible decay on top of existing events without changing any default (database
+schema 16 adds a `memory_state` table; a missing row means active and never recalled).
+`MemoryStateStore(conn)` offers `archive(event_ids, now=...)`, `restore(event_ids)`,
+`record_recall(event_ids, now=...)`, `archived_ids(event_ids)`, `get(event_id)`, and
+`salience_for(event_ids, now=..., half_life_s=..., floor=...)`. `salience(anchor, now,
+half_life_s, floor)` is the pure function behind it: `max(floor, 0.5 ** (age / half_life_s))`, with
+the anchor being the last recall, else when the event happened. Times are integer seconds and
+`now` is always supplied by the caller. Nothing is stored for salience, it is computed on read.
+
+`sweep(agent_id, now=..., older_than_s=..., max_rows=..., keep_latest=0, eligible=None,
+include_shared=False)` archives up to `max_rows` of an agent's old events, oldest first, and returns
+their ids. The caller supplies eligibility through age, `keep_latest`, and an optional predicate over
+`Event`. Events that back a belief (through its source observation) or are cited by an action record
+(its event or its `evidence_ids`) are never archived. Archiving is one flag per event, so it hides the
+event from every participant's opted-in recall; events with several participants are therefore
+skipped unless `include_shared=True`. Archiving never deletes or alters a row, and `restore` undoes
+it. Every mutator takes the keyword-only `commit` argument, and only counts are logged.
+
+Recall is unchanged unless you opt in: `EpisodicMemoryStore.get_for_agent(..., include_archived=False)`
+and `SemanticMemoryIndex.search(..., include_archived=False)` skip archived events (search keeps
+widening its window so archived events do not shrink the result). `get`, timeline, replay, and
+`index_unindexed` still see archived events, and archiving keeps their vectors. Recall bookkeeping
+is never written automatically: call `record_recall` yourself. Design:
+[memory-consolidation-decay](memory-consolidation-decay.md); digests and ranking by salience are not
+implemented yet, and hard pruning is not planned.
+
 ## Directors
 
 `empneon.core.directors` is an optional, supported import path (not part of `empneon.__all__`).

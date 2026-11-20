@@ -10,6 +10,7 @@ EXPECTED_TABLES = frozenset(
     {
         "schema_version",
         "embedding_usage",
+        "memory_state",
         "agents",
         "personality",
         "relationships",
@@ -550,3 +551,46 @@ def test_embedding_usage_rejects_invalid_rows(
 ) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         db.execute(_EMBEDDING_INSERT, _embedding_row(**overrides))
+
+
+def test_migrates_v15_schema_with_memory_state_table() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    for ddl in ALL_DDL:
+        conn.execute(ddl)
+    for version in range(2, 16):
+        for statement in MIGRATIONS[version]:
+            conn.execute(statement)
+    conn.execute("DROP TABLE memory_state")
+    conn.execute("INSERT INTO schema_version VALUES (15)")
+    conn.execute(
+        "INSERT INTO events (id, description, location, happened_at, created_at)"
+        " VALUES ('e1', 'kept', NULL, 1, 1)"
+    )
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert SCHEMA_VERSION >= 16
+    assert conn.execute("SELECT count(*) FROM memory_state").fetchone()[0] == 0
+    assert conn.execute("SELECT description FROM events WHERE id='e1'").fetchone()[0] == "kept"
+
+
+def test_fresh_database_has_memory_state_columns(db: sqlite3.Connection) -> None:
+    columns = {row[1] for row in db.execute("PRAGMA table_info(memory_state)")}
+    assert columns == {"event_id", "archived_at", "recall_count", "last_recalled_at"}
+
+
+def test_memory_state_rejects_negative_recall_counts(db: sqlite3.Connection) -> None:
+    db.execute(
+        "INSERT INTO events (id, description, location, happened_at, created_at)"
+        " VALUES ('e1', 'd', NULL, 1, 1)"
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("INSERT INTO memory_state (event_id, recall_count) VALUES ('e1', -1)")
+
+
+def test_memory_state_requires_an_existing_event(db: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("INSERT INTO memory_state (event_id) VALUES ('missing')")

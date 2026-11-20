@@ -90,14 +90,26 @@ class EpisodicMemoryStore:
             return None
         return self._attach_participants(_row_to_event(row, []))
 
-    def get_for_agent(self, agent_id: str, limit: int | None = None) -> list[Event]:
+    def get_for_agent(
+        self, agent_id: str, limit: int | None = None, *, include_archived: bool = True
+    ) -> list[Event]:
+        """The agent's events, newest first; `include_archived=False` hides archived ones."""
         validate_limit(limit)
-        query = (
-            "SELECT e.* FROM events e"
-            " JOIN event_participants ep ON ep.event_id = e.id"
-            " WHERE ep.agent_id=?"
-            " ORDER BY e.happened_at DESC, e.id DESC"
-        )
+        if include_archived:
+            query = (
+                "SELECT e.* FROM events e"
+                " JOIN event_participants ep ON ep.event_id = e.id"
+                " WHERE ep.agent_id=?"
+                " ORDER BY e.happened_at DESC, e.id DESC"
+            )
+        else:
+            query = (
+                "SELECT e.* FROM events e"
+                " JOIN event_participants ep ON ep.event_id = e.id"
+                " LEFT JOIN memory_state ms ON ms.event_id = e.id"
+                " WHERE ep.agent_id=? AND ms.archived_at IS NULL"
+                " ORDER BY e.happened_at DESC, e.id DESC"
+            )
         args: tuple[str | int, ...] = (agent_id,)
         if limit is not None:
             query += " LIMIT ?"

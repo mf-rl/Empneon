@@ -11,6 +11,7 @@ from empneon.core.identity.models import Agent
 from empneon.core.identity.store import AgentStore
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event, Observation, ObservationStore
 from empneon.core.memory.semantic import Ownership, SemanticMatch, SemanticMemoryIndex
+from empneon.core.memory.state import MemoryStateStore
 from empneon.core.memory.vector import VectorMemoryStore
 from empneon.db.connection import open_db
 from empneon.providers.llm import CircuitOpenError, EmbeddingResult, ProviderError
@@ -283,3 +284,39 @@ def test_event_text_and_queries_are_never_logged(caplog: pytest.LogCaptureFixtur
         run(world.index.index_event(event))
         run(world.index.search("a", f"dinner {SECRET}"))
     assert SECRET not in caplog.text
+
+
+def test_archived_events_are_hidden_only_when_asked() -> None:
+    world = World()
+    dinner = world.event("supper with friends", "a")
+    garden = world.event("planting the yard", "a")
+    run(world.index.index_events([dinner, garden]))
+    MemoryStateStore(world.conn).archive([dinner.id], now=5)
+
+    default = run(world.index.search("a", "dinner", limit=2))
+    visible = run(world.index.search("a", "dinner", limit=2, include_archived=False))
+
+    assert [m.event.id for m in default][0] == dinner.id
+    assert [m.event.id for m in visible] == [garden.id]
+
+
+def test_archived_events_never_crowd_out_the_requested_limit() -> None:
+    world = World()
+    archived = [world.event(f"supper number {i}", "a") for i in range(12)]
+    kept = [world.event("planting the yard", "a"), world.event("birthday celebration", "a")]
+    run(world.index.index_events([*archived, *kept]))
+    MemoryStateStore(world.conn).archive([event.id for event in archived], now=5)
+
+    matches = run(world.index.search("a", "dinner", limit=2, include_archived=False))
+
+    assert {m.event.id for m in matches} == {event.id for event in kept}
+
+
+def test_archiving_does_not_unindex_vectors() -> None:
+    world = World()
+    event = world.event("supper with friends", "a")
+    run(world.index.index_events([event]))
+    MemoryStateStore(world.conn).archive([event.id], now=5)
+
+    assert run(world.index.index_unindexed()) == 0
+    assert [m.event.id for m in run(world.index.search("a", "dinner"))] == [event.id]

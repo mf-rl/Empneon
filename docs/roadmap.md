@@ -78,7 +78,7 @@ feature promise.
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
   block new requests and opt-in scheduler aging; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
   breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter
-  failures; an opt-in directors protocol (first slice, in memory); opt-in streaming generation (OpenAI-compatible and LM Studio providers, `stream_for` on the router); an opt-in embeddings provider with retry, circuit breaker, and usage telemetry (schema 15) and an agent-scoped
+  failures; an opt-in directors protocol (first slice, in memory); reversible memory archiving with computed salience and a bounded sweep (schema 16); opt-in streaming generation (OpenAI-compatible and LM Studio providers, `stream_for` on the router); an opt-in embeddings provider with retry, circuit breaker, and usage telemetry (schema 15) and an agent-scoped
   `SemanticMemoryIndex`; opt-in adapter capability validation (`intents`, `state_paths`);
   `py.typed`, `CHANGELOG.md`, `CLAUDE.md`, and a Python 3.11/3.12 CI matrix
 
@@ -103,7 +103,7 @@ Each needs its own design and evidence before implementation:
 
 - hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration; latency alone does
   not justify it yet (see [recall benchmark](recall-benchmark.md); issue #40, closed as not planned);
-- memory consolidation and decay (design proposed in [memory-consolidation-decay](memory-consolidation-decay.md); issues #35, #41);
+- memory consolidation and decay beyond slice 1: deterministic digests and ranking by salience (design in [memory-consolidation-decay](memory-consolidation-decay.md); issue #41);
 - directors beyond slice 1: persistence, replay attribution, adapter-side directors and wiring, only once a validated use case exists (slice 1 shipped; see [directors-protocol](directors-protocol.md)).
 
 ### Resource evidence

@@ -8,12 +8,18 @@ API with migration notes.
 ## [Unreleased]
 
 ### Migration notes
-- **Database schema 14** adds a `cognition_usage.deliberate_clod1` flag (`NOT NULL DEFAULT 0`), and
-  **schema 15** adds an `embedding_usage` table. Both migrations are automatic and forward-only on
-  first open, and an older runtime then refuses the file. Back up the database plus its `-wal` and
-  `-shm` files before upgrading.
+- **Database schema 14** adds a `cognition_usage.deliberate_clod1` flag (`NOT NULL DEFAULT 0`),
+  **schema 15** adds an `embedding_usage` table, and **schema 16** adds a `memory_state` table. All
+  migrations are automatic and forward-only on first open, and an older runtime then refuses the
+  file. Back up the database plus its `-wal` and `-shm` files before upgrading.
 
 ### Added
+- Reversible memory decay, first slice (`empneon.core.memory.state`): `MemoryStateStore` with
+  `archive`, `restore`, `record_recall`, computed `salience_for`, and a bounded `sweep` with a
+  caller-supplied policy, plus the pure `salience` function. Opt-in `include_archived=False` on
+  `EpisodicMemoryStore.get_for_agent` and `SemanticMemoryIndex.search`; defaults, `get`, timeline,
+  and replay are unchanged. Archiving only flags existing events (nothing is deleted or created),
+  and events backing a belief or cited by an action record are never archived.
 - Embedding usage telemetry: `UsageMeteredEmbeddingProvider`, `EmbeddingOutcome`, and
   `EmbeddingUsageSink` record one row per `embed` call (latency including retries, status, HTTP
   status, prompt tokens, and a `DegradationReason` for failures) in the new `embedding_usage` table
