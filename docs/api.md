@@ -68,18 +68,24 @@ negative limit as unlimited).
 
 ## Scheduling
 
-`empneon.core.scheduler.PriorityScheduler` is a bounded queue ordered by urgency, then deadline. A
-request past its deadline is never returned: `pop` raises `RequestDeadlineExceeded` (its `request`
-attribute is the expired request), `expire()` removes and returns all expired requests, and
-`submit` discards expired entries before reporting `SchedulerFull`, so stale work cannot block new
-requests.
+`empneon.core.scheduler.PriorityScheduler` is a bounded queue ordered by urgency (optionally aged,
+below), then deadline. A request past its deadline is never returned: `pop` raises
+`RequestDeadlineExceeded` (its `request` attribute is the expired request), `expire()` removes and
+returns all expired requests, and `submit` discards expired entries before reporting
+`SchedulerFull`, so stale work cannot block new requests.
 
 Aging is opt-in: `PriorityScheduler(n, aging_per_second=0.1)` adds that much to a queued request's
 effective urgency for every second it waits, so a request with urgency `u` outranks a steady stream
 of urgency-`1.0` arrivals after at most `(1 - u) / aging_per_second` seconds (plus requests already
-ahead of it). Without it (the default `0.0`), a steady stream of urgent requests can starve
-low-urgency ones indefinitely. Aging changes ordering only; deadlines are never extended. The rate
-must be finite and non-negative.
+ahead of it). Effective urgency is not clamped, so an aged request can outrank a new urgency-`1.0`
+arrival. Without aging (the default `0.0`), a steady stream of urgent requests can starve
+low-urgency ones indefinitely.
+
+Aging changes ordering only; deadlines are never extended, so a request whose deadline falls before
+its aged turn is still discarded: aging helps requests whose deadline is long relative to
+`(1 - u) / aging_per_second`. `expire()` returns expired requests in aged-key order. The rate must
+be finite and non-negative. The cost is one multiply and one subtract per `submit`, with no extra
+memory.
 
 ## Provider resilience
 

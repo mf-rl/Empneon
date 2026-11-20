@@ -156,3 +156,18 @@ def test_aging_does_not_extend_deadlines(clock: Clock) -> None:
 def test_aging_rate_must_be_finite_and_non_negative(rate: float) -> None:
     with pytest.raises(ValueError, match="aging_per_second"):
         PriorityScheduler(1, aging_per_second=rate)
+
+
+def test_full_queue_evicts_expired_entries_while_aging(clock: Clock) -> None:
+    scheduler = PriorityScheduler(2, aging_per_second=1.0)
+    scheduler.submit(request("stale", urgency=0.9, deadline_ms=10))
+    clock.now = 0.5
+    scheduler.submit(request("old", urgency=0.1, deadline_ms=1_000_000))
+    clock.now = 1.0
+
+    newest = request("new", urgency=0.2)
+    scheduler.submit(newest)
+
+    assert len(scheduler) == 2
+    assert scheduler.pop().agent_id == "old"
+    assert scheduler.pop() is newest
