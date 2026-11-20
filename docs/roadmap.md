@@ -126,8 +126,7 @@ Each needs its own design and evidence before implementation:
 
 ### Developer experience
 
-- Publish tagged monorepo releases with built Core and adapter artifacts, and cut the next
-  release from the Unreleased section of `CHANGELOG.md`.
+- Publish tagged monorepo releases with built Core and adapter artifacts.
 - Add concise migration notes whenever a supported API or database schema changes.
 
 ## Project boundary
