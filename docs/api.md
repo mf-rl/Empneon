@@ -198,6 +198,20 @@ table with other dimensions raises `ValueError`. Embedding happens before any wr
 fallback, and no text, query, or vector is logged. Deleting an event leaves its vector behind;
 search skips such orphans and `remove` clears them.
 
+## Directors
+
+`empneon.core.directors` is an optional, supported import path (not part of `empneon.__all__`).
+A director is a pure proposer: `propose(view: DirectorView) -> tuple[Opportunity, ...]`, with an `id`,
+`max_opportunities`, and `max_urgency`. An `Opportunity` (`director_id`, `kind`, `agent_id`, `urgency`,
+`deadline_ms`, JSON-compatible `facts`) is a request for cognition and carries no intent, target, or
+state change. `run_directors(directors, view, preferred_clod=Clod.RULES)` returns
+`CognitiveRequest`s for the host to submit to its own scheduler; Core never calls `submit` and starts
+no loop. `to_request` converts one opportunity: the synthetic event has type `opportunity.<kind>`,
+carries `director_id` in its facts and the agent's snapshot as `agent_state`, and is never stored.
+Ids are deterministic for a fixed `DirectorView`. A raising director is skipped, output is truncated
+and urgency clamped to the director's limits, and only counts and exception type names are logged.
+`IdleCheckInDirector` is a throwaway reference. Design: [directors-protocol](directors-protocol.md).
+
 ## Capability validation
 
 An adapter may publish two optional lists in `AgentStateSnapshot.capabilities`: `intents` (decision

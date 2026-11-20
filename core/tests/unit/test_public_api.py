@@ -56,3 +56,19 @@ def test_streaming_names_are_public_provider_api() -> None:
     assert llm.StreamingLLMProvider is not None
     # The non-streaming protocol is unchanged: custom providers need not implement `stream`.
     assert "stream" not in llm.LLMProvider.__dict__
+
+
+def test_directors_names_are_a_supported_import_path() -> None:
+    from empneon.core import directors
+
+    assert set(directors.__all__) == {
+        "Director",
+        "DirectorView",
+        "IdleCheckInDirector",
+        "Opportunity",
+        "run_directors",
+        "to_request",
+    }
+    assert all(hasattr(directors, name) for name in directors.__all__)
+    # Optional module: not part of the pinned top-level `empneon.__all__`.
+    assert "run_directors" not in empneon.__all__
