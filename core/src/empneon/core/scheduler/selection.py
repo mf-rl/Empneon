@@ -31,6 +31,8 @@ class CognitionPlan:
     completion_tokens: int
     estimate: ResourceEstimate
     resolver: Resolver | None
+    deliberate: bool = False
+    """True when the policy itself chose CLOD 1, not when no route was affordable."""
 
 
 def select_cognition(
@@ -46,7 +48,7 @@ def select_cognition(
     if not 0 <= minimum_value <= 1:
         raise ValueError("minimum value must be between 0 and 1")
     if request.preferred_clod <= 1 or request.urgency * deeper_reasoning_value < minimum_value:
-        return _clod1_plan()
+        return _clod1_plan(deliberate=True)
 
     budget = governor.budget
     candidates = sorted(
@@ -107,5 +109,5 @@ def _plan_for_route(
     )
 
 
-def _clod1_plan() -> CognitionPlan:
-    return CognitionPlan(1, None, 0, 0, ResourceEstimate(), None)
+def _clod1_plan(*, deliberate: bool = False) -> CognitionPlan:
+    return CognitionPlan(1, None, 0, 0, ResourceEstimate(), None, deliberate)

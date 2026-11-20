@@ -25,8 +25,11 @@ class UsageRecord:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     recorded_at: int = field(default_factory=lambda: int(time.time()))
     degradation_reason: DegradationReason | None = None
+    deliberate_clod1: bool = False
 
     def __post_init__(self) -> None:
+        if self.deliberate_clod1 and self.degradation_reason is not None:
+            raise ValueError("a deliberate CLOD 1 selection cannot carry a degradation reason")
         if self.clod is not None:
             validate_clod(self.clod, "selected CLOD")
 
@@ -46,6 +49,7 @@ class UsageStore:
         *,
         commit: bool = True,
         degradation_reason: DegradationReason | None = None,
+        deliberate_clod1: bool = False,
     ) -> UsageRecord:
         record = UsageRecord(
             request.id,
@@ -59,6 +63,7 @@ class UsageStore:
             result.completion_tokens,
             result.latency_ms,
             degradation_reason=degradation_reason,
+            deliberate_clod1=deliberate_clod1,
         )
         self._conn.execute(
             "INSERT INTO cognition_usage ("
@@ -66,8 +71,8 @@ class UsageStore:
             "estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
             "estimated_completion_tokens, estimated_latency_ms, actual_prompt_tokens,"
             "actual_completion_tokens, actual_latency_ms, recorded_at, selected_clod,"
-            "degradation_reason"
-            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "degradation_reason, deliberate_clod1"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 record.id,
                 record.request_id,
@@ -86,6 +91,7 @@ class UsageStore:
                 record.recorded_at,
                 record.clod,
                 record.degradation_reason,
+                int(record.deliberate_clod1),
             ),
         )
         if commit:
@@ -110,6 +116,7 @@ class UsageStore:
         clods: dict[str, int] = {}
         providers: dict[str, int] = {}
         degradations: dict[str, int] = {}
+        deliberate = 0
         for record in records:
             clod = "unknown" if record.clod is None else str(record.clod)
             clods[clod] = clods.get(clod, 0) + 1
@@ -117,12 +124,15 @@ class UsageStore:
             if record.degradation_reason is not None:
                 reason = str(record.degradation_reason)
                 degradations[reason] = degradations.get(reason, 0) + 1
+            if record.deliberate_clod1:
+                deliberate += 1
         return {
             "attempts": len(records),
             "requests": len({record.request_id for record in records}),
             "by_clod": clods,
             "by_provider": providers,
             "by_degradation": degradations,
+            "deliberate_clod1": deliberate,
             "estimated": {
                 "peak_ram_mb": max((record.estimate.ram_mb for record in records), default=0),
                 "peak_vram_mb": max((record.estimate.vram_mb for record in records), default=0),
@@ -165,4 +175,5 @@ def _to_record(row: sqlite3.Row) -> UsageRecord:
             if row["degradation_reason"] is not None
             else None
         ),
+        deliberate_clod1=bool(row["deliberate_clod1"]),
     )

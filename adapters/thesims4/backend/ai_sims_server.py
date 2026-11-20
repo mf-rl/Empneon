@@ -850,6 +850,7 @@ def _chat_record_usage(conn, request, selected, generations, degradation_reason=
             GenerationResult("", 0, 0, 0),
             int(selected["clod"]),
             degradation_reason=degradation_reason,
+            deliberate_clod1=selected["clod"] == 1 and degradation_reason is None,
         )
 
 
