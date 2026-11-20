@@ -213,7 +213,7 @@ def measure(total: int, repeat: int, seed_value: int, directory: Path) -> dict[s
         )
     except sqlite3.OperationalError as error:
         results["core.get_for_agent[unbounded]"] = {
-            "error": f"{type(error).__name__}: {error}"
+            "error": type(error).__name__
         }
     vectors = VectorMemoryStore(conn, DIMENSIONS, commit=False)
     probe = [rng.uniform(-1, 1) for _ in range(DIMENSIONS)]

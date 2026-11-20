@@ -24,28 +24,33 @@ touches a real save.
 | 50,000 | 91 / 105 / 122 | 15 / 43 / 50 | 118 | 34 | 48 |
 | 100,000 | 180 / 203 / 252 | 28 / 80 / 97 | 210 | 66 | 85 |
 
-p95 stays within about 10% of p50 in every row (full tables come from the script). Cold pairs behave the
-same, because the current query scans every event row (`json_extract` on `description`) regardless of pair
-size: cost grows linearly, roughly 1.8 to 2.5 ms per 1,000 events.
+Unbounded `get_for_agent` (not in the table) took 0.7 / 12 / 80 / 158 ms at the four sizes. p95 stayed
+within 1.3x of p50 at 100k and within 1.7x at 10k and 50k; at 1k the worst row was 2.2x (a sub-3 ms
+measurement). Cold pairs are not tabulated (run the script for them): the current query scans every event row
+(`json_extract` on `description`) regardless of pair size, so cost grows linearly, about 3 ms per 1,000
+events at 1k and 1.8 to 2.5 ms per 1,000 beyond 10k.
 
 ## Findings
 
 1. The current pair-history scan costs about 2 ms per 1,000 events. End-to-end `recalled_memories`
-   adds only 5 to 10 ms of Python ranking on top at every size.
-2. An FTS5 prototype is 2.5x to 6x faster on the SQL step (more for rare terms, less for generic queries).
+   adds about 2 to 13 ms of Python ranking on top, depending on size and query.
+2. An FTS5 prototype is 2.5x to 6x faster on the SQL step at 10,000 events and above (about 20x for a
+   rare term at 1,000; more for rare terms, less for generic queries). Treat these as upper bounds: the
+   prototype is not like for like (see limits).
    It is not a free win: the build is cheap (0.8 s at 100k) but it needs a schema migration, triggers or
    explicit sync on insert and delete, and a tokenizer decision.
 3. Unbounded `EpisodicMemoryStore.get_for_agent` and brute-force vector search also scale linearly
-   (about 160 ms and 85 to 90 ms at 100k). Neither is made faster by FTS5.
+   (about 158 ms and 85 to 90 ms at 100k). Neither is made faster by FTS5.
 
 ## Recommendation: no-go for now
 
 Do not build hybrid recall on latency grounds yet. Context: the only published provider latency is a
-p50 of about 18.8 s per call (see `adapters/thesims4/docs/benchmark-results.md`), so recall at 10,000
-events (about 30 ms) is roughly 0.2% of a request and invisible to a player. The cost only becomes
-noticeable (above ~100 ms) past roughly 50,000 events.
+p50 of about 18.8 s per call, measured separately on a different workload (see
+`adapters/thesims4/docs/benchmark-results.md`). Against that, recall at 10,000 events (about 30 ms) is
+roughly 0.2% of one provider call. It would matter only inside a frame-rate budget, which no current
+caller has. The scan crosses 100 ms at about 50,000 events.
 
-Close or defer issue #40 unless one of these holds, then re-run this script on the real hardware:
+Defer issue #40 (FTS5 hybrid recall; closing it is the maintainer's call) unless one of these holds, then re-run this script on the real hardware:
 
 - real saves reach 50,000 or more `events` rows (I did not measure typical save sizes; check a long-lived
   save with `SELECT count(*) FROM events`);

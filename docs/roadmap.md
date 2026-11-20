@@ -104,7 +104,7 @@ Each needs its own design and evidence before implementation:
 
 - streaming generation;
 - hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration; latency alone does
-  not justify it yet (see [recall benchmark](recall-benchmark.md));
+  not justify it yet (see [recall benchmark](recall-benchmark.md); issue #40);
 - memory consolidation and decay;
 - a directors protocol, only once a validated use case exists.
 
