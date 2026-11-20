@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from empneon.providers.llm._http import (
     chat_completion_body,
+    delta_text,
     guarded_generate,
     guarded_health,
     guarded_stream,
@@ -14,18 +15,6 @@ from empneon.providers.llm._http import (
     request_json,
 )
 from empneon.providers.llm.base import GenerationRequest, GenerationResult, ModelCapabilities
-
-
-def _delta_text(event: object) -> str:
-    """Text delta of one streamed chunk; role-only and usage-only chunks have none."""
-    choices = cast(dict[str, Any], event)["choices"]
-    if not choices:
-        return ""
-    delta = choices[0]["delta"]
-    if not isinstance(delta, dict):
-        raise ValueError("streamed delta must be an object")
-    content = delta.get("content")
-    return content if isinstance(content, str) else ""
 
 
 @dataclass(frozen=True)
@@ -54,7 +43,7 @@ class OpenAICompatibleProvider:
                 headers=self._headers(),
                 timeout=self.timeout_seconds,
             ),
-            _delta_text,
+            delta_text,
         )
 
     async def health_check(self) -> bool:

@@ -14,9 +14,11 @@ API with migration notes.
 
 ### Added
 - Opt-in streaming generation: `StreamingLLMProvider` (`stream(request)` yields text deltas),
-  implemented by `OpenAICompatibleProvider` and wrapped by `ResilientProvider.stream`, which retries
-  only before the first chunk and counts stream failures once toward the circuit breaker. The
-  non-streaming API is unchanged.
+  implemented by `OpenAICompatibleProvider` and `LMStudioProvider` (through its OpenAI-compatible
+  endpoint, without the native `reasoning: off` option) and wrapped by `ResilientProvider.stream`,
+  which retries only before the first chunk and counts stream failures once toward the circuit
+  breaker. `ConfiguredProviderRouter.stream_for(task)` builds one when the config sets
+  `streaming: true`. The non-streaming API and `provider_for` are unchanged.
 - `PriorityScheduler(aging_per_second=...)` opts in to aging so long-waiting low-urgency requests are
   eventually served instead of starved. The default `0.0` keeps strict urgency ordering, and
   deadline expiry is unchanged.

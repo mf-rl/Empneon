@@ -126,8 +126,10 @@ with `ResilientProvider(provider, policy, breaker=CircuitBreaker(CircuitBreakerP
 Streaming is opt-in and separate from `LLMProvider`, so `generate` and custom providers are
 unchanged. `StreamingLLMProvider` adds `stream(request) -> AsyncIterator[str]`, which yields
 non-empty text deltas as they arrive; `ModelCapabilities.streaming` advertises support.
-`OpenAICompatibleProvider` implements it over server-sent events (`"stream": true`); the LM Studio
-provider does not yet. Errors, including mid-stream ones, raise `ProviderError`; chunk content is
+`OpenAICompatibleProvider` implements it over server-sent events (`"stream": true`), and so does
+`LMStudioProvider`, through LM Studio's OpenAI-compatible `/v1/chat/completions` endpoint. Plain
+`LMStudioProvider.generate` still uses the native `/api/v1/chat` endpoint with `reasoning: off`;
+the streaming path does not send that option. Errors, including mid-stream ones, raise `ProviderError`; chunk content is
 never logged.
 
 `ResilientProvider.stream` wraps a streaming provider (otherwise it raises `TypeError`). Retries
@@ -136,7 +138,12 @@ delivered; a mid-stream failure is raised to the caller after the chunks receive
 breaker, each stream records one outcome: a transient failure counts against the circuit, a
 completed stream or non-transient error counts as healthy, and abandoning the stream early frees
 the half-open probe slot. An open circuit raises `CircuitOpenError` without calling the provider.
-Streaming through `ConfiguredProviderRouter` and the runtime is not part of this change.
+`ConfiguredProviderRouter.stream_for(task)` returns a streaming provider only when the task or
+provider config sets `streaming: true` (a non-boolean value raises `ValueError`); it applies the same
+`retry` and `circuit_breaker` wrapping as `provider_for`, which is unchanged and ignores the key.
+`CognitiveRuntime` has no streaming API: a resolver consumes the stream and returns a `Decision`, so
+admission, `deadline_ms` enforcement and CLOD 1 degradation on a mid-stream `ProviderError` apply
+as for any resolver.
 
 ## Embeddings
 
