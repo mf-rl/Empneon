@@ -5786,7 +5786,7 @@ def test_player_dialogue_uses_relevant_adapter_fallback_when_provider_fails(
     assert telemetry["by_degradation"] == {"provider_error": 1}
 
 
-def _degraded_chat(tmp_path, monkeypatch, dialogue):
+def _degraded_chat(tmp_path, monkeypatch, dialogue, event_type="player_conversation"):
     """Run one player chat whose provider dialogue is replaced by `dialogue`."""
 
     class Provider:
@@ -5818,7 +5818,7 @@ def _degraded_chat(tmp_path, monkeypatch, dialogue):
             "listener": {"id": "bernard", "name": "Bernard"},
             "conversation_id": "degradation-reason",
             "message": "I'm very attracted to you. You are really hot.",
-            "event": {"type": "player_conversation", "source": "test"},
+            "event": {"type": event_type, "source": "test"},
             "available_response_categories": ["friendly", "romance"],
         }
     )
@@ -7203,3 +7203,19 @@ def test_chat_usage_flags_a_deliberate_clod1_selection_but_not_a_degradation(tmp
 
     assert telemetry["deliberate_clod1"] == 1
     assert telemetry["by_degradation"] == {"provider_error": 1}
+
+
+def test_low_priority_chat_records_a_deliberate_clod1_not_a_degradation(
+    tmp_path, monkeypatch
+) -> None:
+    def unused_dialogue(_payload, _context):
+        raise AssertionError("a policy-chosen CLOD 1 must not call a provider")
+
+    result, telemetry, rows = _degraded_chat(
+        tmp_path, monkeypatch, unused_dialogue, event_type="idle_chatter"
+    )
+
+    assert result["selected_clod"] == 1
+    assert telemetry["deliberate_clod1"] == 1
+    assert telemetry["by_degradation"] == {}
+    assert rows == [("core-rules", 1, None)]
