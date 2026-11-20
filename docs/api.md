@@ -121,6 +121,23 @@ accepts a `BreakerRegistry`; otherwise a lazily created process-wide registry is
 `BreakerRegistry.default().reset()` clears it (for tests or an operator reset). Compose directly
 with `ResilientProvider(provider, policy, breaker=CircuitBreaker(CircuitBreakerPolicy(...)))`.
 
+## Streaming generation
+
+Streaming is opt-in and separate from `LLMProvider`, so `generate` and custom providers are
+unchanged. `StreamingLLMProvider` adds `stream(request) -> AsyncIterator[str]`, which yields
+non-empty text deltas as they arrive; `ModelCapabilities.streaming` advertises support.
+`OpenAICompatibleProvider` implements it over server-sent events (`"stream": true`); the LM Studio
+provider does not yet. Errors, including mid-stream ones, raise `ProviderError`; chunk content is
+never logged.
+
+`ResilientProvider.stream` wraps a streaming provider (otherwise it raises `TypeError`). Retries
+apply only before the first chunk, because retrying later would repeat or contradict text already
+delivered; a mid-stream failure is raised to the caller after the chunks received so far. With a
+breaker, each stream records one outcome: a transient failure counts against the circuit, a
+completed stream or non-transient error counts as healthy, and abandoning the stream early frees
+the half-open probe slot. An open circuit raises `CircuitOpenError` without calling the provider.
+Streaming through `ConfiguredProviderRouter` and the runtime is not part of this change.
+
 ## Embeddings
 
 `EmbeddingProvider` (`embed(texts) -> EmbeddingResult`, `health_check()`) is a separate protocol from

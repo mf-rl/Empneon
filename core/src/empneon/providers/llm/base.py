@@ -1,5 +1,6 @@
 """Provider-independent LLM request and capability contracts."""
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -68,3 +69,13 @@ class LLMProvider(Protocol):
     async def generate(self, request: GenerationRequest) -> GenerationResult: ...
 
     async def health_check(self) -> bool: ...
+
+
+class StreamingLLMProvider(LLMProvider, Protocol):
+    """Opt-in extension for providers that can stream generated text.
+
+    `stream` yields non-empty text deltas as they arrive. Failures raise `ProviderError`, possibly
+    after some chunks were already yielded.
+    """
+
+    def stream(self, request: GenerationRequest) -> AsyncIterator[str]: ...

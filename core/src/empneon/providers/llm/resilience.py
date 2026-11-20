@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import random as _random
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TypeVar
 
@@ -19,6 +19,7 @@ from empneon.providers.llm.embeddings import EmbeddingProvider, EmbeddingResult
 
 _log = logging.getLogger(__name__)
 _T = TypeVar("_T")
+_END = object()
 
 DEFAULT_RETRY_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 _POLICY_KEYS = frozenset(
@@ -105,6 +106,12 @@ def is_retryable(error: ProviderError, policy: RetryPolicy) -> bool:
     return error.transport
 
 
+async def _close(stream: AsyncIterator[str]) -> None:
+    aclose = getattr(stream, "aclose", None)
+    if aclose is not None:
+        await aclose()
+
+
 class _RetryingCaller:
     """Runs one async call under a retry policy and an optional circuit breaker."""
 
@@ -137,6 +144,48 @@ class _RetryingCaller:
             raise
         self.breaker.record_success()
         return result
+
+    async def stream(self, open_stream: Callable[[], AsyncIterator[str]]) -> AsyncIterator[str]:
+        """Yield chunks, retrying only failures that happen before the first chunk arrives.
+
+        Once a chunk was delivered a retry would repeat or contradict it, so later failures
+        propagate. The breaker records one outcome per stream: a transient failure counts against
+        it, completion or a non-transient error counts as healthy, abandonment frees the probe.
+        """
+        if self.breaker is not None:
+            self.breaker.acquire()
+        try:
+            inner, chunk = await self._attempts(lambda: self._first_chunk(open_stream))
+            try:
+                while chunk is not _END:
+                    yield chunk  # type: ignore[misc]
+                    chunk = await anext(inner, _END)
+            finally:
+                await _close(inner)
+        except ProviderError as error:
+            if self.breaker is not None:
+                if is_retryable(error, self.policy):
+                    self.breaker.record_failure()
+                else:
+                    self.breaker.record_success()
+            raise
+        except BaseException:
+            if self.breaker is not None:
+                self.breaker.release()
+            raise
+        if self.breaker is not None:
+            self.breaker.record_success()
+
+    @staticmethod
+    async def _first_chunk(
+        open_stream: Callable[[], AsyncIterator[str]],
+    ) -> tuple[AsyncIterator[str], object]:
+        inner = open_stream()
+        try:
+            return inner, await anext(inner, _END)
+        except BaseException:
+            await _close(inner)
+            raise
 
     async def _attempts(self, call: Callable[[], Awaitable[_T]]) -> _T:
         attempt = 1
@@ -196,6 +245,16 @@ class ResilientProvider:
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
         return await self._caller.run(lambda: self.inner.generate(request))
+
+    def stream(self, request: GenerationRequest) -> AsyncIterator[str]:
+        """Stream text deltas (opt-in); needs an inner provider that implements `stream`.
+
+        Retries apply only before the first chunk; a mid-stream failure is raised to the caller.
+        """
+        inner_stream = getattr(self.inner, "stream", None)
+        if inner_stream is None:
+            raise TypeError("wrapped provider does not support streaming")
+        return self._caller.stream(lambda: inner_stream(request))
 
     async def health_check(self) -> bool:
         return await self.inner.health_check()

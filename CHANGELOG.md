@@ -13,6 +13,10 @@ API with migration notes.
   Back up the database plus its `-wal` and `-shm` files before upgrading.
 
 ### Added
+- Opt-in streaming generation: `StreamingLLMProvider` (`stream(request)` yields text deltas),
+  implemented by `OpenAICompatibleProvider` and wrapped by `ResilientProvider.stream`, which retries
+  only before the first chunk and counts stream failures once toward the circuit breaker. The
+  non-streaming API is unchanged.
 - `PriorityScheduler(aging_per_second=...)` opts in to aging so long-waiting low-urgency requests are
   eventually served instead of starved. The default `0.0` keeps strict urgency ordering, and
   deadline expiry is unchanged.

@@ -1,12 +1,14 @@
 """Shared HTTP transport and failure handling for provider implementations (internal)."""
 
 import asyncio
+import contextlib
+import http.client
 import json
 import logging
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
-from typing import TypeVar
+from collections.abc import AsyncIterator, Callable, Mapping
+from typing import Any, TypeVar
 from urllib.parse import urlsplit
 
 from empneon.providers.llm.base import GenerationRequest, ProviderError
@@ -34,6 +36,19 @@ def chat_completion_body(model: str, request: GenerationRequest) -> dict[str, ob
     return body
 
 
+def _build_request(
+    url: str, body: Mapping[str, object] | None, headers: Mapping[str, str] | None
+) -> urllib.request.Request:
+    if urlsplit(url).scheme.lower() not in {"http", "https"}:
+        raise ValueError("provider URL must use http or https")
+    return urllib.request.Request(  # noqa: S310 - scheme restricted to http(s) above
+        url,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Content-Type": "application/json", **(headers or {})},
+        method="POST" if body is not None else "GET",
+    )
+
+
 def request_json(
     url: str,
     *,
@@ -46,16 +61,21 @@ def request_json(
     Only `http` and `https` URLs are accepted, so a misconfigured endpoint cannot make
     `urlopen` read a `file:` path or speak another scheme.
     """
-    if urlsplit(url).scheme.lower() not in {"http", "https"}:
-        raise ValueError("provider URL must use http or https")
-    request = urllib.request.Request(  # noqa: S310 - scheme restricted to http(s) above
-        url,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json", **(headers or {})},
-        method="POST" if body is not None else "GET",
-    )
+    request = _build_request(url, body, headers)
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - http(s) only
         return json.loads(response.read())
+
+
+def open_stream(
+    url: str,
+    *,
+    body: Mapping[str, object],
+    headers: Mapping[str, str] | None = None,
+    timeout: float,
+) -> Any:
+    """POST `body` and return the open response, which the caller must close (http(s) only)."""
+    request = _build_request(url, body, headers)
+    return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310 - http(s) only
 
 
 def _status(exc: BaseException) -> int | None:
@@ -75,6 +95,19 @@ def _is_transport(exc: BaseException) -> bool:
     return isinstance(exc, OSError) and not isinstance(exc, urllib.error.HTTPError)
 
 
+def _provider_error(
+    label: str, operation: str, exc: BaseException, *, transport: bool | None = None
+) -> ProviderError:
+    status = _status(exc)
+    _log.warning("%s %s failed: %s status=%s", label, operation, type(exc).__name__, status)
+    return ProviderError(
+        f"{label} {operation} failed",
+        status=status,
+        retry_after=_retry_after(exc),
+        transport=_is_transport(exc) if transport is None else transport,
+    )
+
+
 async def guarded_generate(
     label: str, call: Callable[[], _T], *, operation: str = "generation"
 ) -> _T:
@@ -85,14 +118,7 @@ async def guarded_generate(
     try:
         return await asyncio.to_thread(call)
     except _TRANSPORT_ERRORS as exc:
-        status = _status(exc)
-        _log.warning("%s %s failed: %s status=%s", label, operation, type(exc).__name__, status)
-        raise ProviderError(
-            f"{label} {operation} failed",
-            status=status,
-            retry_after=_retry_after(exc),
-            transport=_is_transport(exc),
-        ) from exc
+        raise _provider_error(label, operation, exc) from exc
 
 
 async def guarded_health(label: str, call: Callable[[], object]) -> bool:
@@ -103,3 +129,53 @@ async def guarded_health(label: str, call: Callable[[], object]) -> bool:
         _log.debug("%s health check failed: %s status=%s", label, type(exc).__name__, _status(exc))
         return False
     return True
+
+
+def _sse_data(line: bytes) -> str | None:
+    """Return the payload of an SSE `data:` line, or None for blanks, comments and other fields."""
+    text = line.decode("utf-8").strip()
+    if not text.startswith("data:"):
+        return None
+    return text[len("data:") :].strip()
+
+
+async def guarded_stream(
+    label: str,
+    open_call: Callable[[], Any],
+    extract: Callable[[object], str],
+) -> AsyncIterator[str]:
+    """Stream text from a blocking SSE response, mapping failures to ProviderError.
+
+    `open_call` returns the open response. `extract` turns each decoded JSON event into its text
+    delta (empty text is skipped). The stream ends at `data: [DONE]`. Blocking reads run in a
+    thread, the response is always closed, and only the exception type and HTTP status are logged,
+    never chunk content.
+    """
+    stack = contextlib.ExitStack()
+    try:
+        try:
+            response = await asyncio.to_thread(open_call)
+            stack.enter_context(response)
+            lines = iter(response)
+        except _TRANSPORT_ERRORS as exc:
+            raise _provider_error(label, "stream", exc) from exc
+        while True:
+            try:
+                line = await asyncio.to_thread(next, lines, None)
+                if line is None:
+                    return
+                data = _sse_data(line)
+                if data is None:
+                    continue
+                if data == "[DONE]":
+                    return
+                text = extract(json.loads(data))
+            except _TRANSPORT_ERRORS as exc:
+                raise _provider_error(label, "stream", exc) from exc
+            except http.client.HTTPException as exc:
+                # A truncated chunked body: the connection broke mid-stream, so it is transient.
+                raise _provider_error(label, "stream", exc, transport=True) from exc
+            if text:
+                yield text
+    finally:
+        await asyncio.to_thread(stack.close)
