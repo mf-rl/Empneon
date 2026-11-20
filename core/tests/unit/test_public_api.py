@@ -3,6 +3,7 @@ import tomllib
 from pathlib import Path
 
 import empneon
+import empneon.providers.llm as llm
 
 
 def test_supported_api_and_version_source() -> None:
@@ -48,3 +49,10 @@ def test_package_advertises_inline_types() -> None:
     pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
     pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     assert pyproject["tool"]["setuptools"]["package-data"]["empneon"] == ["py.typed"]
+
+
+def test_streaming_names_are_public_provider_api() -> None:
+    assert "StreamingLLMProvider" in llm.__all__
+    assert llm.StreamingLLMProvider is not None
+    # The non-streaming protocol is unchanged: custom providers need not implement `stream`.
+    assert "stream" not in llm.LLMProvider.__dict__

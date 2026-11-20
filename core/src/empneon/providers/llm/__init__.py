@@ -5,6 +5,7 @@ from empneon.providers.llm.base import (
     Message,
     ModelCapabilities,
     ProviderError,
+    StreamingLLMProvider,
 )
 from empneon.providers.llm.breaker import (
     BreakerRegistry,
@@ -52,6 +53,7 @@ __all__ = [
     "ProviderError",
     "ResilientProvider",
     "RetryPolicy",
+    "StreamingLLMProvider",
     "generate_requests",
     "prepare_generation_requests",
 ]
