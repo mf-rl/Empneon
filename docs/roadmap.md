@@ -76,7 +76,7 @@ feature promise.
   standard-library logging that never records content; caller-owned transactions through a
   keyword-only `commit` argument; a shared provider HTTP transport that exposes
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
-  block new requests; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
+  block new requests and opt-in scheduler aging; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
   breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter
   failures; an opt-in embeddings provider with retry and circuit breaker and an agent-scoped
   `SemanticMemoryIndex`; opt-in adapter capability validation (`intents`, `state_paths`);
@@ -96,13 +96,12 @@ feature promise.
   once its intents become an enumerated set; today any unknown intent maps to a default action.
 - Let the Sims 4 adapter use `SemanticMemoryIndex` with a real embedding model instead of hashed
   vectors; this needs a vector-table dimension migration and live LM Studio validation.
-- Add scheduler aging so a stream of urgent requests cannot starve low-urgency ones.
 
 ### Core features under consideration
 
 Each needs its own design and evidence before implementation:
 
-- streaming generation;
+- streaming generation (part A shipped: `StreamingLLMProvider` and the OpenAI-compatible provider; LM Studio, router and runtime wiring remain, issue #38);
 - hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration; latency alone does
   not justify it yet (see [recall benchmark](recall-benchmark.md); issue #40);
 - memory consolidation and decay (design proposed in [memory-consolidation-decay](memory-consolidation-decay.md); issues #35, #41);
