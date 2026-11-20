@@ -8,7 +8,7 @@ import logging
 import urllib.error
 import urllib.request
 from collections.abc import AsyncIterator, Callable, Mapping
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from urllib.parse import urlsplit
 
 from empneon.providers.llm.base import GenerationRequest, ProviderError
@@ -34,6 +34,18 @@ def chat_completion_body(model: str, request: GenerationRequest) -> dict[str, ob
             "json_schema": {"name": "response", "schema": request.schema},
         }
     return body
+
+
+def delta_text(event: object) -> str:
+    """Text delta of one streamed chat-completions chunk (role/usage-only chunks have none)."""
+    choices = cast(dict[str, Any], event)["choices"]
+    if not choices:
+        return ""
+    delta = choices[0]["delta"]
+    if not isinstance(delta, dict):
+        raise ValueError("streamed delta must be an object")
+    content = delta.get("content")
+    return content if isinstance(content, str) else ""
 
 
 def _build_request(

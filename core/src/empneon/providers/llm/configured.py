@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import Mapping
-from typing import TypedDict
+from typing import TypedDict, cast
 from urllib.parse import urlsplit
 
 from empneon.providers.llm.base import (
@@ -11,6 +11,7 @@ from empneon.providers.llm.base import (
     LLMProvider,
     Message,
     ProviderError,
+    StreamingLLMProvider,
 )
 from empneon.providers.llm.breaker import BreakerRegistry, CircuitBreaker, CircuitBreakerPolicy
 from empneon.providers.llm.embeddings import EmbeddingProvider, OpenAICompatibleEmbeddingProvider
@@ -52,7 +53,26 @@ class ConfiguredProviderRouter:
         return config
 
     def provider_for(self, task: str) -> LLMProvider:
+        return self._wrapped(self.config_for(task))
+
+    def stream_for(self, task: str) -> StreamingLLMProvider:
+        """Build a streaming provider for `task`; opt-in through `streaming: true` in its config.
+
+        Uses the same retry and circuit-breaker wrapping as `provider_for`. Raises `ValueError`
+        when `streaming` is absent or not `true`, or when the configured provider cannot stream.
+        """
         config = self.config_for(task)
+        enabled = config.get("streaming")
+        if "streaming" in config and not isinstance(enabled, bool):
+            raise ValueError("streaming config must be a boolean")
+        if enabled is not True:
+            raise ValueError(f"task {task!r} must set streaming: true to use stream_for")
+        provider = self._wrapped(config)
+        if not provider.capabilities.streaming or not hasattr(provider, "stream"):
+            raise ValueError(f"provider {config['name']!r} does not support streaming")
+        return cast(StreamingLLMProvider, provider)
+
+    def _wrapped(self, config: Mapping[str, object]) -> LLMProvider:
         provider = self._build_provider(config)
         resilience = self._resilience(config)
         if resilience is None:

@@ -78,7 +78,7 @@ feature promise.
   `ProviderError.status`; a `Clod` enum with consistent validation; scheduler expiry that cannot
   block new requests and opt-in scheduler aging; opt-in provider retry with backoff and `Retry-After`, and an opt-in circuit
   breaker shared across per-call routers; opt-in deadline enforcement with recorded adapter
-  failures; an opt-in embeddings provider with retry and circuit breaker and an agent-scoped
+  failures; opt-in streaming generation (OpenAI-compatible and LM Studio providers, `stream_for` on the router); an opt-in embeddings provider with retry and circuit breaker and an agent-scoped
   `SemanticMemoryIndex`; opt-in adapter capability validation (`intents`, `state_paths`);
   `py.typed`, `CHANGELOG.md`, `CLAUDE.md`, and a Python 3.11/3.12 CI matrix
 
@@ -101,9 +101,8 @@ feature promise.
 
 Each needs its own design and evidence before implementation:
 
-- streaming generation (part A shipped: `StreamingLLMProvider` and the OpenAI-compatible provider; LM Studio, router and runtime wiring remain, issue #38);
 - hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration; latency alone does
-  not justify it yet (see [recall benchmark](recall-benchmark.md); issue #40);
+  not justify it yet (see [recall benchmark](recall-benchmark.md); issue #40, closed as not planned);
 - memory consolidation and decay (design proposed in [memory-consolidation-decay](memory-consolidation-decay.md); issues #35, #41);
 - a directors protocol, only once a validated use case exists (design proposed in [directors-protocol](directors-protocol.md); issues #36, #42).
 

@@ -1,12 +1,17 @@
 """LM Studio native chat transport."""
 
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Any
 
 from empneon.providers.llm._http import (
     chat_completion_body,
+    delta_text,
     guarded_generate,
     guarded_health,
+    guarded_stream,
+    open_stream,
     request_json,
 )
 from empneon.providers.llm.base import GenerationRequest, GenerationResult, ModelCapabilities
@@ -31,13 +36,28 @@ class LMStudioProvider:
 
     @property
     def capabilities(self) -> ModelCapabilities:
-        return ModelCapabilities(structured_output=True, local=True)
+        return ModelCapabilities(structured_output=True, streaming=True, local=True)
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
         return await guarded_generate("LM Studio", lambda: self._generate(request))
 
+    def stream(self, request: GenerationRequest) -> AsyncIterator[str]:
+        """Yield text deltas from a streamed chat completion (opt-in; `generate` is unchanged).
+
+        Streams through LM Studio's OpenAI-compatible endpoint, as structured requests already do.
+        Unlike plain `generate`, this does not send the native `reasoning: off` option.
+        """
+        return guarded_stream("LM Studio", lambda: self._open_stream(request), delta_text)
+
     async def health_check(self) -> bool:
         return await guarded_health("LM Studio", lambda: self._request("/models"))
+
+    def _open_stream(self, request: GenerationRequest) -> Any:
+        # Runs in a worker thread: model discovery and the POST both block.
+        body = {**chat_completion_body(self._model_id(), request), "stream": True}
+        return open_stream(
+            self._url("/chat/completions", native=False), body=body, timeout=self.timeout_seconds
+        )
 
     def _generate(self, request: GenerationRequest) -> GenerationResult:
         if request.schema is not None:
@@ -126,13 +146,15 @@ class LMStudioProvider:
         *,
         native: bool = True,
     ) -> dict[str, object]:
-        root = self.base_url.rstrip("/")
-        if root.endswith(API_V1_PREFIX):
-            root = root[: -len(API_V1_PREFIX)]
-        prefix = API_V1_PREFIX if native else "/v1"
         value = request_json(
-            f"{root}{prefix}{path}", body=body, timeout=self.timeout_seconds
+            self._url(path, native=native), body=body, timeout=self.timeout_seconds
         )
         if not isinstance(value, dict):
             raise ValueError("LM Studio returned a non-object response")
         return value
+
+    def _url(self, path: str, *, native: bool) -> str:
+        root = self.base_url.rstrip("/")
+        if root.endswith(API_V1_PREFIX):
+            root = root[: -len(API_V1_PREFIX)]
+        return f"{root}{API_V1_PREFIX if native else '/v1'}{path}"
