@@ -194,3 +194,24 @@ def test_deliberate_recording_failure_never_masks_the_decision(
             runtime.decide_dynamic(request(clod=1, deadline_ms=1_000), (_route(fast),), 0.9)
         )
     assert decision.intent == "acknowledge" and "OperationalError" in caplog.text
+
+
+def test_on_deliberate_hook_fires_only_for_a_policy_choice() -> None:
+    calls: list[str] = []
+    conn = open_db(":memory:")
+    runtime = CognitiveRuntime(
+        ResourceGovernor(ResourceBudget(256, 64)),
+        ActionRecordStore(conn),
+        on_deliberate=lambda: calls.append("deliberate"),
+    )
+    asyncio.run(runtime.decide_dynamic(request(clod=1), (_route(fast),), 0.9))
+    huge = CognitionRoute(
+        "provider",
+        3,
+        ModelCapabilities(context_window=4_096),
+        ResourceEstimate(9_999, 0, 1_000, 200, 500),
+        fast,
+    )
+    urgent = request(deadline_ms=1_000, urgency=1.0)
+    asyncio.run(runtime.decide_dynamic(urgent, (huge,), 0.9))
+    assert calls == ["deliberate"]

@@ -7192,7 +7192,9 @@ def test_identity_import_route_rejects_non_object(monkeypatch) -> None:
 def test_chat_usage_flags_a_deliberate_clod1_selection_but_not_a_degradation(tmp_path) -> None:
     request = CognitiveRequest("karmine", 1, WorldEvent("player_conversation", ("karmine",)))
     with open_db(str(tmp_path / "usage.sqlite3")) as conn:
-        ai_sims_server._chat_record_usage(conn, request, {"clod": 1, "task": "core-rules"}, [])
+        ai_sims_server._chat_record_usage(
+            conn, request, {"clod": 1, "task": "core-rules"}, [], None, True
+        )
         degraded = CognitiveRequest("karmine", 3, WorldEvent("player_conversation", ("karmine",)))
         ai_sims_server._chat_record_usage(
             conn, degraded, {"clod": 1, "task": "core-rules"}, [], "provider_error"
