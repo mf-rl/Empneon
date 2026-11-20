@@ -3,6 +3,7 @@
 import heapq
 import itertools
 import logging
+import math
 import threading
 import time
 
@@ -24,12 +25,22 @@ class RequestDeadlineExceeded(RuntimeError):
 
 
 class PriorityScheduler:
-    """Orders requests by urgency, deadline, then submission order."""
+    """Orders requests by urgency, deadline, then submission order.
 
-    def __init__(self, max_queue_size: int) -> None:
+    With `aging_per_second > 0`, a queued request's effective urgency grows by that amount for each
+    second it waits, so a low-urgency request eventually outranks a steady stream of newer urgent
+    ones. Aging only affects ordering: deadlines are never extended. The default (0.0) is strict
+    urgency ordering.
+    """
+
+    def __init__(self, max_queue_size: int, *, aging_per_second: float = 0.0) -> None:
         if max_queue_size <= 0:
             raise ValueError("max_queue_size must be positive")
+        if not math.isfinite(aging_per_second) or aging_per_second < 0:
+            raise ValueError("aging_per_second must be finite and non-negative")
+        self._aging_per_second = aging_per_second
         self._max_queue_size = max_queue_size
+        # (priority key, deadline, sequence, request); a smaller key is served first
         self._queue: list[tuple[float, float, int, CognitiveRequest]] = []
         self._sequence = itertools.count()
         self._lock = threading.Lock()
@@ -39,7 +50,11 @@ class PriorityScheduler:
             return len(self._queue)
 
     def submit(self, request: CognitiveRequest) -> None:
-        deadline = time.monotonic() + request.deadline_ms / 1_000
+        now = time.monotonic()
+        deadline = now + request.deadline_ms / 1_000
+        # urgency + rate * (t - submitted) ranks the same as rate * submitted - urgency at any t,
+        # so the key is fixed at submission and the heap stays valid as time passes.
+        key = self._aging_per_second * now - request.urgency
         with self._lock:
             if len(self._queue) >= self._max_queue_size:
                 dropped = self._remove_expired()
@@ -51,7 +66,7 @@ class PriorityScheduler:
                 raise SchedulerFull("cognitive request queue is full")
             heapq.heappush(
                 self._queue,
-                (-request.urgency, deadline, next(self._sequence), request),
+                (key, deadline, next(self._sequence), request),
             )
 
     def pop(self) -> CognitiveRequest:
