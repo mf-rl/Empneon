@@ -106,7 +106,7 @@ Each needs its own design and evidence before implementation:
 - hybrid recall (FTS5 keyword, vector, and recency ranking) with a schema migration; latency alone does
   not justify it yet (see [recall benchmark](recall-benchmark.md); issue #40);
 - memory consolidation and decay (design proposed in [memory-consolidation-decay](memory-consolidation-decay.md); issues #35, #41);
-- a directors protocol, only once a validated use case exists.
+- a directors protocol, only once a validated use case exists (design proposed in [directors-protocol](directors-protocol.md); issues #36, #42).
 
 ### Resource evidence
 
