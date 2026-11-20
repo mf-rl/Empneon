@@ -1,7 +1,8 @@
 # Memory consolidation and decay: design decision
 
-Status: proposed, awaiting maintainer review (issue #35). Implementation is issue #41. This is a design
-note, not shipped behavior. Nothing here is implemented, and no numbers below were measured.
+Status: slice 1 implemented (issue #41); slice 2 (deterministic digests) is not, and hard prune is no
+longer planned. The sections below were written before the code existed; "As implemented (slice 1)"
+at the end lists where the code differs and records the maintainer's answers.
 
 ## Problem
 
@@ -123,7 +124,32 @@ salience, bounded sweep with a caller-supplied eligibility predicate, tests from
 Slice 2: deterministic digests. Slice 3 (only if wanted): hard prune with export, after #39. Sims 4
 backend filtering is an adapter ticket.
 
-## Questions for the maintainer
+## As implemented (slice 1)
+
+Public import path: `empneon.core.memory.state` (`MemoryState`, `MemoryStateStore`, `salience`), not in the
+pinned top-level `empneon.__all__`. Differences from the proposal above:
+
+- The migration is schema 16 (schema 15 became `embedding_usage`), and #39 would now be 17.
+- `memory_digests` and `memory_state.digest_id` are deferred to slice 2, so no foreign key points at a
+  missing table; slice 2 adds the column by migration.
+- Protection covers belief provenance (`belief_provenance.source_observation_id` to the event, which
+  also protects derived beliefs through their root belief) and action records by `event_id` **and** by
+  `evidence_ids`, not only `event_id`.
+- `include_archived` is a per-call argument on `get_for_agent` and `search`, not a constructor argument.
+- Times are integer seconds and `now` is always passed by the caller; no store reads a clock.
+- Archive is one flag per event and so affects every participant. `sweep` therefore skips events with
+  several participants unless `include_shared=True` (maintainer decision).
+- Not in slice 1: ranking by salience, automatic recall bookkeeping inside `search`, digests, and the
+  Sims 4 adapter's own raw-SQL recall (an adapter ticket).
+
+Maintainer answers to the questions below: proceed independently of #40; deterministic-only digests for the
+first release; archive-only, no hard prune.
+
+Sweep cost, measured with a one-off script (Python 3.11, WSL2, in-memory, five runs): about 33 ms to
+archive 500 of 10,000 events, about 38 ms with a caller predicate. The design's half-life and floor
+values are still unmeasured and not chosen.
+
+## Questions for the maintainer (answered above)
 
 1. The ticket lists #40 as a blocker. #40 is recommended as no-go in the recall benchmark. Should #41
    proceed independent of #40 and plug salience into existing ranking?

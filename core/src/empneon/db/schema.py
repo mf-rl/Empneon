@@ -1,6 +1,6 @@
 """SQLite DDL for Empneon identity and agent state."""
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 _CREATE_SCHEMA_VERSION = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -160,6 +160,15 @@ CREATE TABLE IF NOT EXISTS memory_documents (
     value      TEXT    NOT NULL,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (namespace, key)
+)
+"""
+
+_CREATE_MEMORY_STATE = """
+CREATE TABLE IF NOT EXISTS memory_state (
+    event_id         TEXT    PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+    archived_at      INTEGER,
+    recall_count     INTEGER NOT NULL DEFAULT 0 CHECK(recall_count >= 0),
+    last_recalled_at INTEGER
 )
 """
 
@@ -325,6 +334,7 @@ ALL_DDL: list[str] = [
     _CREATE_IDX_EMOTIONAL_STATES_AGENT,
     _CREATE_EVENTS,
     _CREATE_EVENT_PARTICIPANTS,
+    _CREATE_MEMORY_STATE,
     _CREATE_IDX_EVENT_PARTICIPANTS_AGENT,
     _CREATE_IDX_EVENTS_HAPPENED_AT,
     _CREATE_EVENT_OBSERVATIONS,
@@ -459,4 +469,5 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
     13: (_ADD_COGNITION_USAGE_DEGRADATION_REASON,),
     14: (_ADD_COGNITION_USAGE_DELIBERATE_CLOD1,),
     15: (_CREATE_EMBEDDING_USAGE,),
+    16: (_CREATE_MEMORY_STATE,),
 }

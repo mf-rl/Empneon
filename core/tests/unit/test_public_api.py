@@ -72,3 +72,11 @@ def test_directors_names_are_a_supported_import_path() -> None:
     assert all(hasattr(directors, name) for name in directors.__all__)
     # Optional module: not part of the pinned top-level `empneon.__all__`.
     assert "run_directors" not in empneon.__all__
+
+
+def test_memory_state_names_are_a_supported_import_path() -> None:
+    from empneon.core.memory import state
+
+    assert set(state.__all__) == {"MemoryState", "MemoryStateStore", "salience"}
+    assert all(hasattr(state, name) for name in state.__all__)
+    assert "MemoryStateStore" not in empneon.__all__

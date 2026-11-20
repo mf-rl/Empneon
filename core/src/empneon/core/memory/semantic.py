@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from empneon.core.memory.episodic import EpisodicMemoryStore, Event
+from empneon.core.memory.state import MemoryStateStore
 from empneon.core.memory.vector import VectorMemoryStore
 from empneon.db.query import validate_limit
 from empneon.providers.llm.embeddings import EmbeddingProvider
@@ -92,8 +93,14 @@ class SemanticMemoryIndex:
         events = [event for event in (self._events.get(i) for i in ids) if event is not None]
         return await self.index_events(events, commit=commit)
 
-    async def search(self, agent_id: str, query: str, limit: int = 5) -> list[SemanticMatch]:
-        """Return up to `limit` of the agent's events nearest to `query`, closest first."""
+    async def search(
+        self, agent_id: str, query: str, limit: int = 5, *, include_archived: bool = True
+    ) -> list[SemanticMatch]:
+        """Return up to `limit` of the agent's events nearest to `query`, closest first.
+
+        `include_archived=False` skips events archived through `MemoryStateStore`; the search
+        keeps widening its candidate window so archived events do not shrink the result.
+        """
         validate_limit(limit)
         if not query.strip():
             raise ValueError("query must not be blank")
@@ -107,6 +114,8 @@ class SemanticMemoryIndex:
         while fetch > 0:
             pairs = store.search(vector, fetch)
             owned = self._owned(agent_id, [event_id for event_id, _ in pairs])
+            if not include_archived:
+                owned -= MemoryStateStore(self._conn).archived_ids(sorted(owned))
             matches: list[SemanticMatch] = []
             for event_id, distance in sorted(pairs, key=lambda pair: (pair[1], pair[0])):
                 event = self._events.get(event_id) if event_id in owned else None
