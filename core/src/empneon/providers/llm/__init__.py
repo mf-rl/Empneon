@@ -15,9 +15,12 @@ from empneon.providers.llm.breaker import (
 )
 from empneon.providers.llm.configured import ConfiguredProviderRouter
 from empneon.providers.llm.embeddings import (
+    EmbeddingOutcome,
     EmbeddingProvider,
     EmbeddingResult,
+    EmbeddingUsageSink,
     OpenAICompatibleEmbeddingProvider,
+    UsageMeteredEmbeddingProvider,
 )
 from empneon.providers.llm.lmstudio import LMStudioProvider
 from empneon.providers.llm.openai_compatible import OpenAICompatibleProvider
@@ -37,7 +40,10 @@ __all__ = [
     "CircuitBreaker",
     "CircuitBreakerPolicy",
     "CircuitOpenError",
+    "EmbeddingOutcome",
     "EmbeddingProvider",
+    "EmbeddingUsageSink",
+    "UsageMeteredEmbeddingProvider",
     "EmbeddingResult",
     "OpenAICompatibleEmbeddingProvider",
     "ResilientEmbeddingProvider",

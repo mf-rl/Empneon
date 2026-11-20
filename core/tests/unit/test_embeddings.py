@@ -427,5 +427,8 @@ def test_new_names_are_part_of_the_llm_namespace() -> None:
         "EmbeddingResult",
         "OpenAICompatibleEmbeddingProvider",
         "ResilientEmbeddingProvider",
+        "EmbeddingOutcome",
+        "EmbeddingUsageSink",
+        "UsageMeteredEmbeddingProvider",
     ):
         assert name in llm.__all__

@@ -9,6 +9,7 @@ from empneon.db.schema import ALL_DDL, MIGRATIONS, SCHEMA_VERSION
 EXPECTED_TABLES = frozenset(
     {
         "schema_version",
+        "embedding_usage",
         "agents",
         "personality",
         "relationships",
@@ -454,3 +455,98 @@ def test_deliberate_clod1_rejects_non_boolean_values(db: sqlite3.Connection) -> 
             " estimated_completion_tokens, estimated_latency_ms, recorded_at, deliberate_clod1)"
             " VALUES ('u','r','a','e','p','m',0,0,0,0,0,1,2)"
         )
+
+
+def test_migrates_v14_schema_with_embedding_usage_table() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    for ddl in ALL_DDL:
+        conn.execute(ddl)
+    for version in range(2, 15):
+        for statement in MIGRATIONS[version]:
+            conn.execute(statement)
+    conn.execute("DROP TABLE embedding_usage")
+    conn.execute("INSERT INTO schema_version VALUES (14)")
+    conn.execute(
+        "INSERT INTO cognition_usage (id, request_id, agent_id, event_id, provider, model,"
+        " estimated_ram_mb, estimated_vram_mb, estimated_context_tokens,"
+        " estimated_completion_tokens, estimated_latency_ms, recorded_at, deliberate_clod1)"
+        " VALUES ('usage-1','r','a','e','core-rules','clod1',0,0,0,0,0,1,1)"
+    )
+    conn.commit()
+
+    _apply_schema(conn)
+
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
+    assert SCHEMA_VERSION >= 15
+    assert conn.execute("SELECT count(*) FROM embedding_usage").fetchone()[0] == 0
+    kept = conn.execute("SELECT deliberate_clod1 FROM cognition_usage WHERE id='usage-1'")
+    assert kept.fetchone()[0] == 1
+
+
+def test_fresh_database_has_embedding_usage_columns(db: sqlite3.Connection) -> None:
+    columns = {row[1] for row in db.execute("PRAGMA table_info(embedding_usage)")}
+    assert columns == {
+        "id",
+        "provider",
+        "model",
+        "input_count",
+        "prompt_tokens",
+        "latency_ms",
+        "status",
+        "http_status",
+        "degradation_reason",
+        "recorded_at",
+    }
+
+
+_EMBEDDING_INSERT = (
+    "INSERT INTO embedding_usage (id, provider, model, input_count, prompt_tokens, latency_ms,"
+    " status, http_status, degradation_reason, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
+)
+
+
+def _embedding_row(**overrides: object) -> tuple[object, ...]:
+    values: dict[str, object] = {
+        "id": "e1",
+        "provider": "p",
+        "model": "m",
+        "input_count": 1,
+        "prompt_tokens": None,
+        "latency_ms": 5,
+        "status": "succeeded",
+        "http_status": None,
+        "degradation_reason": None,
+        "recorded_at": 1,
+    }
+    values.update(overrides)
+    return tuple(values.values())
+
+
+def test_embedding_usage_accepts_valid_rows(db: sqlite3.Connection) -> None:
+    db.execute(_EMBEDDING_INSERT, _embedding_row())
+    db.execute(
+        _EMBEDDING_INSERT,
+        _embedding_row(
+            id="e2", status="failed", http_status=503, degradation_reason="provider_error"
+        ),
+    )
+    assert db.execute("SELECT count(*) FROM embedding_usage").fetchone()[0] == 2
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"status": "weird"},
+        {"degradation_reason": "because", "status": "failed"},
+        {"degradation_reason": "timeout", "status": "succeeded"},
+        {"status": "failed", "degradation_reason": None},
+        {"input_count": 0},
+        {"latency_ms": -1},
+    ],
+)
+def test_embedding_usage_rejects_invalid_rows(
+    db: sqlite3.Connection, overrides: dict[str, object]
+) -> None:
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(_EMBEDDING_INSERT, _embedding_row(**overrides))
