@@ -40,13 +40,15 @@ Consequences:
   per-agent count limits, plus an optional caller-supplied predicate over `Event`. Sims-specific
   filtering (for example "only `confirmed_interaction`") lives in the adapter.
 - Events that back a belief, or are referenced by an action record, are never archived by the default
-  policy.
+  policy. The database does not enforce the action-record side: `action_results.event_id` and
+  `action_proposals.event_id` are plain TEXT with no foreign key, so the policy must query them
+  explicitly.
 
 ### 2. Decay is computed, not stored
 
-Salience is a pure function of `now`, `last_recalled_at`, `recall_count`, and a half-life:
-`salience = 0.5 ** (age / half_life)`, floored at a minimum, with a recall refreshing
-`last_recalled_at`. Reads compute it; no sweep rewrites values. This is deterministic, testable with a
+Salience is a pure function of `now`, `last_recalled_at` (falling back to `happened_at`), and a
+half-life: `salience = max(floor, 0.5 ** ((now - anchor) / half_life))`. A recall refreshes
+`last_recalled_at`. `recall_count` is kept for inspection only and does not enter the formula. Reads compute it; no sweep rewrites values. This is deterministic, testable with a
 fixed clock, and trivially reversible (change the half-life and the ranking changes).
 
 Only recall bookkeeping (`recall_count`, `last_recalled_at`) is written, and only when the caller
@@ -59,13 +61,15 @@ opts in. Half-life defaults are not chosen here; they need the adapter's time sc
 - Hard prune is a separate, explicit call that requires a backup path (JSON export of the rows and the
   vector) to be written first, refuses events that back beliefs, and removes the vector with the event.
   It depends on #39. It is not part of the default policy and the first slice need not ship it.
-- All mutators take keyword-only `commit=True`; a sweep is bounded (`max_rows`) and idempotent.
+- All mutators take keyword-only `commit=True` (with `commit=False` the caller owns the transaction); a sweep is bounded (`max_rows`) and idempotent.
 - Logging records counts and policy names only, never descriptions.
 
 ### 4. Consolidation produces a digest
 
-Archiving a batch can write one digest row that lists the archived event ids. Recall may return the
-digest in place of the archived events. Restoring the source events does not delete the digest; the
+Archiving a batch can write one digest row that lists the archived event ids. Its `summary` is a
+fixed template filled from counts, time span, and participant ids (no free text from a model).
+Recall may return the digest in place of the archived events, labeled as derived, so it is evidence
+of what was archived and never a new confirmed event. Restoring the source events does not delete the digest; the
 digest is removed by a separate explicit call.
 
 ## Schema impact (schema 15, additive)
@@ -75,7 +79,7 @@ No change to existing tables, so existing readers and both adapters' suites stay
 ```text
 memory_state(event_id PK REFERENCES events ON DELETE CASCADE,
              archived_at INTEGER NULL, recall_count INTEGER NOT NULL DEFAULT 0,
-             last_recalled_at INTEGER NULL, digest_id TEXT NULL)
+             last_recalled_at INTEGER NULL, digest_id TEXT NULL REFERENCES memory_digests ON DELETE SET NULL)
 memory_digests(id PK, agent_id REFERENCES agents ON DELETE CASCADE, summary TEXT NOT NULL,
                source_count INTEGER NOT NULL, span_start INTEGER, span_end INTEGER,
                created_at INTEGER NOT NULL, policy TEXT NOT NULL)
@@ -87,7 +91,8 @@ and an older runtime refuses the file, as for schema 14 (back up `-wal` and `-sh
 
 Existing code stays untouched unless the caller opts in: `CognitiveRuntime`, `get_for_agent`, and
 `SemanticMemoryIndex` default to current behavior. `SemanticMemoryIndex` would gain an
-`include_archived=True` default if it applies the filter.
+`include_archived=True` default if it applies the filter; vector search itself has no link to `events`,
+so the filter is an extra step after the KNN lookup and is in slice 1's scope.
 
 ## What is reversible
 
@@ -114,7 +119,7 @@ Existing code stays untouched unless the caller opts in: `CognitiveRuntime`, `ge
 ## Proposed scope for #41
 
 Slice 1 (one PR): migration 15, `MemoryState` store with archive, restore, recall bookkeeping, computed
-salience, bounded sweep with a caller-supplied eligibility predicate, tests from schema 14 and fresh.
+salience, bounded sweep with a caller-supplied eligibility predicate, tests from schema 14 and fresh, plus `docs/api.md` and `test_public_api.py` if any new name is exported.
 Slice 2: deterministic digests. Slice 3 (only if wanted): hard prune with export, after #39. Sims 4
 backend filtering is an adapter ticket.
 
